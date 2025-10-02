@@ -977,7 +977,7 @@
 
     <script>
         // App Version
-        const APP_VERSION = '1.4.1'; // Update this when making changes
+        const APP_VERSION = '1.4.2'; // Update this when making changes
         
         // App State Management
         const AppState = {
@@ -1626,7 +1626,9 @@
                     interestRate = 0.30; // 30% per month
                     
                     // Interest calculation period: minimum 3 months, or Math.ceil(term/2) if >= 3
-                    const interestMonths = Math.ceil(term / 2) >= 3 ? Math.ceil(term / 2) : 3;
+                    // BUT cannot exceed the actual loan term (for 1-2 month loans)
+                    const calculatedMonths = Math.ceil(term / 2) >= 3 ? Math.ceil(term / 2) : 3;
+                    const interestMonths = Math.min(calculatedMonths, term);
                     
                     console.log(`\n=== STANDARD INTEREST CALCULATION ===`);
                     console.log(`Principal: R${principal.toFixed(2)}`);
@@ -2138,7 +2140,9 @@
             }
 
             // Calculate interest cap based on Math.ceil(term/2) with minimum 3 months
-            const interestMonths = Math.ceil(loanData.term / 2) >= 3 ? Math.ceil(loanData.term / 2) : 3;
+            // BUT cannot exceed the actual loan term (for 1-2 month loans)
+            const calculatedMonths = Math.ceil(loanData.term / 2) >= 3 ? Math.ceil(loanData.term / 2) : 3;
+            const interestMonths = Math.min(calculatedMonths, loanData.term);
             
             // Create loan record with payment flexibility tracking
             const loan = {
@@ -2279,8 +2283,10 @@
             if (!loan.total_interest_charged) loan.total_interest_charged = 0;
             
             // Calculate max interest allowed based on Math.ceil(term/2) with min 3 months
+            // BUT cannot exceed the actual loan term (for 1-2 month loans)
             if (!loan.max_interest_allowed) {
-                const interestMonths = Math.ceil(loan.term_months / 2) >= 3 ? Math.ceil(loan.term_months / 2) : 3;
+                const calculatedMonths = Math.ceil(loan.term_months / 2) >= 3 ? Math.ceil(loan.term_months / 2) : 3;
+                const interestMonths = Math.min(calculatedMonths, loan.term_months);
                 // Calculate declining balance interest for the interest period
                 let maxInterest = 0;
                 let balance = loan.original_principal;
