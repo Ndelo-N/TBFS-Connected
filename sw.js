@@ -1,10 +1,11 @@
-const CACHE_NAME = 'tbfs-loan-manager-v17'; // Increment when updating
+const CACHE_NAME = 'tbfs-loan-manager-v18'; // Increment when updating
 const urlsToCache = [
   './',
   './index.html',
   './manifest.json',
   'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js',
   'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js',
+  'https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js',
   './icons/icon-192x192.png',
   './icons/icon-512x512.png',
   './TBFS_Logo.png'
