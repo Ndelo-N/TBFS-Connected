@@ -977,7 +977,7 @@
 
     <script>
         // App Version
-        const APP_VERSION = '1.4.0'; // Update this when making changes
+        const APP_VERSION = '1.4.1'; // Update this when making changes
         
         // App State Management
         const AppState = {
@@ -2137,6 +2137,9 @@
                 AppState.clients.push(client);
             }
 
+            // Calculate interest cap based on Math.ceil(term/2) with minimum 3 months
+            const interestMonths = Math.ceil(loanData.term / 2) >= 3 ? Math.ceil(loanData.term / 2) : 3;
+            
             // Create loan record with payment flexibility tracking
             const loan = {
                 loan_id: AppState.loans.length + 1,
@@ -2146,12 +2149,13 @@
                 original_principal: loanData.principal, // Track original for interest cap
                 remaining_principal: loanData.principal, // Track remaining principal
                 term_months: loanData.term,
+                interest_calculation_months: interestMonths, // Store the interest period for cap
                 monthly_payment: loanData.monthlyPayment,
                 total_cost: loanData.totalCost,
                 current_balance: loanData.totalCost,
                 total_initiation_fee: loanData.initiationFee, // Total initiation fee
                 initiation_fee_paid: 0, // Track how much initiation fee has been paid
-                max_interest_allowed: loanData.totalInterest, // Interest cap (3-month calculation)
+                max_interest_allowed: loanData.totalInterest, // Interest cap (based on Math.ceil(term/2) calculation)
                 total_interest_charged: 0, // Track total interest charged so far
                 status: 'active',
                 created_at: new Date().toISOString()
@@ -2272,8 +2276,21 @@
             if (!loan.original_principal) loan.original_principal = loan.principal_amount;
             if (!loan.total_initiation_fee) loan.total_initiation_fee = loan.principal_amount * 0.12;
             if (!loan.initiation_fee_paid) loan.initiation_fee_paid = 0;
-            if (!loan.max_interest_allowed) loan.max_interest_allowed = loan.principal_amount * 1.8; // 3-month cap
             if (!loan.total_interest_charged) loan.total_interest_charged = 0;
+            
+            // Calculate max interest allowed based on Math.ceil(term/2) with min 3 months
+            if (!loan.max_interest_allowed) {
+                const interestMonths = Math.ceil(loan.term_months / 2) >= 3 ? Math.ceil(loan.term_months / 2) : 3;
+                // Calculate declining balance interest for the interest period
+                let maxInterest = 0;
+                let balance = loan.original_principal;
+                const monthlyPrincipal = loan.original_principal / loan.term_months;
+                for (let i = 0; i < interestMonths; i++) {
+                    maxInterest += balance * 0.30;
+                    balance -= monthlyPrincipal;
+                }
+                loan.max_interest_allowed = maxInterest;
+            }
             
             // Calculate admin fee (perpetual R60 per payment)
             let adminFeePerMonth = 60;
