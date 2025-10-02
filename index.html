@@ -916,7 +916,7 @@
 
     <script>
         // App Version
-        const APP_VERSION = '1.2.1'; // Update this when making changes
+        const APP_VERSION = '1.2.2'; // Update this when making changes
         
         // App State Management
         const AppState = {
@@ -2177,6 +2177,8 @@
                             if (updateAvailable) {
                                 document.getElementById('updateStatus').textContent = '🎉 Update available! Click "Update Now" to install.';
                                 document.getElementById('updateStatus').style.color = '#27ae60';
+                                // Show the banner again
+                                showUpdateBanner();
                             } else {
                                 document.getElementById('updateStatus').textContent = '✅ You\'re running the latest version!';
                                 document.getElementById('updateStatus').style.color = '#27ae60';
