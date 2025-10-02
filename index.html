@@ -977,7 +977,7 @@
 
     <script>
         // App Version
-        const APP_VERSION = '1.4.5'; // Update this when making changes
+        const APP_VERSION = '1.4.6'; // Update this when making changes
         
         // App State Management
         const AppState = {
@@ -2089,8 +2089,8 @@
                 backupData();
                 
                 setTimeout(() => {
-                    localStorage.removeItem('tbfsAppState');
-                    AppState.init();
+                localStorage.removeItem('tbfsAppState');
+                AppState.init();
                     alert('🗑️ All data cleared successfully.\n\n💾 A backup was automatically saved before clearing.');
                 }, 500); // Small delay to ensure backup completes
             }
@@ -2160,6 +2160,7 @@
                 total_initiation_fee: loanData.initiationFee, // Total initiation fee
                 initiation_fee_paid: 0, // Track how much initiation fee has been paid
                 max_interest_allowed: loanData.totalInterest, // Interest cap (based on Math.ceil(term/2) calculation)
+                expected_monthly_interest: loanData.totalInterest / loanData.term, // Equalized monthly interest
                 total_interest_charged: 0, // Track total interest charged so far
                 status: 'active',
                 created_at: new Date().toISOString()
@@ -2298,6 +2299,11 @@
                 loan.max_interest_allowed = maxInterest;
             }
             
+            // Calculate expected monthly interest for older loans that don't have it
+            if (!loan.expected_monthly_interest) {
+                loan.expected_monthly_interest = loan.max_interest_allowed / loan.term_months;
+            }
+            
             // Calculate admin fee (perpetual R60 per payment)
             let adminFeePerMonth = 60;
             if (isStockvel) {
@@ -2319,13 +2325,10 @@
             let initiationFeePaid = Math.min(expectedMonthlyInitiation, remainingInitiationFee, remainingPayment);
             remainingPayment -= initiationFeePaid;
             
-            // Step 3: Calculate interest on current remaining principal
-            const interestRate = 0.30; // 30% per month on declining balance
-            let interestForThisPayment = loan.remaining_principal * interestRate;
-            
-            // Apply interest cap (never exceed 3-month calculation)
+            // Step 3: Calculate interest using EQUALIZED monthly amount (not recalculated each time)
+            // This prevents the bug where early payments get hit with excessive interest
             const interestRemaining = loan.max_interest_allowed - loan.total_interest_charged;
-            interestForThisPayment = Math.min(interestForThisPayment, interestRemaining, remainingPayment);
+            let interestForThisPayment = Math.min(loan.expected_monthly_interest, interestRemaining, remainingPayment);
             remainingPayment -= interestForThisPayment;
             
             // Step 4: Apply remaining payment to principal
@@ -2376,11 +2379,11 @@
                 previousBalance: loan.current_balance + paidAmount,
                 newBalance: loan.current_balance
             });
-            
+
             // Save changes
             AppState.save();
             AppState.updateDashboard();
-            
+
             // Show detailed summary
             let summary = `💰 Payment Processed!\n\n`;
             summary += `Type: ${paymentType}\n`;
