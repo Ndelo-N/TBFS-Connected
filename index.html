@@ -698,19 +698,71 @@
             
             <div id="dashboardAlerts"></div>
 
+            <!-- Financial Overview -->
+            <h3 class="section-title">💰 Financial Overview</h3>
             <div class="stats-grid">
-                <div class="stat-card">
-                    <h3>Total Capital</h3>
+                <div class="stat-card" style="background: linear-gradient(135deg, #27ae60 0%, #2ecc71 100%);">
+                    <h3>Account Balance</h3>
                     <div class="value" id="totalCapital">R 100,000</div>
+                    <p style="font-size: 12px; opacity: 0.9; margin-top: 5px;">Available in bank</p>
                 </div>
-                <div class="stat-card">
+                <div class="stat-card" style="background: linear-gradient(135deg, #f39c12 0%, #f1c40f 100%);">
                     <h3>Deployed</h3>
                     <div class="value" id="deployedCapital">R 0</div>
+                    <p style="font-size: 12px; opacity: 0.9; margin-top: 5px;">Currently loaned out</p>
                 </div>
                 <div class="stat-card">
                     <h3>Active Loans</h3>
                     <div class="value" id="activeLoans">0</div>
                 </div>
+                <div class="stat-card">
+                    <h3>Default Rate</h3>
+                    <div class="value" id="defaultRate">0%</div>
+                </div>
+            </div>
+
+            <!-- Profitability Metrics -->
+            <h3 class="section-title" style="margin-top: 30px;">📈 Profitability & Earnings</h3>
+            <div class="stats-grid">
+                <div class="stat-card" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);">
+                    <h3>Total Interest Earned</h3>
+                    <div class="value" id="totalInterestEarned">R 0</div>
+                    <p style="font-size: 12px; opacity: 0.9; margin-top: 5px;">Lifetime interest income</p>
+                </div>
+                <div class="stat-card" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);">
+                    <h3>Total Fees Earned</h3>
+                    <div class="value" id="totalFeesEarned">R 0</div>
+                    <p style="font-size: 12px; opacity: 0.9; margin-top: 5px;">Admin + Initiation fees</p>
+                </div>
+                <div class="stat-card" style="background: linear-gradient(135deg, #8e44ad 0%, #9b59b6 100%);">
+                    <h3>Total Profit</h3>
+                    <div class="value" id="totalProfit">R 0</div>
+                    <p style="font-size: 12px; opacity: 0.9; margin-top: 5px;">Interest + Fees</p>
+                </div>
+            </div>
+
+            <!-- Profit Goal Progress -->
+            <h3 class="section-title" style="margin-top: 30px;">🎯 Profit Goal Progress</h3>
+            <div style="background: white; padding: 30px; border-radius: 15px; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; flex-wrap: wrap; gap: 10px;">
+                    <div>
+                        <p style="margin: 0; color: #7f8c8d; font-size: 14px;">Goal: R500,000</p>
+                        <p style="margin: 5px 0 0 0; font-size: 32px; font-weight: bold; color: #2c3e50;" id="profitAmount">R 0</p>
+                    </div>
+                    <div style="text-align: right;">
+                        <p style="margin: 0; color: #7f8c8d; font-size: 14px;">Progress</p>
+                        <p style="margin: 5px 0 0 0; font-size: 32px; font-weight: bold; color: #27ae60;" id="profitPercentage">0%</p>
+                    </div>
+                </div>
+                <div style="background: #e0e6ed; border-radius: 10px; height: 20px; overflow: hidden;">
+                    <div id="profitProgressBar" style="background: linear-gradient(135deg, #27ae60 0%, #2ecc71 100%); height: 100%; width: 0%; transition: width 0.5s ease;"></div>
+                </div>
+                <p style="margin: 15px 0 0 0; color: #7f8c8d; font-size: 14px; text-align: center;" id="profitRemaining">R500,000 remaining to reach goal</p>
+            </div>
+
+            <!-- Loan Portfolio Stats -->
+            <h3 class="section-title" style="margin-top: 30px;">📊 Loan Portfolio</h3>
+            <div class="stats-grid">
                 <div class="stat-card">
                     <h3>Total Loans</h3>
                     <div class="value" id="totalLoans">0</div>
@@ -720,17 +772,12 @@
                     <div class="value" id="completedLoans">0</div>
                 </div>
                 <div class="stat-card">
-                    <h3>Default Rate</h3>
-                    <div class="value" id="defaultRate">0%</div>
+                    <h3>Defaulted</h3>
+                    <div class="value" id="defaultedLoans">0</div>
                 </div>
             </div>
 
-            <h3>Recent Activity</h3>
-            <div id="recentActivity">
-                <p style="color: #95a5a6; text-align: center; padding: 20px;">No activity yet. Create your first loan to get started.</p>
-            </div>
-
-            <h3>Data Management</h3>
+            <h3 style="margin-top: 30px;">Data Management</h3>
             <div style="display: flex; gap: 10px; flex-wrap: wrap; margin-top: 20px;">
                 <button class="btn btn-secondary" onclick="backupData()">📥 Backup Data</button>
                 <button class="btn" onclick="restoreData()">📤 Restore Data</button>
@@ -916,12 +963,15 @@
 
     <script>
         // App Version
-        const APP_VERSION = '1.2.2'; // Update this when making changes
+        const APP_VERSION = '1.3.0'; // Update this when making changes
         
         // App State Management
         const AppState = {
-            capital: 100000,
-            deployed: 0,
+            capital: 100000, // Account balance (what's in the bank)
+            deployed: 0, // Amount currently loaned out
+            totalInterestEarned: 0, // Lifetime interest earned
+            totalFeesEarned: 0, // Lifetime fees earned (admin + initiation)
+            profitGoal: 500000, // Business profit goal
             clients: [],
             loans: [],
             nextAccountNumber: 2025001,
@@ -937,6 +987,9 @@
                     const data = JSON.parse(saved);
                     this.capital = data.capital || 100000;
                     this.deployed = data.deployed || 0;
+                    this.totalInterestEarned = data.totalInterestEarned || 0;
+                    this.totalFeesEarned = data.totalFeesEarned || 0;
+                    this.profitGoal = data.profitGoal || 500000;
                     this.clients = data.clients || [];
                     this.loans = data.loans || [];
                     this.nextAccountNumber = data.nextAccountNumber || 2025001;
@@ -947,6 +1000,9 @@
                 localStorage.setItem('tbfsAppState', JSON.stringify({
                     capital: this.capital,
                     deployed: this.deployed,
+                    totalInterestEarned: this.totalInterestEarned,
+                    totalFeesEarned: this.totalFeesEarned,
+                    profitGoal: this.profitGoal,
                     clients: this.clients,
                     loans: this.loans,
                     nextAccountNumber: this.nextAccountNumber
@@ -970,11 +1026,38 @@
                 // Data validation and cleanup
                 this.validateAndFixData();
                 
+                // Financial Overview
                 document.getElementById('totalCapital').textContent = `R ${this.capital.toLocaleString()}`;
                 document.getElementById('deployedCapital').textContent = `R ${this.deployed.toLocaleString()}`;
                 document.getElementById('activeLoans').textContent = this.loans.filter(l => l.status === 'active').length;
+                
+                // Profitability Metrics
+                document.getElementById('totalInterestEarned').textContent = `R ${this.totalInterestEarned.toLocaleString()}`;
+                document.getElementById('totalFeesEarned').textContent = `R ${this.totalFeesEarned.toLocaleString()}`;
+                
+                const totalProfit = this.totalInterestEarned + this.totalFeesEarned;
+                document.getElementById('totalProfit').textContent = `R ${totalProfit.toLocaleString()}`;
+                
+                // Profit Goal Progress
+                const profitPercentage = Math.min(100, (totalProfit / this.profitGoal * 100)).toFixed(1);
+                const profitRemaining = Math.max(0, this.profitGoal - totalProfit);
+                
+                document.getElementById('profitAmount').textContent = `R ${totalProfit.toLocaleString()}`;
+                document.getElementById('profitPercentage').textContent = `${profitPercentage}%`;
+                document.getElementById('profitProgressBar').style.width = `${profitPercentage}%`;
+                
+                if (profitRemaining > 0) {
+                    document.getElementById('profitRemaining').textContent = `R${profitRemaining.toLocaleString()} remaining to reach goal`;
+                } else {
+                    document.getElementById('profitRemaining').textContent = `🎉 Goal achieved! Exceeded by R${(totalProfit - this.profitGoal).toLocaleString()}`;
+                    document.getElementById('profitRemaining').style.color = '#27ae60';
+                    document.getElementById('profitRemaining').style.fontWeight = 'bold';
+                }
+                
+                // Loan Portfolio Stats
                 document.getElementById('totalLoans').textContent = this.loans.length;
                 document.getElementById('completedLoans').textContent = this.loans.filter(l => l.status === 'completed').length;
+                document.getElementById('defaultedLoans').textContent = this.loans.filter(l => l.status === 'defaulted').length;
                 document.getElementById('totalClients').textContent = this.clients.length;
                 
                 const completed = this.loans.filter(l => l.status === 'completed' || l.status === 'defaulted').length;
@@ -1959,7 +2042,17 @@
 
             // Add loan to system
             AppState.loans.push(loan);
+            
+            // Track initiation fee as earned income
+            if (loanData.initiationFee && loanData.initiationFee > 0) {
+                AppState.totalFeesEarned += loanData.initiationFee;
+                AppState.capital += loanData.initiationFee; // Initiation fee goes to capital
+            }
+            
+            // Disburse principal (reduce capital, increase deployed)
+            AppState.capital -= loan.principal_amount;
             AppState.deployed += loan.principal_amount;
+            
             AppState.save();
             AppState.updateDashboard();
 
@@ -2027,17 +2120,35 @@
 
             const paidAmount = parseFloat(paymentAmount);
             const principalPayment = loan.principal_amount / loan.term_months; // Monthly principal payment
-            const interestPayment = paidAmount - principalPayment;
-
+            
+            // Calculate interest and admin fee breakdown
+            // Total payment = Principal + Interest + Admin Fee
+            // We need to split the non-principal amount between interest and admin fee
+            const totalCostPerMonth = loan.total_cost / loan.term_months;
+            const nonPrincipalAmount = totalCostPerMonth - principalPayment;
+            
+            // Admin fee is fixed per month (60 for standard, variable for stockvel)
+            // We'll calculate it based on the ratio
+            const adminFeePerMonth = (loan.total_cost - loan.principal_amount) * 0.15; // Approximate 15% of total cost is admin fees
+            const interestPerMonth = nonPrincipalAmount - adminFeePerMonth;
+            
             // Update current balance
             loan.current_balance -= paidAmount;
 
-            // Update deployed capital (reduce by principal payment)
+            // Update deployed capital (principal goes back to available capital)
             AppState.deployed = Math.max(0, AppState.deployed - principalPayment);
-
-            // Add interest payment to total capital if positive
-            if (interestPayment > 0) {
-                AppState.capital += interestPayment;
+            AppState.capital += principalPayment; // Principal returns to capital
+            
+            // Track interest earned
+            if (interestPerMonth > 0) {
+                AppState.totalInterestEarned += interestPerMonth;
+                AppState.capital += interestPerMonth; // Interest adds to capital
+            }
+            
+            // Track admin fees earned
+            if (adminFeePerMonth > 0) {
+                AppState.totalFeesEarned += adminFeePerMonth;
+                AppState.capital += adminFeePerMonth; // Admin fee adds to capital
             }
 
             // Update client's total repayment amount
@@ -2055,7 +2166,7 @@
             AppState.updateDashboard();
 
             // Show payment summary
-            alert(`💰 Payment Processed!\n\nPayment Amount: R${paidAmount.toFixed(2)}\nPrincipal Payment: R${principalPayment.toFixed(2)}\nInterest Payment: R${interestPayment.toFixed(2)}\nNew Balance: R${loan.current_balance.toFixed(2)}\nTotal Repaid by Client: R${client ? client.total_repayment.toFixed(2) : '0.00'}\n\nCapital increased by: R${interestPayment.toFixed(2)}`);
+            alert(`💰 Payment Processed!\n\nPayment Amount: R${paidAmount.toFixed(2)}\n\nBreakdown:\nPrincipal: R${principalPayment.toFixed(2)}\nInterest: R${interestPerMonth.toFixed(2)}\nAdmin Fee: R${adminFeePerMonth.toFixed(2)}\n\nNew Balance: R${loan.current_balance.toFixed(2)}\nTotal Repaid by Client: R${client ? client.total_repayment.toFixed(2) : '0.00'}`);
 
             // Check if loan is fully paid
             if (loan.current_balance <= 0) {
@@ -2344,6 +2455,9 @@
                 const data = {
                     capital: AppState.capital,
                     deployed: AppState.deployed,
+                    totalInterestEarned: AppState.totalInterestEarned,
+                    totalFeesEarned: AppState.totalFeesEarned,
+                    profitGoal: AppState.profitGoal,
                     clients: AppState.clients,
                     loans: AppState.loans,
                     nextAccountNumber: AppState.nextAccountNumber,
@@ -2549,5 +2663,6 @@
     </script>
 </body>
 </html>
+
 
 

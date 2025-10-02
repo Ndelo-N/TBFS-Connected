@@ -1,4 +1,4 @@
-const CACHE_NAME = 'tbfs-loan-manager-v5'; // Increment when updating
+const CACHE_NAME = 'tbfs-loan-manager-v6'; // Increment when updating
 const urlsToCache = [
   './',
   './index.html',
