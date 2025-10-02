@@ -1,4 +1,4 @@
-const CACHE_NAME = 'tbfs-loan-manager-v14'; // Increment when updating
+const CACHE_NAME = 'tbfs-loan-manager-v15'; // Increment when updating
 const urlsToCache = [
   './',
   './index.html',
@@ -27,6 +27,13 @@ self.addEventListener('install', function(event) {
 
 // Fetch event - serve from cache when offline
 self.addEventListener('fetch', function(event) {
+  // Skip caching for chrome-extension and other unsupported schemes
+  const url = new URL(event.request.url);
+  if (url.protocol !== 'http:' && url.protocol !== 'https:') {
+    console.log('Service Worker: Skipping non-http(s) request', event.request.url);
+    return; // Let the browser handle it normally
+  }
+  
   console.log('Service Worker: Fetch event for', event.request.url);
   
   event.respondWith(
@@ -51,6 +58,10 @@ self.addEventListener('fetch', function(event) {
           caches.open(CACHE_NAME)
             .then(function(cache) {
               cache.put(event.request, responseToCache);
+            })
+            .catch(function(error) {
+              // Silently handle cache errors (e.g., quota exceeded)
+              console.warn('Service Worker: Cache put failed', error);
             });
 
           return response;
