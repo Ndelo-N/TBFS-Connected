@@ -783,6 +783,20 @@
                 <button class="btn" onclick="restoreData()">📤 Restore Data</button>
                 <button class="btn btn-danger" onclick="clearAllData()">🗑️ Clear All Data</button>
             </div>
+
+            <!-- Transaction History Section -->
+            <h3 class="section-title" style="margin-top: 30px;">📜 Transaction History</h3>
+            <div style="background: white; padding: 20px; border-radius: 15px; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+                    <p style="margin: 0; color: #7f8c8d; font-size: 14px;">Last 20 transactions</p>
+                    <button class="btn" id="undoLastPaymentBtn" onclick="undoLastPayment()" style="background: linear-gradient(135deg, #e74c3c 0%, #c0392b 100%); color: white; padding: 8px 16px; font-size: 14px; display: none;">
+                        ↶ Undo Last Payment
+                    </button>
+                </div>
+                <div id="transactionHistoryList" style="max-height: 400px; overflow-y: auto;">
+                    <p style="color: #95a5a6; text-align: center; padding: 20px;">No transactions yet.</p>
+                </div>
+            </div>
         </div>
 
         <!-- CLIENTS TAB -->
@@ -963,7 +977,7 @@
 
     <script>
         // App Version
-        const APP_VERSION = '1.3.1'; // Update this when making changes
+        const APP_VERSION = '1.3.2'; // Update this when making changes
         
         // App State Management
         const AppState = {
@@ -974,6 +988,7 @@
             profitGoal: 500000, // Business profit goal
             clients: [],
             loans: [],
+            transactionHistory: [], // Track all changes
             nextAccountNumber: 2025001,
             
             init() {
@@ -992,6 +1007,7 @@
                     this.profitGoal = data.profitGoal || 500000;
                     this.clients = data.clients || [];
                     this.loans = data.loans || [];
+                    this.transactionHistory = data.transactionHistory || [];
                     this.nextAccountNumber = data.nextAccountNumber || 2025001;
                 }
             },
@@ -1005,8 +1021,29 @@
                     profitGoal: this.profitGoal,
                     clients: this.clients,
                     loans: this.loans,
+                    transactionHistory: this.transactionHistory,
                     nextAccountNumber: this.nextAccountNumber
                 }));
+            },
+            
+            // Add transaction to history (keeps last 20)
+            logTransaction(type, description, details = {}) {
+                const transaction = {
+                    id: Date.now(),
+                    timestamp: new Date().toISOString(),
+                    type: type, // 'payment', 'loan_created', 'client_status', 'system'
+                    description: description,
+                    details: details
+                };
+                
+                this.transactionHistory.unshift(transaction); // Add to beginning
+                
+                // Keep only last 20 transactions
+                if (this.transactionHistory.length > 20) {
+                    this.transactionHistory = this.transactionHistory.slice(0, 20);
+                }
+                
+                this.save();
             },
             
             addClient(client) {
@@ -1068,6 +1105,74 @@
                 this.checkRedFlags();
                 this.updateClientsList();
                 this.updateLoansList();
+                this.updateTransactionHistory();
+            },
+            
+            updateTransactionHistory() {
+                const container = document.getElementById('transactionHistoryList');
+                const undoBtn = document.getElementById('undoLastPaymentBtn');
+                
+                if (this.transactionHistory.length === 0) {
+                    container.innerHTML = '<p style="color: #95a5a6; text-align: center; padding: 20px;">No transactions yet.</p>';
+                    undoBtn.style.display = 'none';
+                    return;
+                }
+                
+                // Show undo button if last transaction was a payment
+                const lastTransaction = this.transactionHistory[0];
+                if (lastTransaction && lastTransaction.type === 'payment') {
+                    undoBtn.style.display = 'inline-block';
+                } else {
+                    undoBtn.style.display = 'none';
+                }
+                
+                let html = '';
+                this.transactionHistory.forEach(tx => {
+                    const date = new Date(tx.timestamp);
+                    const timeStr = date.toLocaleString('en-ZA', { 
+                        day: '2-digit', 
+                        month: 'short', 
+                        year: 'numeric', 
+                        hour: '2-digit', 
+                        minute: '2-digit' 
+                    });
+                    
+                    let icon = '📝';
+                    let color = '#3498db';
+                    
+                    switch(tx.type) {
+                        case 'payment':
+                            icon = '💰';
+                            color = '#27ae60';
+                            break;
+                        case 'loan_created':
+                            icon = '📋';
+                            color = '#f39c12';
+                            break;
+                        case 'client_status':
+                            icon = '⚠️';
+                            color = '#e74c3c';
+                            break;
+                        case 'system':
+                            icon = '⚙️';
+                            color = '#95a5a6';
+                            break;
+                    }
+                    
+                    html += `
+                        <div style="border-bottom: 1px solid #ecf0f1; padding: 12px 0;">
+                            <div style="display: flex; align-items: start; gap: 12px;">
+                                <div style="font-size: 24px;">${icon}</div>
+                                <div style="flex: 1;">
+                                    <div style="font-weight: 500; color: #2c3e50; margin-bottom: 4px;">${tx.description}</div>
+                                    <div style="font-size: 12px; color: #7f8c8d;">${timeStr}</div>
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                });
+                
+                container.innerHTML = html;
             },
             
             validateAndFixData() {
@@ -1977,9 +2082,15 @@
 
         function clearAllData() {
             if (confirm('⚠️ This will permanently delete ALL data. Are you sure?')) {
-                localStorage.removeItem('tbfsAppState');
-                AppState.init();
-                alert('🗑️ All data cleared successfully.');
+                // Auto-backup before clearing
+                console.log('🔒 Auto-backup before clearing all data...');
+                backupData();
+                
+                setTimeout(() => {
+                    localStorage.removeItem('tbfsAppState');
+                    AppState.init();
+                    alert('🗑️ All data cleared successfully.\n\n💾 A backup was automatically saved before clearing.');
+                }, 500); // Small delay to ensure backup completes
             }
         }
 
@@ -2053,6 +2164,17 @@
             AppState.capital -= loan.principal_amount;
             AppState.deployed += loan.principal_amount;
             
+            // Log loan creation
+            AppState.logTransaction('loan_created', `New loan #${loan.loan_id} created for ${loanData.firstName} ${loanData.lastName}`, {
+                loanId: loan.loan_id,
+                clientName: `${loanData.firstName} ${loanData.lastName}`,
+                accountNumber: loanData.accountNumber,
+                principal: loanData.principal,
+                term: loanData.term,
+                totalCost: loanData.totalCost,
+                monthlyPayment: loanData.monthlyPayment
+            });
+            
             AppState.save();
             AppState.updateDashboard();
 
@@ -2071,6 +2193,12 @@
                 return;
             }
 
+            // Auto-backup before risky operations
+            if (newStatus === 'defaulted' || newStatus === 'blacklisted') {
+                console.log('🔒 Auto-backup before risky operation...');
+                backupData();
+            }
+
             const oldStatus = client.status;
             client.status = newStatus;
 
@@ -2082,6 +2210,14 @@
                     AppState.deployed -= loan.principal_amount;
                 });
             }
+
+            // Log status change
+            AppState.logTransaction('client_status', `Client ${client.first_name} ${client.last_name} status: ${oldStatus.toUpperCase()} → ${newStatus.toUpperCase()}`, {
+                accountNumber: accountNumber,
+                clientName: `${client.first_name} ${client.last_name}`,
+                previousStatus: oldStatus,
+                newStatus: newStatus
+            });
 
             // Save changes
             AppState.save();
@@ -2121,16 +2257,42 @@
             const paidAmount = parseFloat(paymentAmount);
             const principalPayment = loan.principal_amount / loan.term_months; // Monthly principal payment
             
-            // Calculate interest and admin fee breakdown
-            // Total payment = Principal + Interest + Admin Fee
-            // We need to split the non-principal amount between interest and admin fee
-            const totalCostPerMonth = loan.total_cost / loan.term_months;
-            const nonPrincipalAmount = totalCostPerMonth - principalPayment;
+            // Find client to determine type
+            const client = AppState.clients.find(c => c.account_number === loan.account_number);
+            const isStockvel = client && client.client_type === 'stockvel';
             
-            // Admin fee is fixed per month (60 for standard, variable for stockvel)
-            // We'll calculate it based on the ratio
-            const adminFeePerMonth = (loan.total_cost - loan.principal_amount) * 0.15; // Approximate 15% of total cost is admin fees
-            const interestPerMonth = nonPrincipalAmount - adminFeePerMonth;
+            // Calculate actual admin fee per month
+            let adminFeePerMonth = 60; // Default for standard clients
+            if (isStockvel) {
+                // Stockvel admin fee calculation
+                const totalContributions = client.total_contributions || 0;
+                if (totalContributions >= 20000) {
+                    adminFeePerMonth = 45;
+                } else if (totalContributions >= 10000) {
+                    adminFeePerMonth = 50;
+                } else {
+                    adminFeePerMonth = 60;
+                }
+            }
+            
+            // Calculate initiation fee (to derive interest)
+            let totalInitiationFee;
+            if (isStockvel) {
+                const totalContributions = client.total_contributions || 0;
+                if (loan.principal_amount <= totalContributions) {
+                    totalInitiationFee = 0;
+                } else {
+                    totalInitiationFee = (loan.principal_amount - totalContributions) * 0.12;
+                }
+            } else {
+                totalInitiationFee = loan.principal_amount * 0.12;
+            }
+            
+            // Calculate interest per month by working backwards
+            // Total Cost = Principal + Total Interest + (Admin Fee × Term) + Initiation Fee
+            // Total Interest = Total Cost - Principal - (Admin Fee × Term) - Initiation Fee
+            const totalInterest = loan.total_cost - loan.principal_amount - (adminFeePerMonth * loan.term_months) - totalInitiationFee;
+            const interestPerMonth = totalInterest / loan.term_months;
             
             // Update current balance
             loan.current_balance -= paidAmount;
@@ -2152,7 +2314,6 @@
             }
 
             // Update client's total repayment amount
-            const client = AppState.clients.find(c => c.account_number === loan.account_number);
             if (client) {
                 // Initialize total_repayment if not exists
                 if (!client.total_repayment) {
@@ -2161,6 +2322,22 @@
                 client.total_repayment += paidAmount;
             }
 
+            // Log transaction for undo capability
+            AppState.logTransaction('payment', `Payment of R${paidAmount.toFixed(2)} from ${loan.client_name} (Loan #${loanId})`, {
+                loanId: loanId,
+                amount: paidAmount,
+                principalPayment: principalPayment,
+                interestPayment: interestPerMonth,
+                adminFee: adminFeePerMonth,
+                previousBalance: loan.current_balance + paidAmount,
+                newBalance: loan.current_balance,
+                previousCapital: AppState.capital - paidAmount,
+                previousDeployed: AppState.deployed + principalPayment,
+                previousInterestEarned: AppState.totalInterestEarned - interestPerMonth,
+                previousFeesEarned: AppState.totalFeesEarned - adminFeePerMonth,
+                previousClientRepayment: client ? (client.total_repayment - paidAmount) : 0
+            });
+            
             // Save changes
             AppState.save();
             AppState.updateDashboard();
@@ -2172,10 +2349,68 @@
             if (loan.current_balance <= 0) {
                 loan.current_balance = 0; // Ensure balance is exactly 0
                 loan.status = 'completed';
+                AppState.logTransaction('system', `Loan #${loanId} (${loan.client_name}) marked as COMPLETED`, {
+                    loanId: loanId,
+                    clientName: loan.client_name
+                });
                 AppState.save();
                 AppState.updateDashboard();
                 alert('🎉 Loan fully paid! Status changed to completed.');
             }
+        }
+
+        // Undo Last Payment
+        function undoLastPayment() {
+            const lastTransaction = AppState.transactionHistory[0];
+            
+            if (!lastTransaction || lastTransaction.type !== 'payment') {
+                alert('❌ No payment to undo');
+                return;
+            }
+            
+            if (!confirm(`Are you sure you want to undo the last payment?\n\n${lastTransaction.description}\n\nThis will reverse all changes made by this payment.`)) {
+                return;
+            }
+            
+            const details = lastTransaction.details;
+            const loan = AppState.loans.find(l => l.loan_id === details.loanId);
+            
+            if (!loan) {
+                alert('❌ Cannot find loan for this payment');
+                return;
+            }
+            
+            const client = AppState.clients.find(c => c.account_number === loan.account_number);
+            
+            // Reverse all changes
+            loan.current_balance = details.previousBalance;
+            AppState.capital = details.previousCapital;
+            AppState.deployed = details.previousDeployed;
+            AppState.totalInterestEarned = details.previousInterestEarned;
+            AppState.totalFeesEarned = details.previousFeesEarned;
+            
+            if (client) {
+                client.total_repayment = details.previousClientRepayment;
+            }
+            
+            // If loan was completed, reactivate it
+            if (loan.status === 'completed' && loan.current_balance > 0) {
+                loan.status = 'active';
+            }
+            
+            // Remove the payment transaction from history
+            AppState.transactionHistory.shift();
+            
+            // Log the undo action
+            AppState.logTransaction('system', `UNDONE: ${lastTransaction.description}`, {
+                originalTransactionId: lastTransaction.id,
+                amountReversed: details.amount
+            });
+            
+            AppState.save();
+            AppState.updateDashboard();
+            
+            alert(`✅ Payment undone successfully!\n\nReversed: R${details.amount.toFixed(2)}\nLoan #${details.loanId} balance restored to: R${details.previousBalance.toFixed(2)}`);
         }
 
         // Loan Status Management
@@ -2503,6 +2738,7 @@
                     profitGoal: AppState.profitGoal,
                     clients: AppState.clients,
                     loans: AppState.loans,
+                    transactionHistory: AppState.transactionHistory,
                     nextAccountNumber: AppState.nextAccountNumber,
                     timestamp: new Date().toISOString()
                 };
