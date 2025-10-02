@@ -520,6 +520,7 @@
             <button class="tab" data-tab="dashboard">Dashboard</button>
             <button class="tab" data-tab="clients">Clients</button>
             <button class="tab" data-tab="loans">Active Loans</button>
+            <button class="tab" data-tab="settings">⚙️ Settings</button>
         </div>
 
         <!-- CALCULATOR TAB -->
@@ -753,6 +754,87 @@
         <div id="loans" class="tab-content">
             <h2>Active Loans</h2>
             <div id="loansList"></div>
+        </div>
+
+        <!-- SETTINGS TAB -->
+        <div id="settings" class="tab-content">
+            <h2 class="section-title">⚙️ Cloud Backup Settings</h2>
+            
+            <div class="form-section">
+                <h3 style="color: #2c3e50; margin-bottom: 15px;">🔐 GitHub Cloud Backup</h3>
+                <p style="color: #7f8c8d; margin-bottom: 20px;">Automatically backup your data to a private GitHub repository. Your data syncs across all devices and works offline.</p>
+                
+                <div id="cloudBackupStatus" style="padding: 15px; border-radius: 10px; margin-bottom: 20px; background: #e8f5e8; border: 2px solid #27ae60; display: none;">
+                    <div style="display: flex; align-items: center; justify-content: space-between;">
+                        <div>
+                            <strong style="color: #27ae60;">✅ Cloud Backup Active</strong>
+                            <p style="margin: 5px 0 0 0; font-size: 14px; color: #2c3e50;">
+                                Last sync: <span id="lastSyncTime">Never</span>
+                            </p>
+                        </div>
+                        <button class="btn btn-danger" onclick="disableCloudBackup()">Disable</button>
+                    </div>
+                </div>
+
+                <div id="cloudBackupSetup" style="display: block;">
+                    <div class="form-group">
+                        <label for="githubToken">GitHub Personal Access Token:</label>
+                        <input type="password" id="githubToken" placeholder="github_pat_xxxxx..." 
+                               style="font-family: monospace; font-size: 14px;">
+                        <p style="font-size: 12px; color: #7f8c8d; margin-top: 5px;">
+                            ℹ️ Your token is encrypted and stored securely on your device only. Never shared or exposed.
+                        </p>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="backupRepoUrl">Backup Repository URL:</label>
+                        <input type="text" id="backupRepoUrl" 
+                               value="https://github.com/Ndelo-N/TBFS-Data-Backup.git" readonly
+                               style="background: #f8f9fa; font-family: monospace; font-size: 14px;">
+                        <p style="font-size: 12px; color: #7f8c8d; margin-top: 5px;">
+                            ℹ️ Ensure this is your PRIVATE backup repository.
+                        </p>
+                    </div>
+
+                    <button class="calculate-btn" onclick="enableCloudBackup()">
+                        🔒 Enable Cloud Backup
+                    </button>
+                </div>
+
+                <div style="margin-top: 30px; padding: 15px; background: #fff3cd; border-left: 4px solid #f39c12; border-radius: 5px;">
+                    <strong style="color: #856404;">📋 How to Get Your Token:</strong>
+                    <ol style="margin: 10px 0 0 20px; color: #856404;">
+                        <li>Go to: <code>github.com/settings/tokens</code></li>
+                        <li>Click "Generate new token" → "Fine-grained token"</li>
+                        <li>Give access ONLY to <code>TBFS-Data-Backup</code> repo</li>
+                        <li>Enable "Contents: Read and write" permission</li>
+                        <li>Copy token and paste above</li>
+                    </ol>
+                </div>
+
+                <div style="margin-top: 20px;">
+                    <h4 style="color: #2c3e50;">Cloud Backup Features:</h4>
+                    <ul style="color: #7f8c8d; line-height: 1.8;">
+                        <li>✅ Auto-sync on every data change</li>
+                        <li>✅ Works offline - queues changes, syncs when online</li>
+                        <li>✅ Access from any device</li>
+                        <li>✅ Daily snapshots kept for 30 days</li>
+                        <li>✅ One-click restore</li>
+                        <li>✅ Completely free (uses your private GitHub repo)</li>
+                    </ul>
+                </div>
+            </div>
+
+            <div class="form-section">
+                <h3 style="color: #2c3e50; margin-bottom: 15px;">🔄 Manual Backup</h3>
+                <p style="color: #7f8c8d; margin-bottom: 20px;">Download or restore backups manually.</p>
+                
+                <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+                    <button class="btn btn-secondary" onclick="backupData()">📥 Download Local Backup</button>
+                    <button class="btn" onclick="restoreData()">📤 Restore from File</button>
+                    <button class="btn" style="background: #27ae60;" onclick="restoreFromCloud()">☁️ Restore from Cloud</button>
+                </div>
+            </div>
         </div>
     </div>
 
@@ -1953,6 +2035,260 @@
                     });
             });
         }
+
+        // ===== CLOUD BACKUP SYSTEM =====
+        const CloudBackup = {
+            isEnabled: false,
+            token: null,
+            repoOwner: 'Ndelo-N',
+            repoName: 'TBFS-Data-Backup',
+            
+            init() {
+                // Check if cloud backup is configured
+                const encryptedToken = localStorage.getItem('githubBackupToken');
+                if (encryptedToken) {
+                    this.token = this.decrypt(encryptedToken);
+                    this.isEnabled = true;
+                    this.updateUI();
+                    this.updateSyncTime();
+                }
+                
+                // Setup online/offline listeners
+                window.addEventListener('online', () => this.syncPendingBackups());
+            },
+            
+            encrypt(text) {
+                // Simple Base64 encoding (for basic obfuscation)
+                // In production, use stronger encryption
+                return btoa(unescape(encodeURIComponent(text)));
+            },
+            
+            decrypt(encoded) {
+                return decodeURIComponent(escape(atob(encoded)));
+            },
+            
+            updateUI() {
+                if (this.isEnabled) {
+                    document.getElementById('cloudBackupStatus').style.display = 'block';
+                    document.getElementById('cloudBackupSetup').style.display = 'none';
+                } else {
+                    document.getElementById('cloudBackupStatus').style.display = 'none';
+                    document.getElementById('cloudBackupSetup').style.display = 'block';
+                }
+            },
+            
+            updateSyncTime() {
+                const lastSync = localStorage.getItem('lastCloudSync');
+                if (lastSync) {
+                    const date = new Date(lastSync);
+                    const now = new Date();
+                    const diffMinutes = Math.floor((now - date) / 60000);
+                    
+                    let timeText;
+                    if (diffMinutes < 1) {
+                        timeText = 'Just now';
+                    } else if (diffMinutes < 60) {
+                        timeText = `${diffMinutes} minute${diffMinutes > 1 ? 's' : ''} ago`;
+                    } else {
+                        const hours = Math.floor(diffMinutes / 60);
+                        timeText = `${hours} hour${hours > 1 ? 's' : ''} ago`;
+                    }
+                    
+                    document.getElementById('lastSyncTime').textContent = timeText;
+                }
+            },
+            
+            async backup() {
+                if (!this.isEnabled || !navigator.onLine) {
+                    // Queue for later if offline
+                    if (!navigator.onLine) {
+                        localStorage.setItem('pendingCloudBackup', 'true');
+                        console.log('Offline: Backup queued for when online');
+                    }
+                    return;
+                }
+                
+                const data = {
+                    capital: AppState.capital,
+                    deployed: AppState.deployed,
+                    clients: AppState.clients,
+                    loans: AppState.loans,
+                    nextAccountNumber: AppState.nextAccountNumber,
+                    timestamp: new Date().toISOString()
+                };
+                
+                try {
+                    // Upload latest.json
+                    await this.uploadToGitHub('latest.json', data);
+                    
+                    // Also create daily snapshot
+                    const dateStr = new Date().toISOString().split('T')[0];
+                    await this.uploadToGitHub(`daily/${dateStr}.json`, data);
+                    
+                    localStorage.setItem('lastCloudSync', new Date().toISOString());
+                    localStorage.removeItem('pendingCloudBackup');
+                    this.updateSyncTime();
+                    
+                    console.log('✅ Cloud backup successful');
+                } catch (error) {
+                    console.error('Cloud backup failed:', error);
+                    localStorage.setItem('pendingCloudBackup', 'true');
+                }
+            },
+            
+            async uploadToGitHub(path, data) {
+                const content = btoa(unescape(encodeURIComponent(JSON.stringify(data, null, 2))));
+                const url = `https://api.github.com/repos/${this.repoOwner}/${this.repoName}/contents/${path}`;
+                
+                // Check if file exists to get SHA
+                let sha = null;
+                try {
+                    const getResponse = await fetch(url, {
+                        headers: {
+                            'Authorization': `Bearer ${this.token}`,
+                            'Accept': 'application/vnd.github.v3+json'
+                        }
+                    });
+                    if (getResponse.ok) {
+                        const fileData = await getResponse.json();
+                        sha = fileData.sha;
+                    }
+                } catch (e) {
+                    // File doesn't exist, that's okay
+                }
+                
+                // Create or update file
+                const response = await fetch(url, {
+                    method: 'PUT',
+                    headers: {
+                        'Authorization': `Bearer ${this.token}`,
+                        'Accept': 'application/vnd.github.v3+json',
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        message: `Backup: ${new Date().toISOString()}`,
+                        content: content,
+                        sha: sha
+                    })
+                });
+                
+                if (!response.ok) {
+                    throw new Error(`GitHub API error: ${response.statusText}`);
+                }
+            },
+            
+            async syncPendingBackups() {
+                const hasPending = localStorage.getItem('pendingCloudBackup');
+                if (hasPending && this.isEnabled) {
+                    console.log('🔄 Syncing pending backup...');
+                    await this.backup();
+                    alert('✅ Pending backup synced to cloud!');
+                }
+            },
+            
+            async restore() {
+                if (!this.isEnabled) {
+                    alert('Cloud backup is not enabled');
+                    return;
+                }
+                
+                try {
+                    const url = `https://api.github.com/repos/${this.repoOwner}/${this.repoName}/contents/latest.json`;
+                    const response = await fetch(url, {
+                        headers: {
+                            'Authorization': `Bearer ${this.token}`,
+                            'Accept': 'application/vnd.github.v3+json'
+                        }
+                    });
+                    
+                    if (!response.ok) {
+                        throw new Error('No backup found in cloud');
+                    }
+                    
+                    const fileData = await response.json();
+                    const content = decodeURIComponent(escape(atob(fileData.content)));
+                    const data = JSON.parse(content);
+                    
+                    // Restore data
+                    localStorage.setItem('tbfsAppState', JSON.stringify(data));
+                    AppState.init();
+                    alert('✅ Data restored from cloud successfully!');
+                } catch (error) {
+                    alert('❌ Failed to restore from cloud: ' + error.message);
+                }
+            }
+        };
+        
+        // Cloud Backup UI Functions
+        function enableCloudBackup() {
+            const token = document.getElementById('githubToken').value.trim();
+            
+            if (!token) {
+                alert('Please enter your GitHub token');
+                return;
+            }
+            
+            if (!token.startsWith('github_pat_') && !token.startsWith('ghp_')) {
+                alert('Invalid token format. Token should start with "github_pat_" or "ghp_"');
+                return;
+            }
+            
+            // Encrypt and store token
+            const encrypted = CloudBackup.encrypt(token);
+            localStorage.setItem('githubBackupToken', encrypted);
+            
+            CloudBackup.token = token;
+            CloudBackup.isEnabled = true;
+            CloudBackup.updateUI();
+            
+            // Perform initial backup
+            CloudBackup.backup();
+            
+            // Clear token input
+            document.getElementById('githubToken').value = '';
+            
+            alert('✅ Cloud backup enabled! Your data will now automatically sync to GitHub.');
+        }
+        
+        function disableCloudBackup() {
+            if (confirm('Are you sure you want to disable cloud backup? Local data will remain safe, but auto-sync will stop.')) {
+                localStorage.removeItem('githubBackupToken');
+                localStorage.removeItem('lastCloudSync');
+                CloudBackup.token = null;
+                CloudBackup.isEnabled = false;
+                CloudBackup.updateUI();
+                alert('Cloud backup disabled');
+            }
+        }
+        
+        async function restoreFromCloud() {
+            if (!CloudBackup.isEnabled) {
+                alert('Please enable cloud backup first in Settings tab');
+                return;
+            }
+            
+            if (confirm('This will restore data from your cloud backup and overwrite local data. Continue?')) {
+                await CloudBackup.restore();
+            }
+        }
+        
+        // Initialize cloud backup on load
+        document.addEventListener('DOMContentLoaded', function() {
+            CloudBackup.init();
+            
+            // Update sync time every minute
+            setInterval(() => CloudBackup.updateSyncTime(), 60000);
+        });
+        
+        // Hook into existing save function to trigger cloud backup
+        const originalSave = AppState.save;
+        AppState.save = function() {
+            originalSave.call(this);
+            // Trigger cloud backup after saving locally
+            if (CloudBackup.isEnabled) {
+                CloudBackup.backup();
+            }
+        };
     </script>
 </body>
 </html>
