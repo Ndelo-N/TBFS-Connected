@@ -764,15 +764,34 @@
                 <h3 style="color: #2c3e50; margin-bottom: 15px;">🔐 GitHub Cloud Backup</h3>
                 <p style="color: #7f8c8d; margin-bottom: 20px;">Automatically backup your data to a private GitHub repository. Your data syncs across all devices and works offline.</p>
                 
-                <div id="cloudBackupStatus" style="padding: 15px; border-radius: 10px; margin-bottom: 20px; background: #e8f5e8; border: 2px solid #27ae60; display: none;">
-                    <div style="display: flex; align-items: center; justify-content: space-between;">
-                        <div>
-                            <strong style="color: #27ae60;">✅ Cloud Backup Active</strong>
-                            <p style="margin: 5px 0 0 0; font-size: 14px; color: #2c3e50;">
-                                Last sync: <span id="lastSyncTime">Never</span>
-                            </p>
+                <div id="tokenConfigured" style="display: none;">
+                    <div style="padding: 15px; border-radius: 10px; margin-bottom: 20px; background: #f0f4ff; border: 2px solid #667eea;">
+                        <div style="display: flex; align-items: center; justify-content: space-between;">
+                            <div>
+                                <strong style="color: #667eea;">🔐 GitHub Token Configured</strong>
+                                <p style="margin: 5px 0 0 0; font-size: 14px; color: #2c3e50;">
+                                    You can now restore from cloud
+                                </p>
+                            </div>
+                            <button class="btn btn-danger" onclick="removeToken()">Remove Token</button>
                         </div>
-                        <button class="btn btn-danger" onclick="disableCloudBackup()">Disable</button>
+                    </div>
+                    
+                    <div class="checkbox-container" style="margin-bottom: 20px;">
+                        <input type="checkbox" id="autoBackupToggle" onchange="toggleAutoBackup()">
+                        <label for="autoBackupToggle" style="cursor: pointer;">
+                            <strong>Enable Auto-Backup on This Device</strong>
+                            <div style="font-size: 12px; color: #7f8c8d; margin-top: 5px;">
+                                When enabled, every change automatically syncs to cloud. Leave OFF if this is a secondary device.
+                            </div>
+                        </label>
+                    </div>
+                    
+                    <div id="autoBackupStatus" style="padding: 15px; border-radius: 10px; margin-bottom: 20px; background: #e8f5e8; border: 2px solid #27ae60; display: none;">
+                        <strong style="color: #27ae60;">✅ Auto-Backup Active</strong>
+                        <p style="margin: 5px 0 0 0; font-size: 14px; color: #2c3e50;">
+                            Last sync: <span id="lastSyncTime">Never</span>
+                        </p>
                     </div>
                 </div>
 
@@ -796,8 +815,8 @@
                         </p>
                     </div>
 
-                    <button class="calculate-btn" onclick="enableCloudBackup()">
-                        🔒 Enable Cloud Backup
+                    <button class="calculate-btn" onclick="saveToken()">
+                        🔐 Save Token & Configure
                     </button>
                 </div>
 
@@ -2038,23 +2057,34 @@
 
         // ===== CLOUD BACKUP SYSTEM =====
         const CloudBackup = {
-            isEnabled: false,
+            autoBackupEnabled: false,
             token: null,
             repoOwner: 'Ndelo-N',
             repoName: 'TBFS-Data-Backup',
             
             init() {
-                // Check if cloud backup is configured
+                // Check if token is configured
                 const encryptedToken = localStorage.getItem('githubBackupToken');
                 if (encryptedToken) {
                     this.token = this.decrypt(encryptedToken);
-                    this.isEnabled = true;
-                    this.updateUI();
+                }
+                
+                // Check if auto-backup is enabled
+                const autoBackupSetting = localStorage.getItem('autoBackupEnabled');
+                this.autoBackupEnabled = (autoBackupSetting === 'true');
+                
+                this.updateUI();
+                
+                if (this.autoBackupEnabled) {
                     this.updateSyncTime();
                 }
                 
                 // Setup online/offline listeners
                 window.addEventListener('online', () => this.syncPendingBackups());
+            },
+            
+            hasToken() {
+                return this.token !== null && this.token.length > 0;
             },
             
             encrypt(text) {
@@ -2068,11 +2098,24 @@
             },
             
             updateUI() {
-                if (this.isEnabled) {
-                    document.getElementById('cloudBackupStatus').style.display = 'block';
+                if (this.hasToken()) {
+                    document.getElementById('tokenConfigured').style.display = 'block';
                     document.getElementById('cloudBackupSetup').style.display = 'none';
+                    
+                    // Update toggle checkbox
+                    const toggle = document.getElementById('autoBackupToggle');
+                    if (toggle) {
+                        toggle.checked = this.autoBackupEnabled;
+                    }
+                    
+                    // Show/hide auto-backup status
+                    if (this.autoBackupEnabled) {
+                        document.getElementById('autoBackupStatus').style.display = 'block';
+                    } else {
+                        document.getElementById('autoBackupStatus').style.display = 'none';
+                    }
                 } else {
-                    document.getElementById('cloudBackupStatus').style.display = 'none';
+                    document.getElementById('tokenConfigured').style.display = 'none';
                     document.getElementById('cloudBackupSetup').style.display = 'block';
                 }
             },
@@ -2099,12 +2142,14 @@
             },
             
             async backup() {
-                if (!this.isEnabled || !navigator.onLine) {
+                if (!this.autoBackupEnabled || !this.hasToken()) {
+                    return; // Auto-backup not enabled, skip
+                }
+                
+                if (!navigator.onLine) {
                     // Queue for later if offline
-                    if (!navigator.onLine) {
-                        localStorage.setItem('pendingCloudBackup', 'true');
-                        console.log('Offline: Backup queued for when online');
-                    }
+                    localStorage.setItem('pendingCloudBackup', 'true');
+                    console.log('Offline: Backup queued for when online');
                     return;
                 }
                 
@@ -2179,7 +2224,7 @@
             
             async syncPendingBackups() {
                 const hasPending = localStorage.getItem('pendingCloudBackup');
-                if (hasPending && this.isEnabled) {
+                if (hasPending && this.autoBackupEnabled && this.hasToken()) {
                     console.log('🔄 Syncing pending backup...');
                     await this.backup();
                     alert('✅ Pending backup synced to cloud!');
@@ -2187,8 +2232,8 @@
             },
             
             async restore() {
-                if (!this.isEnabled) {
-                    alert('Cloud backup is not enabled');
+                if (!this.hasToken()) {
+                    alert('Please configure your GitHub token first in Settings');
                     return;
                 }
                 
@@ -2220,7 +2265,7 @@
         };
         
         // Cloud Backup UI Functions
-        function enableCloudBackup() {
+        function saveToken() {
             const token = document.getElementById('githubToken').value.trim();
             
             if (!token) {
@@ -2238,32 +2283,56 @@
             localStorage.setItem('githubBackupToken', encrypted);
             
             CloudBackup.token = token;
-            CloudBackup.isEnabled = true;
             CloudBackup.updateUI();
-            
-            // Perform initial backup
-            CloudBackup.backup();
             
             // Clear token input
             document.getElementById('githubToken').value = '';
             
-            alert('✅ Cloud backup enabled! Your data will now automatically sync to GitHub.');
+            alert('✅ Token saved! You can now restore from cloud.\n\n💡 Tip: Check the "Enable Auto-Backup" box if you want this device to automatically sync changes to cloud.');
         }
         
-        function disableCloudBackup() {
-            if (confirm('Are you sure you want to disable cloud backup? Local data will remain safe, but auto-sync will stop.')) {
+        function removeToken() {
+            if (confirm('Remove GitHub token? You won\'t be able to backup or restore from cloud until you add it again.')) {
                 localStorage.removeItem('githubBackupToken');
+                localStorage.removeItem('autoBackupEnabled');
                 localStorage.removeItem('lastCloudSync');
                 CloudBackup.token = null;
-                CloudBackup.isEnabled = false;
+                CloudBackup.autoBackupEnabled = false;
                 CloudBackup.updateUI();
-                alert('Cloud backup disabled');
+                alert('Token removed');
+            }
+        }
+        
+        function toggleAutoBackup() {
+            const isChecked = document.getElementById('autoBackupToggle').checked;
+            
+            if (isChecked) {
+                // Enabling auto-backup
+                CloudBackup.autoBackupEnabled = true;
+                localStorage.setItem('autoBackupEnabled', 'true');
+                CloudBackup.updateUI();
+                
+                // Perform initial backup
+                CloudBackup.backup();
+                
+                alert('✅ Auto-backup enabled! Every change will now sync to cloud automatically.');
+            } else {
+                // Disabling auto-backup
+                if (confirm('Disable auto-backup on this device? You can still restore from cloud anytime.')) {
+                    CloudBackup.autoBackupEnabled = false;
+                    localStorage.setItem('autoBackupEnabled', 'false');
+                    CloudBackup.updateUI();
+                    alert('Auto-backup disabled. You can still restore from cloud anytime.');
+                } else {
+                    // User cancelled, re-check the box
+                    document.getElementById('autoBackupToggle').checked = true;
+                }
             }
         }
         
         async function restoreFromCloud() {
-            if (!CloudBackup.isEnabled) {
-                alert('Please enable cloud backup first in Settings tab');
+            if (!CloudBackup.hasToken()) {
+                alert('Please configure your GitHub token first in Settings tab');
                 return;
             }
             
@@ -2284,8 +2353,8 @@
         const originalSave = AppState.save;
         AppState.save = function() {
             originalSave.call(this);
-            // Trigger cloud backup after saving locally
-            if (CloudBackup.isEnabled) {
+            // Trigger cloud backup after saving locally (only if auto-backup enabled)
+            if (CloudBackup.autoBackupEnabled && CloudBackup.hasToken()) {
                 CloudBackup.backup();
             }
         };
