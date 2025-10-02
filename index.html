@@ -977,7 +977,7 @@
 
     <script>
         // App Version
-        const APP_VERSION = '1.3.3'; // Update this when making changes
+        const APP_VERSION = '1.4.0'; // Update this when making changes
         
         // App State Management
         const AppState = {
@@ -2137,16 +2137,22 @@
                 AppState.clients.push(client);
             }
 
-            // Create loan record
+            // Create loan record with payment flexibility tracking
             const loan = {
                 loan_id: AppState.loans.length + 1,
                 client_name: `${loanData.firstName} ${loanData.lastName}`,
                 account_number: loanData.accountNumber,
                 principal_amount: loanData.principal,
+                original_principal: loanData.principal, // Track original for interest cap
+                remaining_principal: loanData.principal, // Track remaining principal
                 term_months: loanData.term,
                 monthly_payment: loanData.monthlyPayment,
                 total_cost: loanData.totalCost,
-                current_balance: loanData.totalCost, // Initialize current balance to total cost
+                current_balance: loanData.totalCost,
+                total_initiation_fee: loanData.initiationFee, // Total initiation fee
+                initiation_fee_paid: 0, // Track how much initiation fee has been paid
+                max_interest_allowed: loanData.totalInterest, // Interest cap (3-month calculation)
+                total_interest_charged: 0, // Track total interest charged so far
                 status: 'active',
                 created_at: new Date().toISOString()
             };
@@ -2243,8 +2249,12 @@
                 return;
             }
 
+            // Calculate payoff amount (for early payoff option)
+            const remainingInitiationFee = (loan.total_initiation_fee || 0) - (loan.initiation_fee_paid || 0);
+            const payoffAmount = (loan.remaining_principal || loan.principal_amount) + remainingInitiationFee;
+
             // Get payment amount from user
-            const paymentAmount = prompt(`Enter payment amount for Loan #${loanId}:\n\nCurrent Balance: R${loan.current_balance.toFixed(2)}\nMonthly Payment: R${loan.monthly_payment.toFixed(2)}`);
+            const paymentAmount = prompt(`💰 Enter payment amount for Loan #${loanId}:\n\n📊 Current Status:\n• Remaining Balance: R${loan.current_balance.toFixed(2)}\n• Expected Monthly Payment: R${loan.monthly_payment.toFixed(2)}\n• Remaining Principal: R${(loan.remaining_principal || loan.principal_amount).toFixed(2)}\n\n💡 Full Payoff Amount: R${payoffAmount.toFixed(2)}\n   (Principal + Remaining Initiation Fee)`);
             
             if (!paymentAmount || isNaN(paymentAmount) || parseFloat(paymentAmount) <= 0) {
                 alert('Invalid payment amount');
@@ -2252,113 +2262,133 @@
             }
 
             const paidAmount = parseFloat(paymentAmount);
-            const principalPayment = loan.principal_amount / loan.term_months; // Monthly principal payment
             
             // Find client to determine type
             const client = AppState.clients.find(c => c.account_number === loan.account_number);
             const isStockvel = client && client.client_type === 'stockvel';
             
-            // Calculate actual admin fee per month
-            let adminFeePerMonth = 60; // Default for standard clients
-            if (isStockvel) {
-                // Stockvel admin fee calculation
-                const totalContributions = client.total_contributions || 0;
-                if (totalContributions >= 20000) {
-                    adminFeePerMonth = 45;
-                } else if (totalContributions >= 10000) {
-                    adminFeePerMonth = 50;
-                } else {
-                    adminFeePerMonth = 60;
-                }
-            }
+            // Initialize loan fields if they don't exist (for older loans)
+            if (!loan.remaining_principal) loan.remaining_principal = loan.principal_amount;
+            if (!loan.original_principal) loan.original_principal = loan.principal_amount;
+            if (!loan.total_initiation_fee) loan.total_initiation_fee = loan.principal_amount * 0.12;
+            if (!loan.initiation_fee_paid) loan.initiation_fee_paid = 0;
+            if (!loan.max_interest_allowed) loan.max_interest_allowed = loan.principal_amount * 1.8; // 3-month cap
+            if (!loan.total_interest_charged) loan.total_interest_charged = 0;
             
-            // Calculate initiation fee (to derive interest)
-            let totalInitiationFee;
+            // Calculate admin fee (perpetual R60 per payment)
+            let adminFeePerMonth = 60;
             if (isStockvel) {
                 const totalContributions = client.total_contributions || 0;
-                if (loan.principal_amount <= totalContributions) {
-                    totalInitiationFee = 0;
-                } else {
-                    totalInitiationFee = (loan.principal_amount - totalContributions) * 0.12;
-                }
-            } else {
-                totalInitiationFee = loan.principal_amount * 0.12;
+                if (totalContributions >= 20000) adminFeePerMonth = 45;
+                else if (totalContributions >= 10000) adminFeePerMonth = 50;
             }
             
-            // Initiation fee per month (distributed across term)
-            const initiationFeePerMonth = totalInitiationFee / loan.term_months;
+            // Step 1: Deduct admin fee from payment
+            let remainingPayment = paidAmount - adminFeePerMonth;
+            if (remainingPayment < 0) {
+                alert(`❌ Payment too low! Minimum is R${adminFeePerMonth.toFixed(2)} for admin fee.`);
+                return;
+            }
             
-            // Calculate interest per month by working backwards
-            // Total Cost = Principal + Total Interest + (Admin Fee × Term) + Initiation Fee
-            // Total Interest = Total Cost - Principal - (Admin Fee × Term) - Initiation Fee
-            const totalInterest = loan.total_cost - loan.principal_amount - (adminFeePerMonth * loan.term_months) - totalInitiationFee;
-            const interestPerMonth = totalInterest / loan.term_months;
+            // Step 2: Calculate initiation fee portion
+            const remainingInitiationFee = loan.total_initiation_fee - loan.initiation_fee_paid;
+            const expectedMonthlyInitiation = loan.total_initiation_fee / loan.term_months;
+            let initiationFeePaid = Math.min(expectedMonthlyInitiation, remainingInitiationFee, remainingPayment);
+            remainingPayment -= initiationFeePaid;
             
-            // Update current balance
+            // Step 3: Calculate interest on current remaining principal
+            const interestRate = 0.30; // 30% per month on declining balance
+            let interestForThisPayment = loan.remaining_principal * interestRate;
+            
+            // Apply interest cap (never exceed 3-month calculation)
+            const interestRemaining = loan.max_interest_allowed - loan.total_interest_charged;
+            interestForThisPayment = Math.min(interestForThisPayment, interestRemaining, remainingPayment);
+            remainingPayment -= interestForThisPayment;
+            
+            // Step 4: Apply remaining payment to principal
+            const principalPaid = Math.min(remainingPayment, loan.remaining_principal);
+            
+            // Check for early payoff
+            const isEarlyPayoff = paidAmount >= payoffAmount;
+            
+            // Update loan tracking
+            loan.remaining_principal -= principalPaid;
+            loan.initiation_fee_paid += initiationFeePaid;
+            loan.total_interest_charged += interestForThisPayment;
             loan.current_balance -= paidAmount;
-
-            // Update deployed capital (principal goes back to available capital)
-            AppState.deployed = Math.max(0, AppState.deployed - principalPayment);
-            AppState.capital += principalPayment; // Principal returns to capital
             
-            // Track interest earned (only when payment received)
-            if (interestPerMonth > 0) {
-                AppState.totalInterestEarned += interestPerMonth;
-                AppState.capital += interestPerMonth; // Interest adds to capital
-            }
+            // Update AppState
+            AppState.deployed = Math.max(0, AppState.deployed - principalPaid);
+            AppState.capital += paidAmount; // All money goes to capital
+            AppState.totalInterestEarned += interestForThisPayment;
+            AppState.totalFeesEarned += (adminFeePerMonth + initiationFeePaid);
             
-            // Track fees earned (admin + initiation portion - only when payment received)
-            const totalFeesThisPayment = adminFeePerMonth + initiationFeePerMonth;
-            if (totalFeesThisPayment > 0) {
-                AppState.totalFeesEarned += totalFeesThisPayment;
-                AppState.capital += totalFeesThisPayment; // Fees add to capital
-            }
-
-            // Update client's total repayment amount
+            // Update client repayment
             if (client) {
-                // Initialize total_repayment if not exists
-                if (!client.total_repayment) {
-                    client.total_repayment = 0;
-                }
+                if (!client.total_repayment) client.total_repayment = 0;
                 client.total_repayment += paidAmount;
             }
-
-            // Log transaction for undo capability
-            AppState.logTransaction('payment', `Payment of R${paidAmount.toFixed(2)} from ${loan.client_name} (Loan #${loanId})`, {
+            
+            // Check payment type
+            const expectedPayment = loan.monthly_payment;
+            let paymentType = 'Regular';
+            if (isEarlyPayoff) {
+                paymentType = 'Early Payoff';
+            } else if (paidAmount > expectedPayment) {
+                paymentType = `Overpayment (+R${(paidAmount - expectedPayment).toFixed(2)})`;
+            } else if (paidAmount < expectedPayment) {
+                paymentType = `Partial Payment (-R${(expectedPayment - paidAmount).toFixed(2)})`;
+            }
+            
+            // Log transaction
+            AppState.logTransaction('payment', `${paymentType}: R${paidAmount.toFixed(2)} from ${loan.client_name} (Loan #${loanId})`, {
                 loanId: loanId,
                 amount: paidAmount,
-                principalPayment: principalPayment,
-                interestPayment: interestPerMonth,
-                adminFee: adminFeePerMonth,
-                initiationFee: initiationFeePerMonth,
+                principalPaid: principalPaid,
+                interestPaid: interestForThisPayment,
+                adminFeePaid: adminFeePerMonth,
+                initiationFeePaid: initiationFeePaid,
+                previousRemainingPrincipal: loan.remaining_principal + principalPaid,
+                newRemainingPrincipal: loan.remaining_principal,
                 previousBalance: loan.current_balance + paidAmount,
-                newBalance: loan.current_balance,
-                previousCapital: AppState.capital - paidAmount,
-                previousDeployed: AppState.deployed + principalPayment,
-                previousInterestEarned: AppState.totalInterestEarned - interestPerMonth,
-                previousFeesEarned: AppState.totalFeesEarned - totalFeesThisPayment,
-                previousClientRepayment: client ? (client.total_repayment - paidAmount) : 0
+                newBalance: loan.current_balance
             });
             
             // Save changes
             AppState.save();
             AppState.updateDashboard();
-
-            // Show payment summary
-            alert(`💰 Payment Processed!\n\nPayment Amount: R${paidAmount.toFixed(2)}\n\nBreakdown:\nPrincipal: R${principalPayment.toFixed(2)}\nInterest: R${interestPerMonth.toFixed(2)}\nAdmin Fee: R${adminFeePerMonth.toFixed(2)}\nInitiation Fee: R${initiationFeePerMonth.toFixed(2)}\n\nNew Balance: R${loan.current_balance.toFixed(2)}\nTotal Repaid by Client: R${client ? client.total_repayment.toFixed(2) : '0.00'}`);
-
-            // Check if loan is fully paid
-            if (loan.current_balance <= 0) {
-                loan.current_balance = 0; // Ensure balance is exactly 0
+            
+            // Show detailed summary
+            let summary = `💰 Payment Processed!\n\n`;
+            summary += `Type: ${paymentType}\n`;
+            summary += `Amount Paid: R${paidAmount.toFixed(2)}\n\n`;
+            summary += `📊 Breakdown:\n`;
+            summary += `• Principal: R${principalPaid.toFixed(2)}\n`;
+            summary += `• Interest: R${interestForThisPayment.toFixed(2)}\n`;
+            summary += `• Admin Fee: R${adminFeePerMonth.toFixed(2)}\n`;
+            summary += `• Initiation Fee: R${initiationFeePaid.toFixed(2)}\n\n`;
+            summary += `📈 Loan Status:\n`;
+            summary += `• Remaining Principal: R${loan.remaining_principal.toFixed(2)}\n`;
+            summary += `• Interest Cap Remaining: R${(loan.max_interest_allowed - loan.total_interest_charged).toFixed(2)}\n`;
+            
+            if (isEarlyPayoff || loan.remaining_principal <= 0) {
+                loan.remaining_principal = 0;
+                loan.current_balance = 0;
                 loan.status = 'completed';
-                AppState.logTransaction('system', `Loan #${loanId} (${loan.client_name}) marked as COMPLETED`, {
+                AppState.logTransaction('system', `Loan #${loanId} PAID OFF - ${loan.client_name}`, {
                     loanId: loanId,
-                    clientName: loan.client_name
+                    totalInterestCharged: loan.total_interest_charged,
+                    interestSaved: loan.max_interest_allowed - loan.total_interest_charged
                 });
                 AppState.save();
                 AppState.updateDashboard();
-                alert('🎉 Loan fully paid! Status changed to completed.');
+                summary += `\n🎉 LOAN PAID OFF!\n`;
+                if (!isEarlyPayoff) {
+                    summary += `Interest Saved: R${(loan.max_interest_allowed - loan.total_interest_charged).toFixed(2)}`;
+                }
             }
+            
+            alert(summary);
         }
 
         // Undo Last Payment
@@ -2944,6 +2974,7 @@
     </script>
 </body>
 </html>
+
 
 
 
