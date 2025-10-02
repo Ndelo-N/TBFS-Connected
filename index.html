@@ -581,6 +581,10 @@
                             <input type="number" id="term" name="term" min="1" required>
                         </div>
                         <div class="form-group">
+                            <label for="loanDate">Loan Disbursement Date:</label>
+                            <input type="date" id="loanDate" name="loanDate" required>
+                        </div>
+                        <div class="form-group">
                             <label for="startMonth">Start Month:</label>
                             <select id="startMonth" name="startMonth" required>
                                 <option value="">Select Month</option>
@@ -1089,7 +1093,7 @@
 
     <script>
         // App Version
-        const APP_VERSION = '1.5.0'; // Update this when making changes
+        const APP_VERSION = '1.5.1'; // Update this when making changes
         
         // App State Management
         const AppState = {
@@ -1447,6 +1451,13 @@
             // Initialize app state
             AppState.init();
             
+            // Set today's date as default for loan date
+            const today = new Date().toISOString().split('T')[0];
+            const loanDateField = document.getElementById('loanDate');
+            if (loanDateField) {
+                loanDateField.value = today;
+            }
+            
             // Tab switching
             document.querySelectorAll('.tab').forEach(tab => {
                 tab.addEventListener('click', () => {
@@ -1644,6 +1655,7 @@
                 const accountNumber = document.getElementById('accountNumber').value.trim();
                 const principal = parseFloat(document.getElementById('principal').value);
                 const term = parseInt(document.getElementById('term').value);
+                const loanDate = document.getElementById('loanDate').value; // Loan disbursement date
                 const startMonthIndex = parseInt(document.getElementById('startMonth').value);
                 
                 // Stockvel member fields
@@ -1802,6 +1814,7 @@
                     accountNumber,
                     principal,
                     term,
+                    loanDate, // Custom loan disbursement date
                     monthlyPayment,
                     totalCost,
                     totalInterest,
@@ -2275,7 +2288,7 @@
                 expected_monthly_interest: loanData.totalInterest / loanData.term, // Equalized monthly interest
                 total_interest_charged: 0, // Track total interest charged so far
                 status: 'active',
-                created_at: new Date().toISOString()
+                created_at: new Date(loanData.loanDate + 'T12:00:00').toISOString() // Use custom loan date
             };
 
             // Add loan to system
@@ -2384,6 +2397,22 @@
 
             const paidAmount = parseFloat(paymentAmount);
             
+            // Get payment date from user (default to today)
+            const today = new Date().toISOString().split('T')[0];
+            const paymentDate = prompt(`📅 Enter payment date (YYYY-MM-DD):`, today);
+            
+            if (!paymentDate) {
+                alert('Payment cancelled');
+                return;
+            }
+            
+            // Validate date format
+            const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+            if (!dateRegex.test(paymentDate)) {
+                alert('Invalid date format. Please use YYYY-MM-DD format.');
+                return;
+            }
+            
             // Find client to determine type
             const client = AppState.clients.find(c => c.account_number === loan.account_number);
             const isStockvel = client && client.client_type === 'stockvel';
@@ -2482,6 +2511,7 @@
             AppState.logTransaction('payment', `${paymentType}: R${paidAmount.toFixed(2)} from ${loan.client_name} (Loan #${loanId})`, {
                 loanId: loanId,
                 amount: paidAmount,
+                paymentDate: paymentDate, // Custom payment date
                 principalPaid: principalPaid,
                 interestPaid: interestForThisPayment,
                 adminFeePaid: adminFeePerMonth,
