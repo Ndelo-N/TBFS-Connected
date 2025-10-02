@@ -977,7 +977,7 @@
 
     <script>
         // App Version
-        const APP_VERSION = '1.4.2'; // Update this when making changes
+        const APP_VERSION = '1.4.3'; // Update this when making changes
         
         // App State Management
         const AppState = {
@@ -2983,7 +2983,35 @@
             
             // Update sync time every minute
             setInterval(() => CloudBackup.updateSyncTime(), 60000);
+            
+            // Initialize tab switching
+            initializeTabs();
         });
+        
+        // Tab Switching Functionality
+        function initializeTabs() {
+            const tabs = document.querySelectorAll('.tab');
+            const tabContents = document.querySelectorAll('.tab-content');
+            
+            tabs.forEach(tab => {
+                tab.addEventListener('click', function() {
+                    const targetTab = this.getAttribute('data-tab');
+                    
+                    // Remove active class from all tabs and contents
+                    tabs.forEach(t => t.classList.remove('active'));
+                    tabContents.forEach(content => content.classList.remove('active'));
+                    
+                    // Add active class to clicked tab and corresponding content
+                    this.classList.add('active');
+                    document.getElementById(targetTab).classList.add('active');
+                    
+                    // If switching to dashboard, update it
+                    if (targetTab === 'dashboard') {
+                        AppState.updateDashboard();
+                    }
+                });
+            });
+        }
         
         // Hook into existing save function to trigger cloud backup
         const originalSave = AppState.save;
