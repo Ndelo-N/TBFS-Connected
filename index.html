@@ -500,6 +500,24 @@
     </style>
 </head>
 <body>
+    <!-- Update Available Banner -->
+    <div id="updateBanner" style="display: none; background: linear-gradient(135deg, #f39c12 0%, #f1c40f 100%); color: white; padding: 15px; text-align: center; position: sticky; top: 0; z-index: 1000; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
+        <div style="max-width: 1200px; margin: 0 auto; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px;">
+            <div style="flex: 1; min-width: 200px;">
+                <strong>🎉 New Update Available!</strong>
+                <p style="margin: 5px 0 0 0; font-size: 14px; opacity: 0.95;">A new version of TBFS is ready to install</p>
+            </div>
+            <div style="display: flex; gap: 10px;">
+                <button onclick="activateUpdate()" style="background: white; color: #f39c12; border: none; padding: 10px 20px; border-radius: 8px; font-weight: 600; cursor: pointer; font-size: 14px;">
+                    Update Now
+                </button>
+                <button onclick="dismissUpdateBanner()" style="background: transparent; color: white; border: 2px solid white; padding: 10px 20px; border-radius: 8px; font-weight: 600; cursor: pointer; font-size: 14px;">
+                    Later
+                </button>
+            </div>
+        </div>
+    </div>
+
     <div class="container">
         <div class="header">
             <div class="logo" style="background: none; box-shadow: none;">
@@ -758,7 +776,35 @@
 
         <!-- SETTINGS TAB -->
         <div id="settings" class="tab-content">
-            <h2 class="section-title">⚙️ Cloud Backup Settings</h2>
+            <h2 class="section-title">⚙️ Settings</h2>
+            
+            <!-- App Version & Updates Section -->
+            <div class="form-section">
+                <h3 style="color: #2c3e50; margin-bottom: 15px;">📱 App Version & Updates</h3>
+                <div style="background: #f8f9fa; padding: 20px; border-radius: 10px; margin-bottom: 20px;">
+                    <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 15px;">
+                        <div>
+                            <p style="margin: 0; color: #7f8c8d; font-size: 14px;">Current Version</p>
+                            <p style="margin: 5px 0 0 0; font-size: 24px; font-weight: bold; color: #2c3e50;" id="currentVersion">v1.2.0</p>
+                            <p style="margin: 5px 0 0 0; font-size: 12px; color: #95a5a6;" id="updateStatus">Checking for updates...</p>
+                        </div>
+                        <button class="btn" onclick="checkForUpdates()" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 12px 24px;">
+                            🔄 Check for Updates
+                        </button>
+                    </div>
+                </div>
+                
+                <div style="background: #e8f5e8; padding: 15px; border-radius: 8px; border-left: 4px solid #27ae60;">
+                    <strong style="color: #27ae60;">💡 How Updates Work:</strong>
+                    <ul style="margin: 10px 0 0 20px; color: #2c3e50; font-size: 14px;">
+                        <li>Updates download automatically in the background</li>
+                        <li>Click "Update Now" or close and reopen the app to apply</li>
+                        <li>Your data is always safe during updates</li>
+                    </ul>
+                </div>
+            </div>
+            
+            <h3 class="section-title">☁️ Cloud Backup Settings</h3>
             
             <div class="form-section">
                 <h3 style="color: #2c3e50; margin-bottom: 15px;">🔐 GitHub Cloud Backup</h3>
@@ -858,6 +904,9 @@
     </div>
 
     <script>
+        // App Version
+        const APP_VERSION = '1.2.0'; // Update this when making changes
+        
         // App State Management
         const AppState = {
             capital: 100000,
@@ -2042,17 +2091,143 @@
             alert(statusMessages[newStatus] || 'Status updated');
         }
 
-        // PWA Service Worker Registration
+        // ===== UPDATE MANAGEMENT SYSTEM =====
+        let updateAvailable = false;
+        let waitingServiceWorker = null;
+        
+        // Display current version
+        document.getElementById('currentVersion').textContent = `v${APP_VERSION}`;
+        
+        // PWA Service Worker Registration with Update Detection
         if ('serviceWorker' in navigator) {
             window.addEventListener('load', function() {
                 navigator.serviceWorker.register('sw.js')
                     .then(function(registration) {
                         console.log('ServiceWorker registration successful');
+                        
+                        // Check for updates on load
+                        registration.update();
+                        
+                        // Listen for updates
+                        registration.addEventListener('updatefound', () => {
+                            const newWorker = registration.installing;
+                            console.log('New service worker found!');
+                            
+                            newWorker.addEventListener('statechange', () => {
+                                if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+                                    // New service worker installed, update available
+                                    console.log('Update available!');
+                                    updateAvailable = true;
+                                    waitingServiceWorker = newWorker;
+                                    showUpdateBanner();
+                                    document.getElementById('updateStatus').textContent = '🎉 Update available!';
+                                    document.getElementById('updateStatus').style.color = '#27ae60';
+                                }
+                            });
+                        });
+                        
+                        // Check for updates every 30 minutes
+                        setInterval(() => {
+                            console.log('Checking for updates...');
+                            registration.update();
+                        }, 30 * 60 * 1000);
                     })
                     .catch(function(err) {
                         console.log('ServiceWorker registration failed: ', err);
+                        document.getElementById('updateStatus').textContent = 'Service worker not available';
                     });
+                
+                // Listen for controller change (update activated)
+                navigator.serviceWorker.addEventListener('controllerchange', () => {
+                    console.log('New service worker activated, reloading...');
+                    window.location.reload();
+                });
             });
+        } else {
+            document.getElementById('updateStatus').textContent = 'Service worker not supported';
+        }
+        
+        // Check for updates manually
+        async function checkForUpdates() {
+            const button = event.target;
+            button.disabled = true;
+            button.textContent = '🔄 Checking...';
+            document.getElementById('updateStatus').textContent = 'Checking for updates...';
+            document.getElementById('updateStatus').style.color = '#7f8c8d';
+            
+            try {
+                if ('serviceWorker' in navigator) {
+                    const registration = await navigator.serviceWorker.getRegistration();
+                    if (registration) {
+                        await registration.update();
+                        
+                        // Wait a moment to see if update is found
+                        setTimeout(() => {
+                            if (updateAvailable) {
+                                document.getElementById('updateStatus').textContent = '🎉 Update available! Click "Update Now" to install.';
+                                document.getElementById('updateStatus').style.color = '#27ae60';
+                            } else {
+                                document.getElementById('updateStatus').textContent = '✅ You\'re running the latest version!';
+                                document.getElementById('updateStatus').style.color = '#27ae60';
+                            }
+                            button.disabled = false;
+                            button.textContent = '🔄 Check for Updates';
+                        }, 2000);
+                    } else {
+                        document.getElementById('updateStatus').textContent = 'Service worker not registered';
+                        button.disabled = false;
+                        button.textContent = '🔄 Check for Updates';
+                    }
+                } else {
+                    document.getElementById('updateStatus').textContent = 'Updates not supported in this browser';
+                    button.disabled = false;
+                    button.textContent = '🔄 Check for Updates';
+                }
+            } catch (error) {
+                console.error('Update check failed:', error);
+                document.getElementById('updateStatus').textContent = 'Failed to check for updates';
+                button.disabled = false;
+                button.textContent = '🔄 Check for Updates';
+            }
+        }
+        
+        // Show update banner
+        function showUpdateBanner() {
+            const banner = document.getElementById('updateBanner');
+            if (banner) {
+                banner.style.display = 'block';
+            }
+        }
+        
+        // Dismiss update banner
+        function dismissUpdateBanner() {
+            const banner = document.getElementById('updateBanner');
+            if (banner) {
+                banner.style.display = 'none';
+            }
+        }
+        
+        // Activate update
+        function activateUpdate() {
+            if (waitingServiceWorker) {
+                // Send message to service worker to skip waiting
+                waitingServiceWorker.postMessage({ type: 'SKIP_WAITING' });
+                
+                // Show loading message
+                const banner = document.getElementById('updateBanner');
+                if (banner) {
+                    banner.innerHTML = `
+                        <div style="max-width: 1200px; margin: 0 auto; text-align: center;">
+                            <strong>🔄 Updating...</strong>
+                            <p style="margin: 5px 0 0 0; font-size: 14px;">The app will reload in a moment</p>
+                        </div>
+                    `;
+                }
+            } else {
+                // Fallback: just reload
+                alert('Reloading to apply update...');
+                window.location.reload();
+            }
         }
 
         // ===== CLOUD BACKUP SYSTEM =====

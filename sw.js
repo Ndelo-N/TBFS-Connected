@@ -1,4 +1,4 @@
-const CACHE_NAME = 'tbfs-loan-manager-v2';
+const CACHE_NAME = 'tbfs-loan-manager-v3'; // Increment when updating
 const urlsToCache = [
   './',
   './index.html',
@@ -78,8 +78,21 @@ self.addEventListener('activate', function(event) {
           }
         })
       );
+    }).then(() => {
+      // Claim all clients immediately
+      return self.clients.claim();
     })
   );
+});
+
+// Listen for skip waiting message
+self.addEventListener('message', function(event) {
+  console.log('Service Worker: Message received', event.data);
+  
+  if (event.data && event.data.type === 'SKIP_WAITING') {
+    console.log('Service Worker: Skip waiting');
+    self.skipWaiting();
+  }
 });
 
 // Background sync for offline data
