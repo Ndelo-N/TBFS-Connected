@@ -1,13 +1,13 @@
-const CACHE_NAME = 'tbfs-loan-manager-v1';
+const CACHE_NAME = 'tbfs-loan-manager-v2';
 const urlsToCache = [
-  '/',
-  '/loan-calculator-enhanced.html',
-  '/manifest.json',
+  './',
+  './index.html',
+  './manifest.json',
   'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js',
   'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js',
-  '/icons/icon-192x192.png',
-  '/icons/icon-512x512.png',
-  '/TBFS_Logo.png'
+  './icons/icon-192x192.png',
+  './icons/icon-512x512.png',
+  './TBFS_Logo.png'
 ];
 
 // Install event - cache resources
@@ -57,7 +57,7 @@ self.addEventListener('fetch', function(event) {
         }).catch(function() {
           // If both cache and network fail, show offline page
           if (event.request.destination === 'document') {
-            return caches.match('/loan-calculator-enhanced.html');
+            return caches.match('./index.html');
           }
         });
       })
@@ -100,8 +100,8 @@ self.addEventListener('push', function(event) {
   
   const options = {
     body: event.data ? event.data.text() : 'New notification from TBFS',
-    icon: '/icons/icon-192x192.png',
-    badge: '/icons/icon-72x72.png',
+    icon: './icons/icon-192x192.png',
+    badge: './icons/icon-72x72.png',
     vibrate: [100, 50, 100],
     data: {
       dateOfArrival: Date.now(),
@@ -111,12 +111,12 @@ self.addEventListener('push', function(event) {
       {
         action: 'explore',
         title: 'Open App',
-        icon: '/icons/icon-96x96.png'
+        icon: './icons/icon-96x96.png'
       },
       {
         action: 'close',
         title: 'Close',
-        icon: '/icons/icon-96x96.png'
+        icon: './icons/icon-96x96.png'
       }
     ]
   };
@@ -134,7 +134,7 @@ self.addEventListener('notificationclick', function(event) {
 
   if (event.action === 'explore') {
     event.waitUntil(
-      clients.openWindow('/')
+      clients.openWindow('./')
     );
   }
 });

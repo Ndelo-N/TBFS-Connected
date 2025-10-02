@@ -3,12 +3,12 @@
   "short_name": "TBFS Loans",
   "description": "Thaba Bosiu Financial Services - Ethical Lending Management System",
   "display_override": ["window-controls-overlay", "standalone"],
-  "start_url": "/",
+  "start_url": "./",
   "display": "standalone",
   "background_color": "#667eea",
   "theme_color": "#667eea",
   "orientation": "portrait-primary",
-  "scope": "/",
+  "scope": "./",
   "lang": "en",
   "categories": ["finance", "business", "productivity"],
   "icons": [
@@ -80,7 +80,7 @@
       "name": "New Loan",
       "short_name": "New Loan",
       "description": "Calculate a new loan",
-      "url": "/?tab=calculator",
+      "url": "./?tab=calculator",
       "icons": [
         {
           "src": "icons/icon-96x96.png",
@@ -92,7 +92,7 @@
       "name": "Dashboard",
       "short_name": "Dashboard",
       "description": "View portfolio overview",
-      "url": "/?tab=dashboard",
+      "url": "./?tab=dashboard",
       "icons": [
         {
           "src": "icons/icon-96x96.png",
@@ -104,7 +104,7 @@
       "name": "Active Loans",
       "short_name": "Loans",
       "description": "Manage active loans",
-      "url": "/?tab=loans",
+      "url": "./?tab=loans",
       "icons": [
         {
           "src": "icons/icon-96x96.png",
