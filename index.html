@@ -977,7 +977,7 @@
 
     <script>
         // App Version
-        const APP_VERSION = '1.3.2'; // Update this when making changes
+        const APP_VERSION = '1.3.3'; // Update this when making changes
         
         // App State Management
         const AppState = {
@@ -2154,11 +2154,8 @@
             // Add loan to system
             AppState.loans.push(loan);
             
-            // Track initiation fee as earned income
-            if (loanData.initiationFee && loanData.initiationFee > 0) {
-                AppState.totalFeesEarned += loanData.initiationFee;
-                AppState.capital += loanData.initiationFee; // Initiation fee goes to capital
-            }
+            // NOTE: Initiation fee is NOT counted as earned here!
+            // It will be counted incrementally as monthly payments are received
             
             // Disburse principal (reduce capital, increase deployed)
             AppState.capital -= loan.principal_amount;
@@ -2288,6 +2285,9 @@
                 totalInitiationFee = loan.principal_amount * 0.12;
             }
             
+            // Initiation fee per month (distributed across term)
+            const initiationFeePerMonth = totalInitiationFee / loan.term_months;
+            
             // Calculate interest per month by working backwards
             // Total Cost = Principal + Total Interest + (Admin Fee × Term) + Initiation Fee
             // Total Interest = Total Cost - Principal - (Admin Fee × Term) - Initiation Fee
@@ -2301,16 +2301,17 @@
             AppState.deployed = Math.max(0, AppState.deployed - principalPayment);
             AppState.capital += principalPayment; // Principal returns to capital
             
-            // Track interest earned
+            // Track interest earned (only when payment received)
             if (interestPerMonth > 0) {
                 AppState.totalInterestEarned += interestPerMonth;
                 AppState.capital += interestPerMonth; // Interest adds to capital
             }
             
-            // Track admin fees earned
-            if (adminFeePerMonth > 0) {
-                AppState.totalFeesEarned += adminFeePerMonth;
-                AppState.capital += adminFeePerMonth; // Admin fee adds to capital
+            // Track fees earned (admin + initiation portion - only when payment received)
+            const totalFeesThisPayment = adminFeePerMonth + initiationFeePerMonth;
+            if (totalFeesThisPayment > 0) {
+                AppState.totalFeesEarned += totalFeesThisPayment;
+                AppState.capital += totalFeesThisPayment; // Fees add to capital
             }
 
             // Update client's total repayment amount
@@ -2329,12 +2330,13 @@
                 principalPayment: principalPayment,
                 interestPayment: interestPerMonth,
                 adminFee: adminFeePerMonth,
+                initiationFee: initiationFeePerMonth,
                 previousBalance: loan.current_balance + paidAmount,
                 newBalance: loan.current_balance,
                 previousCapital: AppState.capital - paidAmount,
                 previousDeployed: AppState.deployed + principalPayment,
                 previousInterestEarned: AppState.totalInterestEarned - interestPerMonth,
-                previousFeesEarned: AppState.totalFeesEarned - adminFeePerMonth,
+                previousFeesEarned: AppState.totalFeesEarned - totalFeesThisPayment,
                 previousClientRepayment: client ? (client.total_repayment - paidAmount) : 0
             });
             
@@ -2343,7 +2345,7 @@
             AppState.updateDashboard();
 
             // Show payment summary
-            alert(`💰 Payment Processed!\n\nPayment Amount: R${paidAmount.toFixed(2)}\n\nBreakdown:\nPrincipal: R${principalPayment.toFixed(2)}\nInterest: R${interestPerMonth.toFixed(2)}\nAdmin Fee: R${adminFeePerMonth.toFixed(2)}\n\nNew Balance: R${loan.current_balance.toFixed(2)}\nTotal Repaid by Client: R${client ? client.total_repayment.toFixed(2) : '0.00'}`);
+            alert(`💰 Payment Processed!\n\nPayment Amount: R${paidAmount.toFixed(2)}\n\nBreakdown:\nPrincipal: R${principalPayment.toFixed(2)}\nInterest: R${interestPerMonth.toFixed(2)}\nAdmin Fee: R${adminFeePerMonth.toFixed(2)}\nInitiation Fee: R${initiationFeePerMonth.toFixed(2)}\n\nNew Balance: R${loan.current_balance.toFixed(2)}\nTotal Repaid by Client: R${client ? client.total_repayment.toFixed(2) : '0.00'}`);
 
             // Check if loan is fully paid
             if (loan.current_balance <= 0) {
