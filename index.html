@@ -963,7 +963,7 @@
 
     <script>
         // App Version
-        const APP_VERSION = '1.3.0'; // Update this when making changes
+        const APP_VERSION = '1.3.1'; // Update this when making changes
         
         // App State Management
         const AppState = {
@@ -2269,7 +2269,7 @@
             document.getElementById('updateStatus').textContent = 'Service worker not supported';
         }
         
-        // Check for updates manually
+        // Check for updates manually - Fetches version from GitHub Pages
         async function checkForUpdates() {
             const button = event.target;
             button.disabled = true;
@@ -2278,38 +2278,81 @@
             document.getElementById('updateStatus').style.color = '#7f8c8d';
             
             try {
-                if ('serviceWorker' in navigator) {
-                    const registration = await navigator.serviceWorker.getRegistration();
-                    if (registration) {
-                        await registration.update();
+                // Fetch the deployed index.html from GitHub Pages with cache-busting
+                const response = await fetch(`https://ndelo-n.github.io/TBFS-Connected/index.html?t=${Date.now()}`, {
+                    cache: 'no-cache',
+                    headers: {
+                        'Cache-Control': 'no-cache, no-store, must-revalidate',
+                        'Pragma': 'no-cache'
+                    }
+                });
+                
+                if (!response.ok) {
+                    throw new Error('Failed to fetch latest version');
+                }
+                
+                const html = await response.text();
+                
+                // Extract version number from the deployed HTML
+                const versionMatch = html.match(/const APP_VERSION = ['"]([^'"]+)['"]/);
+                
+                if (versionMatch && versionMatch[1]) {
+                    const remoteVersion = versionMatch[1];
+                    const currentVersion = APP_VERSION;
+                    
+                    console.log(`Current: ${currentVersion}, Remote: ${remoteVersion}`);
+                    
+                    if (remoteVersion !== currentVersion) {
+                        // Version mismatch - update available
+                        updateAvailable = true;
+                        document.getElementById('updateStatus').textContent = `🎉 Update available! v${currentVersion} → v${remoteVersion}`;
+                        document.getElementById('updateStatus').style.color = '#27ae60';
+                        showUpdateBanner();
                         
-                        // Wait a moment to see if update is found
-                        setTimeout(() => {
-                            if (updateAvailable) {
-                                document.getElementById('updateStatus').textContent = '🎉 Update available! Click "Update Now" to install.';
-                                document.getElementById('updateStatus').style.color = '#27ae60';
-                                // Show the banner again
-                                showUpdateBanner();
-                            } else {
-                                document.getElementById('updateStatus').textContent = '✅ You\'re running the latest version!';
-                                document.getElementById('updateStatus').style.color = '#27ae60';
+                        // Also trigger service worker update to fetch new files
+                        if ('serviceWorker' in navigator) {
+                            const registration = await navigator.serviceWorker.getRegistration();
+                            if (registration) {
+                                registration.update();
                             }
-                            button.disabled = false;
-                            button.textContent = '🔄 Check for Updates';
-                        }, 2000);
+                        }
                     } else {
-                        document.getElementById('updateStatus').textContent = 'Service worker not registered';
-                        button.disabled = false;
-                        button.textContent = '🔄 Check for Updates';
+                        // Versions match - no update needed
+                        updateAvailable = false;
+                        document.getElementById('updateStatus').textContent = `✅ You're running the latest version! (v${currentVersion})`;
+                        document.getElementById('updateStatus').style.color = '#27ae60';
+                        dismissUpdateBanner(); // Hide banner if shown
                     }
                 } else {
-                    document.getElementById('updateStatus').textContent = 'Updates not supported in this browser';
-                    button.disabled = false;
-                    button.textContent = '🔄 Check for Updates';
+                    // Couldn't extract version - fallback to service worker check
+                    document.getElementById('updateStatus').textContent = 'Version check inconclusive - checking service worker...';
+                    
+                    if ('serviceWorker' in navigator) {
+                        const registration = await navigator.serviceWorker.getRegistration();
+                        if (registration) {
+                            await registration.update();
+                            
+                            setTimeout(() => {
+                                if (updateAvailable) {
+                                    document.getElementById('updateStatus').textContent = '🎉 Update available!';
+                                    document.getElementById('updateStatus').style.color = '#27ae60';
+                                    showUpdateBanner();
+                                } else {
+                                    document.getElementById('updateStatus').textContent = '✅ No updates found';
+                                    document.getElementById('updateStatus').style.color = '#27ae60';
+                                }
+                            }, 1500);
+                        }
+                    }
                 }
+                
+                button.disabled = false;
+                button.textContent = '🔄 Check for Updates';
+                
             } catch (error) {
                 console.error('Update check failed:', error);
-                document.getElementById('updateStatus').textContent = 'Failed to check for updates';
+                document.getElementById('updateStatus').textContent = '❌ Failed to check for updates. Check your internet connection.';
+                document.getElementById('updateStatus').style.color = '#e74c3c';
                 button.disabled = false;
                 button.textContent = '🔄 Check for Updates';
             }
