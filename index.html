@@ -977,7 +977,7 @@
 
     <script>
         // App Version
-        const APP_VERSION = '1.4.6'; // Update this when making changes
+        const APP_VERSION = '1.4.7'; // Update this when making changes
         
         // App State Management
         const AppState = {
@@ -2366,7 +2366,7 @@
                 paymentType = `Partial Payment (-R${(expectedPayment - paidAmount).toFixed(2)})`;
             }
             
-            // Log transaction
+            // Log transaction (with AppState values for undo)
             AppState.logTransaction('payment', `${paymentType}: R${paidAmount.toFixed(2)} from ${loan.client_name} (Loan #${loanId})`, {
                 loanId: loanId,
                 amount: paidAmount,
@@ -2377,7 +2377,13 @@
                 previousRemainingPrincipal: loan.remaining_principal + principalPaid,
                 newRemainingPrincipal: loan.remaining_principal,
                 previousBalance: loan.current_balance + paidAmount,
-                newBalance: loan.current_balance
+                newBalance: loan.current_balance,
+                // AppState values (for undo functionality)
+                previousCapital: AppState.capital - paidAmount,
+                previousDeployed: AppState.deployed + principalPaid,
+                previousInterestEarned: AppState.totalInterestEarned - interestForThisPayment,
+                previousFeesEarned: AppState.totalFeesEarned - (adminFeePerMonth + initiationFeePaid),
+                previousClientRepayment: client ? (client.total_repayment - paidAmount) : 0
             });
 
             // Save changes
@@ -2442,10 +2448,19 @@
             
             // Reverse all changes
             loan.current_balance = details.previousBalance;
+            loan.remaining_principal = details.previousRemainingPrincipal;
             AppState.capital = details.previousCapital;
             AppState.deployed = details.previousDeployed;
             AppState.totalInterestEarned = details.previousInterestEarned;
             AppState.totalFeesEarned = details.previousFeesEarned;
+            
+            // Reverse interest and fees charged
+            if (details.interestPaid) {
+                loan.total_interest_charged = (loan.total_interest_charged || 0) - details.interestPaid;
+            }
+            if (details.initiationFeePaid) {
+                loan.initiation_fee_paid = (loan.initiation_fee_paid || 0) - details.initiationFeePaid;
+            }
             
             if (client) {
                 client.total_repayment = details.previousClientRepayment;
