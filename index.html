@@ -28,6 +28,7 @@
     <link rel="shortcut icon" href="icons/favicon.ico">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
     <style>
         * {
             margin: 0;
@@ -549,6 +550,7 @@
             <button class="tab" data-tab="dashboard">Dashboard</button>
             <button class="tab" data-tab="clients">Clients</button>
             <button class="tab" data-tab="loans">Active Loans</button>
+            <button class="tab" data-tab="reports">📊 Reports</button>
             <button class="tab" data-tab="settings">⚙️ Settings</button>
         </div>
 
@@ -846,6 +848,116 @@
             <div id="loansList"></div>
         </div>
 
+        <!-- REPORTS TAB -->
+        <div id="reports" class="tab-content">
+            <h2 class="section-title">📊 Business Reports & Analytics</h2>
+            
+            <!-- Report Period Selector -->
+            <div class="form-section">
+                <h3 style="color: #2c3e50; margin-bottom: 15px;">📅 Report Period</h3>
+                <div style="display: flex; gap: 10px; flex-wrap: wrap; align-items: center;">
+                    <button class="btn" onclick="setReportPeriod('month')" id="periodMonth" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);">This Month</button>
+                    <button class="btn btn-secondary" onclick="setReportPeriod('quarter')" id="periodQuarter">This Quarter</button>
+                    <button class="btn btn-secondary" onclick="setReportPeriod('year')" id="periodYear">This Year</button>
+                    <button class="btn btn-secondary" onclick="setReportPeriod('all')" id="periodAll">All Time</button>
+                    <button class="btn" onclick="generateReports()" style="margin-left: auto; background: linear-gradient(135deg, #f39c12 0%, #e67e22 100%);">🔄 Refresh Reports</button>
+                </div>
+            </div>
+
+            <!-- Summary Statistics -->
+            <div class="form-section">
+                <h3 style="color: #2c3e50; margin-bottom: 15px;">📈 Financial Summary</h3>
+                <div class="stats-grid">
+                    <div class="stat-card">
+                        <h3>Total Revenue</h3>
+                        <div class="value" id="reportTotalRevenue">R0.00</div>
+                        <p style="margin-top: 5px; font-size: 12px; color: #7f8c8d;">Interest + Fees</p>
+                    </div>
+                    <div class="stat-card">
+                        <h3>Interest Earned</h3>
+                        <div class="value" id="reportInterestEarned">R0.00</div>
+                    </div>
+                    <div class="stat-card">
+                        <h3>Fees Earned</h3>
+                        <div class="value" id="reportFeesEarned">R0.00</div>
+                    </div>
+                    <div class="stat-card">
+                        <h3>Loans Disbursed</h3>
+                        <div class="value" id="reportLoansDisbursed">0</div>
+                    </div>
+                    <div class="stat-card">
+                        <h3>Avg Loan Size</h3>
+                        <div class="value" id="reportAvgLoanSize">R0.00</div>
+                    </div>
+                    <div class="stat-card">
+                        <h3>Avg Loan Term</h3>
+                        <div class="value" id="reportAvgLoanTerm">0 months</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Charts Section -->
+            <div class="form-section">
+                <h3 style="color: #2c3e50; margin-bottom: 15px;">📊 Visual Analytics</h3>
+                
+                <!-- Revenue Trend Chart -->
+                <div style="background: white; padding: 20px; border-radius: 15px; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1); margin-bottom: 20px;">
+                    <h4 style="color: #2c3e50; margin-bottom: 15px;">📈 Revenue Trend (Last 6 Months)</h4>
+                    <canvas id="revenueTrendChart" style="max-height: 300px;"></canvas>
+                </div>
+
+                <!-- Portfolio Breakdown Charts -->
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px;">
+                    <!-- Loan Type Distribution -->
+                    <div style="background: white; padding: 20px; border-radius: 15px; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);">
+                        <h4 style="color: #2c3e50; margin-bottom: 15px;">🥧 Loan Type Distribution</h4>
+                        <canvas id="loanTypeChart" style="max-height: 250px;"></canvas>
+                    </div>
+
+                    <!-- Loan Status Distribution -->
+                    <div style="background: white; padding: 20px; border-radius: 15px; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);">
+                        <h4 style="color: #2c3e50; margin-bottom: 15px;">📊 Loan Status Breakdown</h4>
+                        <canvas id="loanStatusChart" style="max-height: 250px;"></canvas>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Performance Metrics -->
+            <div class="form-section">
+                <h3 style="color: #2c3e50; margin-bottom: 15px;">🎯 Performance Metrics</h3>
+                <div style="background: white; padding: 20px; border-radius: 15px; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);">
+                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 20px;">
+                        <div>
+                            <p style="color: #7f8c8d; font-size: 14px; margin-bottom: 5px;">Return on Capital Deployed (ROCD)</p>
+                            <p style="font-size: 24px; font-weight: bold; color: #27ae60;" id="reportROCD">0%</p>
+                        </div>
+                        <div>
+                            <p style="color: #7f8c8d; font-size: 14px; margin-bottom: 5px;">Default Rate</p>
+                            <p style="font-size: 24px; font-weight: bold; color: #e74c3c;" id="reportDefaultRate">0%</p>
+                        </div>
+                        <div>
+                            <p style="color: #7f8c8d; font-size: 14px; margin-bottom: 5px;">Portfolio Utilization</p>
+                            <p style="font-size: 24px; font-weight: bold; color: #3498db;" id="reportUtilization">0%</p>
+                        </div>
+                        <div>
+                            <p style="color: #7f8c8d; font-size: 14px; margin-bottom: 5px;">Avg Client Lifetime Value</p>
+                            <p style="font-size: 24px; font-weight: bold; color: #9b59b6;" id="reportCLV">R0.00</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Export Options -->
+            <div class="form-section">
+                <h3 style="color: #2c3e50; margin-bottom: 15px;">📥 Export Reports</h3>
+                <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+                    <button class="btn" onclick="exportReportPDF()" style="background: linear-gradient(135deg, #e74c3c 0%, #c0392b 100%);">📄 Export to PDF</button>
+                    <button class="btn" onclick="exportReportExcel()" style="background: linear-gradient(135deg, #27ae60 0%, #229954 100%);">📊 Export to Excel</button>
+                    <button class="btn btn-secondary" onclick="printReport()">🖨️ Print Report</button>
+                </div>
+            </div>
+        </div>
+
         <!-- SETTINGS TAB -->
         <div id="settings" class="tab-content">
             <h2 class="section-title">⚙️ Settings</h2>
@@ -977,7 +1089,7 @@
 
     <script>
         // App Version
-        const APP_VERSION = '1.4.7'; // Update this when making changes
+        const APP_VERSION = '1.5.0'; // Update this when making changes
         
         // App State Management
         const AppState = {
@@ -3012,6 +3124,330 @@
                 CloudBackup.backup();
             }
         };
+
+        // ========================================
+        // REPORTS & ANALYTICS (v1.5)
+        // ========================================
+
+        // Reports State
+        const ReportsState = {
+            currentPeriod: 'all',
+            charts: {}
+        };
+
+        // Set Report Period
+        function setReportPeriod(period) {
+            ReportsState.currentPeriod = period;
+            
+            // Update button styles
+            ['month', 'quarter', 'year', 'all'].forEach(p => {
+                const btn = document.getElementById(`period${p.charAt(0).toUpperCase() + p.slice(1)}`);
+                if (btn) {
+                    if (p === period) {
+                        btn.className = 'btn';
+                        btn.style.background = 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)';
+                    } else {
+                        btn.className = 'btn btn-secondary';
+                        btn.style.background = '';
+                    }
+                }
+            });
+            
+            generateReports();
+        }
+
+        // Filter loans by date period
+        function filterLoansByPeriod(loans) {
+            if (ReportsState.currentPeriod === 'all') return loans;
+            
+            const now = new Date();
+            const startDate = new Date();
+            
+            switch(ReportsState.currentPeriod) {
+                case 'month':
+                    startDate.setMonth(now.getMonth() - 1);
+                    break;
+                case 'quarter':
+                    startDate.setMonth(now.getMonth() - 3);
+                    break;
+                case 'year':
+                    startDate.setFullYear(now.getFullYear() - 1);
+                    break;
+            }
+            
+            return loans.filter(loan => {
+                const loanDate = new Date(loan.created_at);
+                return loanDate >= startDate;
+            });
+        }
+
+        // Generate All Reports
+        function generateReports() {
+            const filteredLoans = filterLoansByPeriod(AppState.loans);
+            
+            // Calculate Summary Stats
+            updateReportSummary(filteredLoans);
+            
+            // Update Performance Metrics
+            updatePerformanceMetrics(filteredLoans);
+            
+            // Generate Charts
+            generateRevenueTrendChart();
+            generateLoanTypeChart(filteredLoans);
+            generateLoanStatusChart(filteredLoans);
+        }
+
+        // Update Report Summary
+        function updateReportSummary(loans) {
+            const totalRevenue = AppState.totalInterestEarned + AppState.totalFeesEarned;
+            const avgLoanSize = loans.length > 0 ? loans.reduce((sum, l) => sum + l.principal_amount, 0) / loans.length : 0;
+            const avgLoanTerm = loans.length > 0 ? loans.reduce((sum, l) => sum + l.term_months, 0) / loans.length : 0;
+            
+            document.getElementById('reportTotalRevenue').textContent = `R${totalRevenue.toFixed(2)}`;
+            document.getElementById('reportInterestEarned').textContent = `R${AppState.totalInterestEarned.toFixed(2)}`;
+            document.getElementById('reportFeesEarned').textContent = `R${AppState.totalFeesEarned.toFixed(2)}`;
+            document.getElementById('reportLoansDisbursed').textContent = loans.length;
+            document.getElementById('reportAvgLoanSize').textContent = `R${avgLoanSize.toFixed(2)}`;
+            document.getElementById('reportAvgLoanTerm').textContent = `${avgLoanTerm.toFixed(1)} months`;
+        }
+
+        // Update Performance Metrics
+        function updatePerformanceMetrics(loans) {
+            // ROCD (Return on Capital Deployed)
+            const totalRevenue = AppState.totalInterestEarned + AppState.totalFeesEarned;
+            const rocd = AppState.deployed > 0 ? (totalRevenue / AppState.deployed) * 100 : 0;
+            
+            // Default Rate
+            const defaultedCount = AppState.loans.filter(l => l.status === 'defaulted').length;
+            const defaultRate = AppState.loans.length > 0 ? (defaultedCount / AppState.loans.length) * 100 : 0;
+            
+            // Portfolio Utilization
+            const utilization = AppState.capital > 0 ? (AppState.deployed / (AppState.capital + AppState.deployed)) * 100 : 0;
+            
+            // Average Client Lifetime Value
+            const totalClients = AppState.clients.length;
+            const clv = totalClients > 0 ? totalRevenue / totalClients : 0;
+            
+            document.getElementById('reportROCD').textContent = `${rocd.toFixed(2)}%`;
+            document.getElementById('reportDefaultRate').textContent = `${defaultRate.toFixed(2)}%`;
+            document.getElementById('reportUtilization').textContent = `${utilization.toFixed(2)}%`;
+            document.getElementById('reportCLV').textContent = `R${clv.toFixed(2)}`;
+        }
+
+        // Generate Revenue Trend Chart (Last 6 Months)
+        function generateRevenueTrendChart() {
+            const ctx = document.getElementById('revenueTrendChart');
+            if (!ctx) return;
+            
+            // Destroy existing chart
+            if (ReportsState.charts.revenueTrend) {
+                ReportsState.charts.revenueTrend.destroy();
+            }
+            
+            // Get last 6 months of data
+            const monthLabels = [];
+            const revenueData = [];
+            const now = new Date();
+            
+            for (let i = 5; i >= 0; i--) {
+                const date = new Date(now.getFullYear(), now.getMonth() - i, 1);
+                monthLabels.push(date.toLocaleDateString('en-US', { month: 'short', year: 'numeric' }));
+                
+                // Calculate revenue for this month
+                const monthStart = new Date(date.getFullYear(), date.getMonth(), 1);
+                const monthEnd = new Date(date.getFullYear(), date.getMonth() + 1, 0, 23, 59, 59);
+                
+                const monthLoans = AppState.loans.filter(loan => {
+                    const loanDate = new Date(loan.created_at);
+                    return loanDate >= monthStart && loanDate <= monthEnd;
+                });
+                
+                // This is simplified - in reality, you'd track actual revenue per month from payments
+                const monthRevenue = monthLoans.reduce((sum, loan) => {
+                    return sum + ((loan.original_principal || loan.principal_amount) - (loan.remaining_principal || 0)) * 0.3;
+                }, 0);
+                
+                revenueData.push(monthRevenue);
+            }
+            
+            ReportsState.charts.revenueTrend = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: monthLabels,
+                    datasets: [{
+                        label: 'Monthly Revenue (R)',
+                        data: revenueData,
+                        borderColor: '#667eea',
+                        backgroundColor: 'rgba(102, 126, 234, 0.1)',
+                        tension: 0.4,
+                        fill: true
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: true,
+                    plugins: {
+                        legend: {
+                            display: false
+                        }
+                    },
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            ticks: {
+                                callback: function(value) {
+                                    return 'R' + value.toLocaleString();
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+        // Generate Loan Type Chart
+        function generateLoanTypeChart(loans) {
+            const ctx = document.getElementById('loanTypeChart');
+            if (!ctx) return;
+            
+            // Destroy existing chart
+            if (ReportsState.charts.loanType) {
+                ReportsState.charts.loanType.destroy();
+            }
+            
+            // Count Standard vs Stockvel
+            const standardCount = loans.filter(loan => {
+                const client = AppState.clients.find(c => c.account_number === loan.account_number);
+                return client && client.client_type !== 'stockvel';
+            }).length;
+            const stockvelCount = loans.length - standardCount;
+            
+            ReportsState.charts.loanType = new Chart(ctx, {
+                type: 'doughnut',
+                data: {
+                    labels: ['Standard', 'Stockvel'],
+                    datasets: [{
+                        data: [standardCount, stockvelCount],
+                        backgroundColor: ['#3498db', '#9b59b6']
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: true,
+                    plugins: {
+                        legend: {
+                            position: 'bottom'
+                        }
+                    }
+                }
+            });
+        }
+
+        // Generate Loan Status Chart
+        function generateLoanStatusChart(loans) {
+            const ctx = document.getElementById('loanStatusChart');
+            if (!ctx) return;
+            
+            // Destroy existing chart
+            if (ReportsState.charts.loanStatus) {
+                ReportsState.charts.loanStatus.destroy();
+            }
+            
+            // Count by status
+            const activeCount = loans.filter(l => l.status === 'active').length;
+            const completedCount = loans.filter(l => l.status === 'completed').length;
+            const defaultedCount = loans.filter(l => l.status === 'defaulted').length;
+            const blacklistedCount = loans.filter(l => l.status === 'blacklisted').length;
+            
+            ReportsState.charts.loanStatus = new Chart(ctx, {
+                type: 'pie',
+                data: {
+                    labels: ['Active', 'Completed', 'Defaulted', 'Blacklisted'],
+                    datasets: [{
+                        data: [activeCount, completedCount, defaultedCount, blacklistedCount],
+                        backgroundColor: ['#27ae60', '#3498db', '#e74c3c', '#95a5a6']
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: true,
+                    plugins: {
+                        legend: {
+                            position: 'bottom'
+                        }
+                    }
+                }
+            });
+        }
+
+        // Export Report to PDF
+        function exportReportPDF() {
+            alert('📄 PDF export will be implemented with full report including charts!');
+            // TODO: Implement full PDF export with charts in next iteration
+        }
+
+        // Export Report to Excel
+        function exportReportExcel() {
+            if (typeof XLSX === 'undefined') {
+                alert('❌ Excel export library not loaded');
+                return;
+            }
+            
+            const filteredLoans = filterLoansByPeriod(AppState.loans);
+            
+            // Prepare data for Excel
+            const summaryData = [
+                ['TBFS Business Report'],
+                ['Generated:', new Date().toLocaleString()],
+                ['Period:', ReportsState.currentPeriod.toUpperCase()],
+                [],
+                ['Financial Summary'],
+                ['Total Revenue', `R${(AppState.totalInterestEarned + AppState.totalFeesEarned).toFixed(2)}`],
+                ['Interest Earned', `R${AppState.totalInterestEarned.toFixed(2)}`],
+                ['Fees Earned', `R${AppState.totalFeesEarned.toFixed(2)}`],
+                ['Loans Disbursed', filteredLoans.length],
+                [],
+                ['Loan Details'],
+                ['Loan ID', 'Client Name', 'Principal', 'Term (months)', 'Status', 'Created Date']
+            ];
+            
+            filteredLoans.forEach(loan => {
+                summaryData.push([
+                    loan.loan_id,
+                    loan.client_name,
+                    loan.principal_amount,
+                    loan.term_months,
+                    loan.status,
+                    new Date(loan.created_at).toLocaleDateString()
+                ]);
+            });
+            
+            // Create workbook
+            const wb = XLSX.utils.book_new();
+            const ws = XLSX.utils.aoa_to_sheet(summaryData);
+            XLSX.utils.book_append_sheet(wb, ws, 'Report');
+            
+            // Download
+            XLSX.writeFile(wb, `TBFS_Report_${new Date().toISOString().split('T')[0]}.xlsx`);
+            
+            alert('✅ Excel report exported successfully!');
+        }
+
+        // Print Report
+        function printReport() {
+            window.print();
+        }
+
+        // Initialize reports when Reports tab is opened
+        document.addEventListener('DOMContentLoaded', function() {
+            // Generate reports when tab is clicked
+            const reportsTab = document.querySelector('[data-tab="reports"]');
+            if (reportsTab) {
+                reportsTab.addEventListener('click', function() {
+                    setTimeout(generateReports, 100); // Small delay to ensure tab is visible
+                });
+            }
+        });
     </script>
 </body>
 </html>
