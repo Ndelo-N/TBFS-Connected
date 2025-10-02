@@ -1276,13 +1276,21 @@
                     // Use standard interest calculation
                     interestRate = 0.30; // 30% per month
                     
+                    // Interest calculation period: minimum 3 months, or Math.ceil(term/2) if >= 3
+                    const interestMonths = Math.ceil(term / 2) >= 3 ? Math.ceil(term / 2) : 3;
+                    
+                    console.log(`\n=== STANDARD INTEREST CALCULATION ===`);
+                    console.log(`Principal: R${principal.toFixed(2)}`);
+                    console.log(`Term: ${term} months`);
+                    console.log(`Interest Period: ${interestMonths} months`);
+                    
                     // Calculate interest on declining balance (outstanding amount)
                     let outstandingBalance = principal;
                     let cumulativeInterest = 0;
                     const monthlyPrincipalPayment = principal / term;
                     
-                    // Calculate interest for each month based on outstanding balance
-                    for (let month = 1; month <= term; month++) {
+                    // Calculate interest ONLY for the interest period (not full term)
+                    for (let month = 1; month <= interestMonths; month++) {
                         if (outstandingBalance > 0) {
                             // Interest calculated on current outstanding balance
                             const monthlyInterest = outstandingBalance * interestRate;
@@ -1296,6 +1304,7 @@
                     }
                     
                     totalInterest = cumulativeInterest;
+                    console.log(`Total Interest (${interestMonths} months): R${totalInterest.toFixed(2)}`);
                     console.log('Declining balance interest calculation:', totalInterest);
                 }
 
@@ -1395,8 +1404,9 @@
                                 • <strong>Admin Fee:</strong> R60 × effective rate (R${loanData.adminFee.toFixed(2)})
                             </div>`;
                     } else {
+                        const interestPeriod = Math.ceil(loanData.term / 2) >= 3 ? Math.ceil(loanData.term / 2) : 3;
                         clientInfoHTML += `
-                            <p><strong>Interest Rate:</strong> 30% per month (first half of term)</p>
+                            <p><strong>Interest Rate:</strong> 30% per month (calculated for ${interestPeriod} months, spread across ${loanData.term} months)</p>
                             <p><strong>Initiation Fee:</strong> R ${loanData.initiationFee.toFixed(2)}</p>`;
                     }
                     
