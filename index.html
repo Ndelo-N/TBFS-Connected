@@ -1093,7 +1093,7 @@
 
     <script>
         // App Version
-        const APP_VERSION = '1.5.2'; // Update this when making changes
+        const APP_VERSION = '1.5.3'; // Update this when making changes
         
         // App State Management
         const AppState = {
@@ -2778,9 +2778,11 @@
         
         // Check for updates manually - Fetches version from GitHub Pages
         async function checkForUpdates() {
-            const button = event.target;
-            button.disabled = true;
-            button.textContent = '🔄 Checking...';
+            const button = document.querySelector('[onclick="checkForUpdates()"]');
+            if (button) {
+                button.disabled = true;
+                button.textContent = '🔄 Checking...';
+            }
             document.getElementById('updateStatus').textContent = 'Checking for updates...';
             document.getElementById('updateStatus').style.color = '#7f8c8d';
             
@@ -2853,15 +2855,19 @@
                     }
                 }
                 
-                button.disabled = false;
-                button.textContent = '🔄 Check for Updates';
+                if (button) {
+                    button.disabled = false;
+                    button.textContent = '🔄 Check for Updates';
+                }
                 
             } catch (error) {
                 console.error('Update check failed:', error);
                 document.getElementById('updateStatus').textContent = '❌ Failed to check for updates. Check your internet connection.';
                 document.getElementById('updateStatus').style.color = '#e74c3c';
-                button.disabled = false;
-                button.textContent = '🔄 Check for Updates';
+                if (button) {
+                    button.disabled = false;
+                    button.textContent = '🔄 Check for Updates';
+                }
             }
         }
         
