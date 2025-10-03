@@ -1093,7 +1093,7 @@
 
     <script>
         // App Version
-        const APP_VERSION = '1.5.1'; // Update this when making changes
+        const APP_VERSION = '1.5.2'; // Update this when making changes
         
         // App State Management
         const AppState = {
@@ -1387,22 +1387,64 @@
             
             updateLoansList() {
                 const container = document.getElementById('loansList');
-                const allLoans = this.loans;
                 
-                if (allLoans.length === 0) {
+                // Sort loans: Active first (by creation date), then completed at bottom
+                const sortedLoans = this.loans.slice().sort((a, b) => {
+                    // Status priority: active > defaulted > blacklisted > completed
+                    const statusOrder = { 'active': 1, 'defaulted': 2, 'blacklisted': 3, 'completed': 4 };
+                    const aOrder = statusOrder[a.status] || 999;
+                    const bOrder = statusOrder[b.status] || 999;
+                    
+                    if (aOrder !== bOrder) {
+                        return aOrder - bOrder;
+                    }
+                    
+                    // Within same status, sort by creation date (newest first)
+                    return new Date(b.created_at) - new Date(a.created_at);
+                });
+                
+                if (sortedLoans.length === 0) {
                     container.innerHTML = '<p style="color: #95a5a6; text-align: center; padding: 20px;">No loans yet.</p>';
                     return;
                 }
                 
-                container.innerHTML = allLoans.map(loan => {
+                container.innerHTML = sortedLoans.map(loan => {
                     // Initialize current balance if not set
                     if (!loan.current_balance) {
                         loan.current_balance = loan.total_cost;
                     }
                     
+                    // Calculate loan start date and next payment due date
+                    const loanStartDate = new Date(loan.created_at);
+                    const loanStartStr = loanStartDate.toLocaleDateString('en-ZA', { day: '2-digit', month: 'short', year: 'numeric' });
+                    
+                    // Calculate payments made (based on reduction in balance)
+                    const totalPaid = loan.total_cost - loan.current_balance;
+                    const paymentsMade = Math.floor(totalPaid / loan.monthly_payment);
+                    
+                    // Calculate next payment due date (loan start + payments made + 1 month)
+                    const nextDueDate = new Date(loanStartDate);
+                    nextDueDate.setMonth(nextDueDate.getMonth() + paymentsMade + 1);
+                    const nextDueStr = nextDueDate.toLocaleDateString('en-ZA', { day: '2-digit', month: 'short', year: 'numeric' });
+                    
+                    // Check if overdue
+                    const today = new Date();
+                    const isOverdue = loan.status === 'active' && nextDueDate < today;
+                    const daysOverdue = isOverdue ? Math.floor((today - nextDueDate) / (1000 * 60 * 60 * 24)) : 0;
+                    
                     return `
                         <div class="loan-card">
                             <h4>Loan #${loan.loan_id} - ${loan.client_name}</h4>
+                            <div class="info-row">
+                                <span>📅 Loan Date:</span>
+                                <strong style="color: #7f8c8d;">${loanStartStr}</strong>
+                            </div>
+                            ${loan.status === 'active' ? `
+                            <div class="info-row">
+                                <span>📆 Next Payment Due:</span>
+                                <strong style="color: ${isOverdue ? '#e74c3c' : '#27ae60'};">${nextDueStr}${isOverdue ? ` (${daysOverdue} days overdue)` : ''}</strong>
+                            </div>
+                            ` : ''}
                             <div class="info-row">
                                 <span>Principal:</span>
                                 <strong>R ${loan.principal_amount.toFixed(2)}</strong>
@@ -1413,7 +1455,7 @@
                             </div>
                             <div class="info-row">
                                 <span>Term:</span>
-                                <strong>${loan.term_months} months</strong>
+                                <strong>${loan.term_months} months (${paymentsMade}/${loan.term_months} paid)</strong>
                             </div>
                             <div class="info-row">
                                 <span>Current Balance:</span>
@@ -2475,8 +2517,21 @@
             // Step 4: Apply remaining payment to principal
             const principalPaid = Math.min(remainingPayment, loan.remaining_principal);
             
-            // Check for early payoff
-            const isEarlyPayoff = paidAmount >= payoffAmount;
+            // Check for payoff (full balance paid)
+            const isFullPayoff = paidAmount >= payoffAmount;
+            
+            // Determine if this is actually an EARLY payoff (paid before due)
+            let isEarlyPayoff = false;
+            if (isFullPayoff) {
+                // Calculate expected completion date (loan start + term)
+                const loanStartDate = new Date(loan.created_at);
+                const expectedCompletionDate = new Date(loanStartDate);
+                expectedCompletionDate.setMonth(expectedCompletionDate.getMonth() + loan.term_months);
+                
+                // Compare payment date to expected completion
+                const actualPaymentDate = new Date(paymentDate);
+                isEarlyPayoff = actualPaymentDate < expectedCompletionDate;
+            }
             
             // Update loan tracking
             loan.remaining_principal -= principalPaid;
@@ -2501,6 +2556,8 @@
             let paymentType = 'Regular';
             if (isEarlyPayoff) {
                 paymentType = 'Early Payoff';
+            } else if (isFullPayoff) {
+                paymentType = 'Final Payment';
             } else if (paidAmount > expectedPayment) {
                 paymentType = `Overpayment (+R${(paidAmount - expectedPayment).toFixed(2)})`;
             } else if (paidAmount < expectedPayment) {
@@ -2545,11 +2602,11 @@
             summary += `• Remaining Principal: R${loan.remaining_principal.toFixed(2)}\n`;
             summary += `• Interest Cap Remaining: R${(loan.max_interest_allowed - loan.total_interest_charged).toFixed(2)}\n`;
             
-            if (isEarlyPayoff || loan.remaining_principal <= 0) {
+            if (isFullPayoff || loan.remaining_principal <= 0) {
                 loan.remaining_principal = 0;
                 loan.current_balance = 0;
                 loan.status = 'completed';
-                AppState.logTransaction('system', `Loan #${loanId} PAID OFF - ${loan.client_name}`, {
+                AppState.logTransaction('system', `Loan #${loanId} ${isEarlyPayoff ? 'PAID OFF EARLY' : 'PAID OFF'} - ${loan.client_name}`, {
                     loanId: loanId,
                     totalInterestCharged: loan.total_interest_charged,
                     interestSaved: loan.max_interest_allowed - loan.total_interest_charged
