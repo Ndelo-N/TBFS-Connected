@@ -1093,7 +1093,7 @@
 
     <script>
         // App Version
-        const APP_VERSION = '1.5.3'; // Update this when making changes
+        const APP_VERSION = '1.5.4'; // Update this when making changes
         
         // App State Management
         const AppState = {
@@ -1292,6 +1292,22 @@
             },
             
             validateAndFixData() {
+                // Recalculate deployed capital from active loans (fixes accumulated errors)
+                const calculatedDeployed = this.loans
+                    .filter(l => l.status === 'active')
+                    .reduce((sum, loan) => {
+                        const remaining = loan.remaining_principal || loan.principal_amount;
+                        return sum + remaining;
+                    }, 0);
+                
+                // Round to 2 decimal places
+                const roundedDeployed = Math.round(calculatedDeployed * 100) / 100;
+                
+                if (Math.abs(this.deployed - roundedDeployed) > 0.05) {
+                    console.warn(`Fixed deployed capital mismatch: ${this.deployed} → ${roundedDeployed}`);
+                    this.deployed = roundedDeployed;
+                }
+                
                 // Fix negative deployed capital
                 if (this.deployed < 0) {
                     console.warn('Fixed negative deployed capital:', this.deployed);
@@ -1300,9 +1316,23 @@
                 
                 // Fix completed loans with outstanding balances
                 this.loans.forEach(loan => {
-                    if (loan.status === 'completed' && loan.current_balance > 0) {
-                        console.warn(`Fixed completed loan #${loan.loan_id} with balance:`, loan.current_balance);
-                        loan.current_balance = 0;
+                    if (loan.status === 'completed') {
+                        if (loan.current_balance > 0) {
+                            console.warn(`Fixed completed loan #${loan.loan_id} with balance:`, loan.current_balance);
+                            loan.current_balance = 0;
+                        }
+                        if (loan.remaining_principal > 0) {
+                            console.warn(`Fixed completed loan #${loan.loan_id} with remaining principal:`, loan.remaining_principal);
+                            loan.remaining_principal = 0;
+                        }
+                    }
+                    
+                    // Round loan amounts to 2 decimal places to fix floating-point errors
+                    if (loan.remaining_principal) {
+                        loan.remaining_principal = Math.round(loan.remaining_principal * 100) / 100;
+                    }
+                    if (loan.current_balance) {
+                        loan.current_balance = Math.round(loan.current_balance * 100) / 100;
                     }
                 });
                 
@@ -1311,6 +1341,12 @@
                     console.warn('Fixed negative capital:', this.capital);
                     this.capital = 0;
                 }
+                
+                // Round capital values to 2 decimal places
+                this.capital = Math.round(this.capital * 100) / 100;
+                this.deployed = Math.round(this.deployed * 100) / 100;
+                this.totalInterestEarned = Math.round(this.totalInterestEarned * 100) / 100;
+                this.totalFeesEarned = Math.round(this.totalFeesEarned * 100) / 100;
                 
                 // Save fixes
                 this.save();
@@ -2515,10 +2551,13 @@
             remainingPayment -= interestForThisPayment;
             
             // Step 4: Apply remaining payment to principal
-            const principalPaid = Math.min(remainingPayment, loan.remaining_principal);
+            let principalPaid = Math.min(remainingPayment, loan.remaining_principal);
             
-            // Check for payoff (full balance paid)
-            const isFullPayoff = paidAmount >= payoffAmount;
+            // Round to 2 decimal places to avoid floating-point errors
+            principalPaid = Math.round(principalPaid * 100) / 100;
+            
+            // Check for payoff (full balance paid or very small remaining balance)
+            const isFullPayoff = paidAmount >= payoffAmount || loan.remaining_principal - principalPaid < 0.01;
             
             // Determine if this is actually an EARLY payoff (paid before due)
             let isEarlyPayoff = false;
@@ -2538,6 +2577,18 @@
             loan.initiation_fee_paid += initiationFeePaid;
             loan.total_interest_charged += interestForThisPayment;
             loan.current_balance -= paidAmount;
+            
+            // Round to 2 decimal places to avoid floating-point errors
+            loan.remaining_principal = Math.round(loan.remaining_principal * 100) / 100;
+            loan.current_balance = Math.round(loan.current_balance * 100) / 100;
+            
+            // If balance is tiny (< R0.01), zero it out
+            if (loan.remaining_principal < 0.01) {
+                loan.remaining_principal = 0;
+            }
+            if (loan.current_balance < 0.01) {
+                loan.current_balance = 0;
+            }
             
             // Update AppState
             AppState.deployed = Math.max(0, AppState.deployed - principalPaid);
