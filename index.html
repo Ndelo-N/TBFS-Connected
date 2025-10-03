@@ -1179,6 +1179,9 @@
                 // Data validation and cleanup
                 this.validateAndFixData();
                 
+                // Comprehensive financial recalculation (fixes accumulated errors)
+                this.recalculateFinancialState();
+                
                 // Financial Overview
                 document.getElementById('totalCapital').textContent = `R ${this.capital.toLocaleString()}`;
                 document.getElementById('deployedCapital').textContent = `R ${this.deployed.toLocaleString()}`;
@@ -1350,6 +1353,113 @@
                 
                 // Save fixes
                 this.save();
+            },
+            
+            recalculateFinancialState() {
+                console.log('🔄 Starting comprehensive financial recalculation...');
+                
+                const INITIAL_CAPITAL = 100000; // Your starting capital
+                
+                // Step 1: Calculate total money loaned out (disbursements)
+                let totalDisbursed = 0;
+                let totalPrincipalRepaid = 0;
+                let totalInterestReceived = 0;
+                let totalFeesReceived = 0;
+                
+                this.loans.forEach(loan => {
+                    // Money loaned out
+                    totalDisbursed += loan.principal_amount;
+                    
+                    // Money received back
+                    const principalRepaid = (loan.original_principal || loan.principal_amount) - (loan.remaining_principal || 0);
+                    const interestReceived = loan.total_interest_charged || 0;
+                    const initiationFeeReceived = loan.initiation_fee_paid || 0;
+                    
+                    // Calculate admin fees based on how much principal was repaid
+                    // Admin fee is included in monthly payment, need to extract it
+                    // For completed loans: use total_cost - principal - interest - initiation fee
+                    let adminFeesReceived = 0;
+                    
+                    if (loan.status === 'completed') {
+                        // All admin fees received
+                        adminFeesReceived = loan.term_months * 18; // R18 per month
+                    } else {
+                        // Estimate based on principal repaid
+                        const paymentsEstimate = loan.term_months > 0 ? 
+                            Math.floor((principalRepaid / loan.principal_amount) * loan.term_months) : 0;
+                        adminFeesReceived = paymentsEstimate * 18;
+                    }
+                    
+                    totalPrincipalRepaid += principalRepaid;
+                    totalInterestReceived += interestReceived;
+                    totalFeesReceived += (initiationFeeReceived + adminFeesReceived);
+                    
+                    console.log(`Loan #${loan.loan_id}: Disbursed R${loan.principal_amount}, Repaid R${principalRepaid}, Interest R${interestReceived}, Fees R${initiationFeeReceived + adminFeesReceived}`);
+                });
+                
+                // Step 2: Calculate actual capital (money in bank)
+                const calculatedCapital = INITIAL_CAPITAL - totalDisbursed + totalPrincipalRepaid + totalInterestReceived + totalFeesReceived;
+                
+                // Step 3: Calculate deployed capital (active loans)
+                const calculatedDeployed = this.loans
+                    .filter(l => l.status === 'active')
+                    .reduce((sum, loan) => sum + (loan.remaining_principal || loan.principal_amount), 0);
+                
+                // Step 4: Calculate actual profit earned
+                const calculatedInterestEarned = totalInterestReceived;
+                const calculatedFeesEarned = totalFeesReceived;
+                const calculatedTotalProfit = calculatedInterestEarned + calculatedFeesEarned;
+                
+                // Step 5: Validate the fundamental equation
+                const totalAssets = calculatedCapital + calculatedDeployed;
+                const expectedTotal = INITIAL_CAPITAL + calculatedTotalProfit;
+                const balanceCheck = Math.abs(totalAssets - expectedTotal);
+                
+                console.log('\n📊 Recalculation Results:');
+                console.log(`Capital (in bank): R${calculatedCapital.toFixed(2)} (was R${this.capital.toFixed(2)})`);
+                console.log(`Deployed (loaned out): R${calculatedDeployed.toFixed(2)} (was R${this.deployed.toFixed(2)})`);
+                console.log(`Interest Earned: R${calculatedInterestEarned.toFixed(2)} (was R${this.totalInterestEarned.toFixed(2)})`);
+                console.log(`Fees Earned: R${calculatedFeesEarned.toFixed(2)} (was R${this.totalFeesEarned.toFixed(2)})`);
+                console.log(`Total Profit: R${calculatedTotalProfit.toFixed(2)} (was R${(this.totalInterestEarned + this.totalFeesEarned).toFixed(2)})`);
+                console.log(`\n✅ Balance Check: R${totalAssets.toFixed(2)} (Capital + Deployed) vs R${expectedTotal.toFixed(2)} (Initial + Profit)`);
+                console.log(`Difference: R${balanceCheck.toFixed(2)} ${balanceCheck < 0.10 ? '✅' : '❌'}`);
+                
+                // Step 6: Apply corrections
+                const oldCapital = this.capital;
+                const oldDeployed = this.deployed;
+                const oldInterest = this.totalInterestEarned;
+                const oldFees = this.totalFeesEarned;
+                
+                this.capital = Math.round(calculatedCapital * 100) / 100;
+                this.deployed = Math.round(calculatedDeployed * 100) / 100;
+                this.totalInterestEarned = Math.round(calculatedInterestEarned * 100) / 100;
+                this.totalFeesEarned = Math.round(calculatedFeesEarned * 100) / 100;
+                
+                console.log('\n🔧 Applied Corrections:');
+                if (Math.abs(oldCapital - this.capital) > 0.01) {
+                    console.log(`✓ Fixed capital: R${oldCapital.toFixed(2)} → R${this.capital.toFixed(2)} (${this.capital > oldCapital ? '+' : ''}${(this.capital - oldCapital).toFixed(2)})`);
+                }
+                if (Math.abs(oldDeployed - this.deployed) > 0.01) {
+                    console.log(`✓ Fixed deployed: R${oldDeployed.toFixed(2)} → R${this.deployed.toFixed(2)} (${this.deployed > oldDeployed ? '+' : ''}${(this.deployed - oldDeployed).toFixed(2)})`);
+                }
+                if (Math.abs(oldInterest - this.totalInterestEarned) > 0.01) {
+                    console.log(`✓ Fixed interest: R${oldInterest.toFixed(2)} → R${this.totalInterestEarned.toFixed(2)} (${this.totalInterestEarned > oldInterest ? '+' : ''}${(this.totalInterestEarned - oldInterest).toFixed(2)})`);
+                }
+                if (Math.abs(oldFees - this.totalFeesEarned) > 0.01) {
+                    console.log(`✓ Fixed fees: R${oldFees.toFixed(2)} → R${this.totalFeesEarned.toFixed(2)} (${this.totalFeesEarned > oldFees ? '+' : ''}${(this.totalFeesEarned - oldFees).toFixed(2)})`);
+                }
+                
+                this.save();
+                console.log('\n✅ Financial recalculation complete!');
+                
+                return {
+                    capital: this.capital,
+                    deployed: this.deployed,
+                    interestEarned: this.totalInterestEarned,
+                    feesEarned: this.totalFeesEarned,
+                    totalProfit: this.totalInterestEarned + this.totalFeesEarned,
+                    balanceCheck: balanceCheck < 0.10
+                };
             },
             
             checkRedFlags() {
