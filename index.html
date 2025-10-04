@@ -1355,6 +1355,167 @@
                 this.save();
             },
             
+            // Advanced Interest Management System
+            calculateAdvancedInterest(loan, asOfDate = new Date()) {
+                const loanStartDate = new Date(loan.created_at);
+                const monthsElapsed = Math.max(1, this.getMonthsDifference(loanStartDate, asOfDate));
+                
+                // Calculate declining balance interest for elapsed months
+                let totalInterestIncurred = 0;
+                let currentBalance = loan.original_principal || loan.principal_amount;
+                const monthlyPrincipal = currentBalance / loan.term_months;
+                
+                for (let month = 1; month <= monthsElapsed; month++) {
+                    const monthlyInterest = currentBalance * 0.30; // 30% per month
+                    totalInterestIncurred += monthlyInterest;
+                    currentBalance = Math.max(0, currentBalance - monthlyPrincipal);
+                }
+                
+                // Apply 100% cap (never exceed principal)
+                const maxAllowedInterest = loan.original_principal || loan.principal_amount;
+                totalInterestIncurred = Math.min(totalInterestIncurred, maxAllowedInterest);
+                
+                // Calculate late penalties
+                const latePenalties = this.calculateLatePenalties(loan, asOfDate);
+                
+                return {
+                    totalInterestIncurred: totalInterestIncurred,
+                    latePenalties: latePenalties,
+                    totalOwed: totalInterestIncurred + latePenalties,
+                    monthsElapsed: monthsElapsed,
+                    isCapped: totalInterestIncurred >= maxAllowedInterest
+                };
+            },
+            
+            calculateLatePenalties(loan, asOfDate = new Date()) {
+                const loanStartDate = new Date(loan.created_at);
+                const monthlyPayment = loan.monthly_payment;
+                let totalPenalties = 0;
+                
+                // Calculate expected payment dates (last day of each month)
+                for (let month = 1; month <= loan.term_months; month++) {
+                    const expectedPaymentDate = new Date(loanStartDate);
+                    expectedPaymentDate.setMonth(expectedPaymentDate.getMonth() + month);
+                    expectedPaymentDate.setDate(0); // Last day of the month
+                    
+                    // Check if this payment was made on time
+                    const paymentsMade = loan.payments_made || 0;
+                    if (month > paymentsMade) {
+                        // This payment is overdue
+                        const daysLate = Math.max(0, Math.floor((asOfDate - expectedPaymentDate) / (1000 * 60 * 60 * 24)));
+                        
+                        if (daysLate > 3) {
+                            // Apply penalty: 0.1% of monthly payment × days late (max 7 days)
+                            const penaltyDays = Math.min(daysLate - 3, 7);
+                            const penalty = (monthlyPayment * 0.001) * penaltyDays;
+                            totalPenalties += penalty;
+                        }
+                    }
+                }
+                
+                return totalPenalties;
+            },
+            
+            getMonthsDifference(startDate, endDate) {
+                const start = new Date(startDate);
+                const end = new Date(endDate);
+                return (end.getFullYear() - start.getFullYear()) * 12 + (end.getMonth() - start.getMonth());
+            },
+            
+            // Loan Revision Tool for Cap Compliance
+            reviseLoan(loanId) {
+                const loan = AppState.loans.find(l => l.loan_id === loanId);
+                if (!loan) {
+                    alert('Loan not found');
+                    return;
+                }
+                
+                const advancedInterest = AppState.calculateAdvancedInterest(loan);
+                const principal = loan.original_principal || loan.principal_amount;
+                
+                if (!advancedInterest.isCapped) {
+                    alert('This loan is within the 100% cap. No revision needed.');
+                    return;
+                }
+                
+                const options = [
+                    `1. Extend term to ${Math.ceil(loan.term_months * 1.5)} months (reduce monthly interest)`,
+                    `2. Reduce principal to R${(principal * 0.8).toFixed(2)} (20% reduction)`,
+                    `3. Freeze interest at current level (R${advancedInterest.totalInterestIncurred.toFixed(2)})`,
+                    `4. Cancel revision`
+                ].join('\n');
+                
+                const choice = prompt(`🔧 Loan Revision Required!\n\nLoan #${loanId} exceeds 100% interest cap.\nCurrent interest: R${advancedInterest.totalInterestIncurred.toFixed(2)} (${((advancedInterest.totalInterestIncurred/principal)*100).toFixed(1)}%)\n\nOptions:\n${options}\n\nEnter choice (1-4):`);
+                
+                switch(choice) {
+                    case '1':
+                        this.extendLoanTerm(loan);
+                        break;
+                    case '2':
+                        this.reduceLoanPrincipal(loan);
+                        break;
+                    case '3':
+                        this.freezeLoanInterest(loan);
+                        break;
+                    case '4':
+                        return;
+                    default:
+                        alert('Invalid choice');
+                }
+            },
+            
+            extendLoanTerm(loan) {
+                const newTerm = Math.ceil(loan.term_months * 1.5);
+                const oldTerm = loan.term_months;
+                
+                loan.term_months = newTerm;
+                loan.monthly_payment = (loan.original_principal + loan.max_interest_allowed) / newTerm;
+                
+                AppState.logTransaction('system', `Loan #${loan.loan_id} term extended: ${oldTerm} → ${newTerm} months`, {
+                    loanId: loan.loan_id,
+                    oldTerm: oldTerm,
+                    newTerm: newTerm
+                });
+                
+                alert(`✅ Loan term extended to ${newTerm} months. Monthly payment reduced to R${loan.monthly_payment.toFixed(2)}`);
+                AppState.save();
+                AppState.updateDashboard();
+            },
+            
+            reduceLoanPrincipal(loan) {
+                const reduction = loan.original_principal * 0.2;
+                const newPrincipal = loan.original_principal - reduction;
+                
+                loan.original_principal = newPrincipal;
+                loan.principal_amount = newPrincipal;
+                loan.remaining_principal = Math.min(loan.remaining_principal, newPrincipal);
+                loan.max_interest_allowed = newPrincipal; // Reset cap
+                
+                AppState.logTransaction('system', `Loan #${loan.loan_id} principal reduced: R${(loan.original_principal + reduction).toFixed(2)} → R${newPrincipal.toFixed(2)}`, {
+                    loanId: loan.loan_id,
+                    reduction: reduction
+                });
+                
+                alert(`✅ Principal reduced by R${reduction.toFixed(2)}. New principal: R${newPrincipal.toFixed(2)}`);
+                AppState.save();
+                AppState.updateDashboard();
+            },
+            
+            freezeLoanInterest(loan) {
+                const currentInterest = AppState.calculateAdvancedInterest(loan).totalInterestIncurred;
+                loan.max_interest_allowed = currentInterest;
+                loan.expected_monthly_interest = currentInterest / loan.term_months;
+                
+                AppState.logTransaction('system', `Loan #${loan.loan_id} interest frozen at R${currentInterest.toFixed(2)}`, {
+                    loanId: loan.loan_id,
+                    frozenAmount: currentInterest
+                });
+                
+                alert(`✅ Interest frozen at R${currentInterest.toFixed(2)}. No further interest will accrue.`);
+                AppState.save();
+                AppState.updateDashboard();
+            },
+            
             recalculateFinancialState() {
                 console.log('🔄 Starting comprehensive financial recalculation...');
                 
@@ -1632,6 +1793,7 @@
                                     ${loan.status === 'active' ? `
                                         <button class="btn" style="padding: 5px 10px; font-size: 12px;" onclick="makePayment(${loan.loan_id})">💰 Make Payment</button>
                                         <button class="btn" style="padding: 5px 10px; font-size: 12px;" onclick="updateLoanStatus(${loan.loan_id}, 'completed')">✅ Mark Paid</button>
+                                        <button class="btn btn-warning" style="padding: 5px 10px; font-size: 12px;" onclick="AppState.reviseLoan(${loan.loan_id})">🔧 Revise Loan</button>
                                         <button class="btn btn-danger" style="padding: 5px 10px; font-size: 12px;" onclick="updateLoanStatus(${loan.loan_id}, 'defaulted')">❌ Mark Default</button>
                                         <button class="btn" style="padding: 5px 10px; font-size: 12px; background: #8e44ad;" onclick="updateLoanStatus(${loan.loan_id}, 'blacklisted')">🚫 Blacklist</button>
                                     ` : `
@@ -2587,9 +2749,20 @@
                 return;
             }
 
-            // Calculate payoff amount (for early payoff option)
+            // Calculate advanced payoff amount using new interest system
+            const advancedInterest = AppState.calculateAdvancedInterest(loan, new Date(paymentDate));
             const initiationFeeRemaining = (loan.total_initiation_fee || 0) - (loan.initiation_fee_paid || 0);
-            const payoffAmount = (loan.remaining_principal || loan.principal_amount) + initiationFeeRemaining;
+            
+            // Calculate interest balance (incurred - already paid)
+            const interestAlreadyPaid = loan.total_interest_charged || 0;
+            const interestBalance = Math.max(0, advancedInterest.totalOwed - interestAlreadyPaid);
+            
+            // Apply 20% discount to remaining interest for early payoff
+            const discountedInterest = interestBalance * 0.80;
+            
+            const payoffAmount = (loan.remaining_principal || loan.principal_amount) + 
+                                discountedInterest + 
+                                initiationFeeRemaining;
 
             // Get payment amount from user
             const paymentAmount = prompt(`💰 Enter payment amount for Loan #${loanId}:\n\n📊 Current Status:\n• Remaining Balance: R${loan.current_balance.toFixed(2)}\n• Expected Monthly Payment: R${loan.monthly_payment.toFixed(2)}\n• Remaining Principal: R${(loan.remaining_principal || loan.principal_amount).toFixed(2)}\n\n💡 Full Payoff Amount: R${payoffAmount.toFixed(2)}\n   (Principal + Remaining Initiation Fee)`);
@@ -2670,10 +2843,17 @@
             let initiationFeePaid = Math.min(expectedMonthlyInitiation, remainingInitiationFee, remainingPayment);
             remainingPayment -= initiationFeePaid;
             
-            // Step 3: Calculate interest using EQUALIZED monthly amount (not recalculated each time)
-            // This prevents the bug where early payments get hit with excessive interest
-            const interestRemaining = loan.max_interest_allowed - loan.total_interest_charged;
-            let interestForThisPayment = Math.min(loan.expected_monthly_interest, interestRemaining, remainingPayment);
+            // Step 3: Calculate interest using ADVANCED system (calendar-based + 100% cap)
+            const advancedInterest = AppState.calculateAdvancedInterest(loan, new Date(paymentDate));
+            const interestAlreadyPaid = loan.total_interest_charged || 0;
+            const interestBalance = Math.max(0, advancedInterest.totalOwed - interestAlreadyPaid);
+            
+            // For early payoff, apply 20% discount to interest
+            const isEarlyPayoff = paidAmount >= payoffAmount;
+            const interestForThisPayment = isEarlyPayoff ? 
+                Math.min(interestBalance * 0.80, remainingPayment) : 
+                Math.min(interestBalance, remainingPayment);
+            
             remainingPayment -= interestForThisPayment;
             
             // Step 4: Apply remaining payment to principal
