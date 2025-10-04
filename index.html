@@ -1367,6 +1367,21 @@
                 let totalFeesReceived = 0;
                 
                 this.loans.forEach(loan => {
+                    // Backward compatibility: Initialize payments_made if missing
+                    if (loan.payments_made === undefined) {
+                        const principalRepaid = (loan.original_principal || loan.principal_amount) - (loan.remaining_principal || 0);
+                        // Estimate payments made based on principal repaid
+                        if (loan.status === 'completed') {
+                            loan.payments_made = loan.term_months; // All payments made
+                        } else if (principalRepaid > 0) {
+                            // Estimate based on proportion of principal repaid
+                            loan.payments_made = Math.floor((principalRepaid / loan.principal_amount) * loan.term_months);
+                        } else {
+                            loan.payments_made = 0;
+                        }
+                        console.log(`Initialized payments_made for Loan #${loan.loan_id}: ${loan.payments_made}/${loan.term_months}`);
+                    }
+                    
                     // Money loaned out
                     totalDisbursed += loan.principal_amount;
                     
@@ -2475,6 +2490,7 @@
                 max_interest_allowed: loanData.totalInterest, // Interest cap (based on Math.ceil(term/2) calculation)
                 expected_monthly_interest: loanData.totalInterest / loanData.term, // Equalized monthly interest
                 total_interest_charged: 0, // Track total interest charged so far
+                payments_made: 0, // Track number of payments received
                 status: 'active',
                 created_at: new Date(loanData.loanDate + 'T12:00:00').toISOString() // Use custom loan date
             };
@@ -2687,6 +2703,7 @@
             loan.initiation_fee_paid += initiationFeePaid;
             loan.total_interest_charged += interestForThisPayment;
             loan.current_balance -= paidAmount;
+            loan.payments_made = (loan.payments_made || 0) + 1; // Increment payment counter
             
             // Round to 2 decimal places to avoid floating-point errors
             loan.remaining_principal = Math.round(loan.remaining_principal * 100) / 100;
@@ -2820,6 +2837,11 @@
             }
             if (details.initiationFeePaid) {
                 loan.initiation_fee_paid = (loan.initiation_fee_paid || 0) - details.initiationFeePaid;
+            }
+            
+            // Decrement payment counter
+            if (loan.payments_made && loan.payments_made > 0) {
+                loan.payments_made -= 1;
             }
             
             if (client) {
@@ -3662,15 +3684,22 @@
                 ['Loans Disbursed', filteredLoans.length],
                 [],
                 ['Loan Details'],
-                ['Loan ID', 'Client Name', 'Principal', 'Term (months)', 'Status', 'Created Date']
+                ['Loan ID', 'Client Name', 'Principal', 'Term (months)', 'Payments', 'Remaining Principal', 'Current Balance', 'Status', 'Created Date']
             ];
             
             filteredLoans.forEach(loan => {
+                const paymentsMade = loan.payments_made || 0;
+                const paymentStatus = `${paymentsMade}/${loan.term_months}`;
+                const remainingPrincipal = loan.remaining_principal || 0;
+                
                 summaryData.push([
                     loan.loan_id,
                     loan.client_name,
                     loan.principal_amount,
                     loan.term_months,
+                    paymentStatus,
+                    remainingPrincipal,
+                    loan.current_balance,
                     loan.status,
                     new Date(loan.created_at).toLocaleDateString()
                 ]);
