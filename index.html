@@ -2750,12 +2750,12 @@
             }
 
             // Calculate advanced payoff amount using new interest system
-            const advancedInterest = AppState.calculateAdvancedInterest(loan, new Date(paymentDate));
+            const payoffInterest = AppState.calculateAdvancedInterest(loan, new Date(paymentDate));
             const initiationFeeRemaining = (loan.total_initiation_fee || 0) - (loan.initiation_fee_paid || 0);
             
             // Calculate interest balance (incurred - already paid)
             const interestAlreadyPaid = loan.total_interest_charged || 0;
-            const interestBalance = Math.max(0, advancedInterest.totalOwed - interestAlreadyPaid);
+            const interestBalance = Math.max(0, payoffInterest.totalOwed - interestAlreadyPaid);
             
             // Apply 20% discount to remaining interest for early payoff
             const discountedInterest = interestBalance * 0.80;
@@ -2844,9 +2844,9 @@
             remainingPayment -= initiationFeePaid;
             
             // Step 3: Calculate interest using ADVANCED system (calendar-based + 100% cap)
-            const advancedInterest = AppState.calculateAdvancedInterest(loan, new Date(paymentDate));
+            const paymentInterest = AppState.calculateAdvancedInterest(loan, new Date(paymentDate));
             const interestAlreadyPaid = loan.total_interest_charged || 0;
-            const interestBalance = Math.max(0, advancedInterest.totalOwed - interestAlreadyPaid);
+            const interestBalance = Math.max(0, paymentInterest.totalOwed - interestAlreadyPaid);
             
             // For early payoff, apply 20% discount to interest
             const isEarlyPayoff = paidAmount >= payoffAmount;
