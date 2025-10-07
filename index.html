@@ -2841,13 +2841,13 @@
             // Step 3: Calculate interest using ADVANCED system (calendar-based + 100% cap)
             const paymentInterest = AppState.calculateAdvancedInterest(loan, new Date(paymentDate));
             const interestPaidSoFar = loan.total_interest_charged || 0;
-            const interestBalance = Math.max(0, paymentInterest.totalOwed - interestPaidSoFar);
+            const remainingInterest = Math.max(0, paymentInterest.totalOwed - interestPaidSoFar);
             
             // For early payoff, apply 20% discount to interest
-            const isEarlyPayoff = paidAmount >= payoffAmount;
+            let isEarlyPayoff = paidAmount >= payoffAmount;
             const interestForThisPayment = isEarlyPayoff ? 
-                Math.min(interestBalance * 0.80, remainingPayment) : 
-                Math.min(interestBalance, remainingPayment);
+                Math.min(remainingInterest * 0.80, remainingPayment) : 
+                Math.min(remainingInterest, remainingPayment);
             
             remainingPayment -= interestForThisPayment;
             
@@ -2861,7 +2861,7 @@
             const isFullPayoff = paidAmount >= payoffAmount || loan.remaining_principal - principalPaid < 0.01;
             
             // Determine if this is actually an EARLY payoff (paid before due)
-            let isEarlyPayoff = false;
+            // Note: isEarlyPayoff already declared above for interest calculation
             if (isFullPayoff) {
                 // Calculate expected completion date (loan start + term)
                 const loanStartDate = new Date(loan.created_at);
