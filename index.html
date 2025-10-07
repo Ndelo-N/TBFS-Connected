@@ -2806,7 +2806,7 @@
                 let balance = loan.original_principal;
                 const monthlyPrincipal = loan.original_principal / loan.term_months;
                 for (let i = 0; i < interestMonths; i++) {
-                    maxInterest += balance * 0.30;
+                    maxInterest += balance * 0.15;
                     balance -= monthlyPrincipal;
                 }
                 loan.max_interest_allowed = maxInterest;
