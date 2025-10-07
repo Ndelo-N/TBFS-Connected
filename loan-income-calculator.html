@@ -254,6 +254,71 @@
             line-height: 1.5;
         }
 
+        .highlight-control {
+            background: #fff3cd;
+            border: 2px solid #ffc107;
+            padding: 15px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            flex-wrap: wrap;
+        }
+
+        .highlight-control label {
+            font-weight: 600;
+            color: #2c3e50;
+        }
+
+        .highlight-control input {
+            padding: 8px 12px;
+            border: 2px solid #ffc107;
+            border-radius: 6px;
+            font-size: 14px;
+            width: 100px;
+        }
+
+        .highlight-control button {
+            background: #ffc107;
+            color: #2c3e50;
+            border: none;
+            padding: 8px 20px;
+            border-radius: 6px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .highlight-control button:hover {
+            background: #ffb300;
+            transform: translateY(-2px);
+        }
+
+        .roi-highlight {
+            background: #d4edda !important;
+            border: 2px solid #28a745;
+            font-weight: 700;
+            color: #155724;
+            position: relative;
+        }
+
+        .roi-badge {
+            position: absolute;
+            top: 2px;
+            right: 2px;
+            background: #28a745;
+            color: white;
+            font-size: 9px;
+            padding: 2px 4px;
+            border-radius: 3px;
+            font-weight: 600;
+        }
+
+        td {
+            position: relative;
+        }
+
         @media (max-width: 768px) {
             .header h1 {
                 font-size: 24px;
@@ -338,6 +403,17 @@
             <div class="results-header">
                 <h2>Income Projections</h2>
                 <button class="export-btn" onclick="exportToCSV()">📥 Export to CSV</button>
+            </div>
+
+            <div class="highlight-control">
+                <label for="roiThreshold">💡 Highlight ROI Above:</label>
+                <input type="number" id="roiThreshold" value="30" min="0" max="1000" step="1">
+                <span style="color: #7f8c8d;">%</span>
+                <button onclick="applyHighlight()">🎨 Apply Highlight</button>
+                <button onclick="clearHighlight()" style="background: #e9ecef; color: #2c3e50;">Clear</button>
+                <span style="color: #7f8c8d; font-size: 13px; margin-left: auto;">
+                    ROI = (Income ÷ Loan Amount) × 100
+                </span>
             </div>
 
             <div style="overflow-x: auto;">
@@ -467,6 +543,16 @@
                 for (let term = 1; term <= 6; term++) {
                     const result = calculateLoanIncome(principal, term, interestRate, initiationFee, adminFee);
                     const cell = document.createElement('td');
+                    
+                    // Calculate ROI
+                    const roi = (result.totalIncome / principal) * 100;
+                    
+                    // Store data attributes for highlighting
+                    cell.setAttribute('data-income', result.totalIncome);
+                    cell.setAttribute('data-principal', principal);
+                    cell.setAttribute('data-roi', roi.toFixed(2));
+                    cell.setAttribute('data-term', term);
+                    
                     cell.textContent = formatCurrency(result.totalIncome);
                     row.appendChild(cell);
                 }
@@ -545,6 +631,56 @@
             a.download = 'TBFS_Loan_Income_Table.csv';
             a.click();
             window.URL.revokeObjectURL(url);
+        }
+
+        function applyHighlight() {
+            const threshold = parseFloat(document.getElementById('roiThreshold').value);
+            
+            if (isNaN(threshold)) {
+                alert('Please enter a valid ROI threshold');
+                return;
+            }
+            
+            // Clear existing highlights
+            clearHighlight();
+            
+            // Get all data cells (skip first column which is loan amount)
+            const cells = document.querySelectorAll('#tableBody td[data-roi]');
+            let highlightCount = 0;
+            
+            cells.forEach(cell => {
+                const roi = parseFloat(cell.getAttribute('data-roi'));
+                
+                if (roi > threshold) {
+                    cell.classList.add('roi-highlight');
+                    
+                    // Add ROI badge
+                    const badge = document.createElement('span');
+                    badge.className = 'roi-badge';
+                    badge.textContent = `${roi.toFixed(1)}%`;
+                    cell.appendChild(badge);
+                    
+                    highlightCount++;
+                }
+            });
+            
+            if (highlightCount > 0) {
+                alert(`✅ Highlighted ${highlightCount} loan options with ROI above ${threshold}%`);
+            } else {
+                alert(`ℹ️ No loans found with ROI above ${threshold}%. Try lowering the threshold.`);
+            }
+        }
+        
+        function clearHighlight() {
+            // Remove all highlights
+            const highlightedCells = document.querySelectorAll('.roi-highlight');
+            highlightedCells.forEach(cell => {
+                cell.classList.remove('roi-highlight');
+            });
+            
+            // Remove all ROI badges
+            const badges = document.querySelectorAll('.roi-badge');
+            badges.forEach(badge => badge.remove());
         }
 
         // Generate table on page load with default values
