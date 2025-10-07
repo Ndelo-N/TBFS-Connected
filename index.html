@@ -612,10 +612,9 @@
                             <div class="stockvel-info">
                                 <h4>Stockvel Member Benefits</h4>
                                 <ul>
-                                    <li><strong>Initiation Fee:</strong> Waived if loan amount ≤ total contributions, otherwise 12% on the difference</li>
-                                    <li><strong>Interest Rates:</strong> Tiered calculation based on loan-to-savings ratio</li>
-                                    <li><strong>Admin Fee:</strong> R60 × effective interest rate (based on tiered calculation)</li>
-                                    <li><strong>Minimum Interest:</strong> 10% of outstanding balance per month applies if calculated interest is lower</li>
+                                    <li><strong>Initiation Fee:</strong> 3% on loan amount up to your contributions + 9% on any amount above</li>
+                                    <li><strong>Interest Rates:</strong> Tiered calculation based on loan-to-savings ratio (no minimum interest applies)</li>
+                                    <li><strong>Admin Fee:</strong> R60 × (100% - initial month's interest rate)</li>
                                 </ul>
                             </div>
                             <div class="form-grid">
@@ -1366,7 +1365,7 @@
                 const monthlyPrincipal = currentBalance / loan.term_months;
                 
                 for (let month = 1; month <= monthsElapsed; month++) {
-                    const monthlyInterest = currentBalance * 0.30; // 30% per month
+                    const monthlyInterest = currentBalance * 0.15; // 15% per month
                     totalInterestIncurred += monthlyInterest;
                     currentBalance = Math.max(0, currentBalance - monthlyPrincipal);
                 }
@@ -1558,12 +1557,12 @@
                     
                     if (loan.status === 'completed') {
                         // All admin fees received
-                        adminFeesReceived = loan.term_months * 18; // R18 per month
+                        adminFeesReceived = loan.term_months * 60; // R60 per month
                     } else {
                         // Estimate based on principal repaid
                         const paymentsEstimate = loan.term_months > 0 ? 
                             Math.floor((principalRepaid / loan.principal_amount) * loan.term_months) : 0;
-                        adminFeesReceived = paymentsEstimate * 18;
+                        adminFeesReceived = paymentsEstimate * 60;
                     }
                     
                     totalPrincipalRepaid += principalRepaid;
@@ -2084,16 +2083,16 @@
                         initiationFee = (totalContributions * 0.03) + ((principal - totalContributions) * 0.09);
                     }
                 } else {
-                    initiationFee = principal * 0.30; // Standard 30% for non-Stockvel members
+                    initiationFee = principal * 0.09; // Standard 9% for non-Stockvel members
                 }
                 
                 // ADMIN FEE RULES for Stockvel Members
                 let adminFee;
                 if (isStockvelMember) {
-                    // Calculate admin fee based on tiered interest calculation
+                    // Calculate admin fee: 60 * (1 - initial month's interest rate)
                     const tieredInterest = calculateTieredStockvelInterest(principal, totalContributions);
                     const effectiveInterestRate = tieredInterest / principal;
-                    adminFee = 60 * effectiveInterestRate;
+                    adminFee = 60 * (1 - effectiveInterestRate);
                 } else {
                     adminFee = 60; // Standard admin fee for non-Stockvel members
                 }
@@ -2231,20 +2230,20 @@
                             <p><strong>Total Contributions:</strong> R ${loanData.totalContributions.toFixed(2)}</p>
                             <p><strong>Monthly Contribution:</strong> R ${loanData.monthlyContribution.toFixed(2)}</p>
                             <p><strong>Interest Rate:</strong> Variable (Based on loan-to-savings ratio)</p>
-                            <p><strong>Initiation Fee:</strong> R ${loanData.initiationFee.toFixed(2)} ${loanData.initiationFee === 0 ? '(Waived - Loan ≤ Total Contributions)' : ''}</p>
+                            <p><strong>Initiation Fee:</strong> R ${loanData.initiationFee.toFixed(2)}<br>
+                               <span style="font-size: 11px; color: #666;">(3% up to contributions + 9% on excess)</span></p>
                             <div style="background: #e8f5e8; padding: 10px; border-radius: 8px; margin-top: 10px; font-size: 12px;">
                                 <strong>Interest Rate Breakdown (Tiered Calculation):</strong><br>
                                 • >110% of savings: 30% | 105-110%: 25% | 75-105%: 20%<br>
                                 • 50-75%: 15% | 25-50%: 8% | 5-25%: 3%<br>
                                 • Each portion of loan is charged at its applicable rate<br>
-                                • Minimum 10% of outstanding balance applies<br>
-                                • <strong>Admin Fee:</strong> R60 × effective rate (R${loanData.adminFee.toFixed(2)})
+                                • <strong>Admin Fee:</strong> R60 × (100% - initial rate) = R${loanData.adminFee.toFixed(2)}
                             </div>`;
                     } else {
                         const interestPeriod = Math.ceil(loanData.term / 2) >= 3 ? Math.ceil(loanData.term / 2) : 3;
                         clientInfoHTML += `
-                            <p><strong>Interest Rate:</strong> 30% per month (calculated for ${interestPeriod} months, spread across ${loanData.term} months)</p>
-                            <p><strong>Initiation Fee:</strong> R ${loanData.initiationFee.toFixed(2)}</p>`;
+                            <p><strong>Interest Rate:</strong> 15% per month (calculated for ${interestPeriod} months, spread across ${loanData.term} months)</p>
+                            <p><strong>Initiation Fee:</strong> R ${loanData.initiationFee.toFixed(2)} (9% of loan amount)</p>`;
                     }
                     
                     clientInfoHTML += `
@@ -2793,7 +2792,7 @@
             // Initialize loan fields if they don't exist (for older loans)
             if (!loan.remaining_principal) loan.remaining_principal = loan.principal_amount;
             if (!loan.original_principal) loan.original_principal = loan.principal_amount;
-            if (!loan.total_initiation_fee) loan.total_initiation_fee = loan.principal_amount * 0.12;
+            if (!loan.total_initiation_fee) loan.total_initiation_fee = loan.principal_amount * 0.09;
             if (!loan.initiation_fee_paid) loan.initiation_fee_paid = 0;
             if (!loan.total_interest_charged) loan.total_interest_charged = 0;
             
