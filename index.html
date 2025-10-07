@@ -1092,7 +1092,7 @@
 
     <script>
         // App Version
-        const APP_VERSION = '1.5.4'; // Update this when making changes
+        const APP_VERSION = '1.5.10'; // Update this when making changes
         
         // App State Management
         const AppState = {
@@ -1950,7 +1950,9 @@
             let currentSavings = totalContributions;
             
             // Interest calculation period: minimum 3 months, or Math.ceil(term/2) if >= 3
-            const interestMonths = Math.ceil(term / 2) >= 3 ? Math.ceil(term / 2) : 3;
+            // BUT cannot exceed the actual loan term (for 1-2 month loans)
+            const calculatedMonths = Math.ceil(term / 2) >= 3 ? Math.ceil(term / 2) : 3;
+            const interestMonths = Math.min(calculatedMonths, term);
             
             console.log(`\n=== STOCKVEL INTEREST CALCULATION ===`);
             console.log(`Principal: R${principal.toFixed(2)}`);
