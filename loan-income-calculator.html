@@ -1,0 +1,556 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TBFS Loan Income Calculator</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            overflow: hidden;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 30px;
+            text-align: center;
+        }
+
+        .header h1 {
+            font-size: 32px;
+            margin-bottom: 10px;
+        }
+
+        .header p {
+            opacity: 0.9;
+            font-size: 16px;
+        }
+
+        .controls {
+            padding: 30px;
+            background: #f8f9fa;
+            border-bottom: 2px solid #e9ecef;
+        }
+
+        .input-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 20px;
+            margin-bottom: 20px;
+        }
+
+        .input-group {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .input-group label {
+            font-weight: 600;
+            color: #2c3e50;
+            margin-bottom: 8px;
+            font-size: 14px;
+        }
+
+        .input-group input {
+            padding: 12px;
+            border: 2px solid #e9ecef;
+            border-radius: 8px;
+            font-size: 16px;
+            transition: all 0.3s;
+        }
+
+        .input-group input:focus {
+            outline: none;
+            border-color: #667eea;
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+        }
+
+        .input-group .unit {
+            font-size: 12px;
+            color: #7f8c8d;
+            margin-top: 4px;
+        }
+
+        .generate-btn {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            padding: 15px 40px;
+            border-radius: 10px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+            box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
+        }
+
+        .generate-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(102, 126, 234, 0.6);
+        }
+
+        .generate-btn:active {
+            transform: translateY(0);
+        }
+
+        .results {
+            padding: 30px;
+        }
+
+        .results-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+
+        .results-header h2 {
+            color: #2c3e50;
+            font-size: 24px;
+        }
+
+        .export-btn {
+            background: #27ae60;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .export-btn:hover {
+            background: #229954;
+            transform: translateY(-2px);
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 30px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05);
+            border-radius: 10px;
+            overflow: hidden;
+        }
+
+        thead {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+
+        th {
+            padding: 15px;
+            text-align: left;
+            font-weight: 600;
+            font-size: 14px;
+        }
+
+        th:first-child {
+            border-top-left-radius: 10px;
+        }
+
+        th:last-child {
+            border-top-right-radius: 10px;
+        }
+
+        td {
+            padding: 12px 15px;
+            border-bottom: 1px solid #e9ecef;
+            font-size: 14px;
+        }
+
+        tbody tr:hover {
+            background: #f8f9fa;
+        }
+
+        tbody tr:last-child td {
+            border-bottom: none;
+        }
+
+        .highlight-row {
+            background: #e8f5e8 !important;
+            font-weight: 600;
+        }
+
+        .breakdown-section {
+            margin-top: 30px;
+            padding: 20px;
+            background: #f8f9fa;
+            border-radius: 10px;
+        }
+
+        .breakdown-section h3 {
+            color: #2c3e50;
+            margin-bottom: 15px;
+            font-size: 18px;
+        }
+
+        .breakdown-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 15px;
+        }
+
+        .breakdown-card {
+            background: white;
+            padding: 15px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+        }
+
+        .breakdown-card h4 {
+            color: #7f8c8d;
+            font-size: 12px;
+            font-weight: 600;
+            margin-bottom: 8px;
+            text-transform: uppercase;
+        }
+
+        .breakdown-card .value {
+            color: #2c3e50;
+            font-size: 20px;
+            font-weight: 700;
+        }
+
+        .info-box {
+            background: #e3f2fd;
+            border-left: 4px solid #2196f3;
+            padding: 15px;
+            margin-top: 20px;
+            border-radius: 5px;
+        }
+
+        .info-box h4 {
+            color: #1976d2;
+            margin-bottom: 8px;
+            font-size: 14px;
+        }
+
+        .info-box p {
+            color: #424242;
+            font-size: 13px;
+            line-height: 1.5;
+        }
+
+        @media (max-width: 768px) {
+            .header h1 {
+                font-size: 24px;
+            }
+
+            .input-grid {
+                grid-template-columns: 1fr;
+            }
+
+            table {
+                font-size: 12px;
+            }
+
+            th, td {
+                padding: 8px;
+            }
+        }
+
+        .no-results {
+            text-align: center;
+            padding: 60px 20px;
+            color: #7f8c8d;
+        }
+
+        .no-results i {
+            font-size: 48px;
+            margin-bottom: 15px;
+            opacity: 0.3;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>💰 TBFS Loan Income Calculator</h1>
+            <p>Calculate expected income across different loan amounts and terms</p>
+        </div>
+
+        <div class="controls">
+            <div class="input-grid">
+                <div class="input-group">
+                    <label for="startAmount">Starting Amount (R)</label>
+                    <input type="number" id="startAmount" value="500" min="100" step="100">
+                    <span class="unit">Minimum loan amount</span>
+                </div>
+                <div class="input-group">
+                    <label for="endAmount">Ending Amount (R)</label>
+                    <input type="number" id="endAmount" value="10000" min="100" step="100">
+                    <span class="unit">Maximum loan amount</span>
+                </div>
+                <div class="input-group">
+                    <label for="increment">Increment (R)</label>
+                    <input type="number" id="increment" value="500" min="100" step="100">
+                    <span class="unit">Amount step size</span>
+                </div>
+            </div>
+
+            <div class="input-grid">
+                <div class="input-group">
+                    <label for="interestRate">Monthly Interest Rate (%)</label>
+                    <input type="number" id="interestRate" value="15" min="0" max="100" step="0.1">
+                    <span class="unit">Applied on declining balance</span>
+                </div>
+                <div class="input-group">
+                    <label for="initiationFee">Initiation Fee (%)</label>
+                    <input type="number" id="initiationFee" value="9" min="0" max="100" step="0.1">
+                    <span class="unit">One-time upfront fee</span>
+                </div>
+                <div class="input-group">
+                    <label for="adminFee">Admin Fee per Month (R)</label>
+                    <input type="number" id="adminFee" value="60" min="0" step="10">
+                    <span class="unit">Fixed monthly charge</span>
+                </div>
+            </div>
+
+            <div style="text-align: center; margin-top: 20px;">
+                <button class="generate-btn" onclick="generateTable()">📊 Generate Income Table</button>
+            </div>
+        </div>
+
+        <div class="results" id="results" style="display: none;">
+            <div class="results-header">
+                <h2>Income Projections</h2>
+                <button class="export-btn" onclick="exportToCSV()">📥 Export to CSV</button>
+            </div>
+
+            <div style="overflow-x: auto;">
+                <table id="incomeTable">
+                    <thead>
+                        <tr>
+                            <th>Loan Amount</th>
+                            <th>1 Month</th>
+                            <th>2 Months</th>
+                            <th>3 Months</th>
+                            <th>4 Months</th>
+                            <th>5 Months</th>
+                            <th>6 Months</th>
+                        </tr>
+                    </thead>
+                    <tbody id="tableBody">
+                    </tbody>
+                </table>
+            </div>
+
+            <div class="breakdown-section">
+                <h3>📊 Sample Calculation Breakdown</h3>
+                <p style="color: #7f8c8d; margin-bottom: 15px;">Example based on your current settings:</p>
+                <div class="breakdown-grid" id="sampleBreakdown">
+                </div>
+            </div>
+
+            <div class="info-box">
+                <h4>ℹ️ How Interest is Calculated</h4>
+                <p><strong>Declining Balance Method:</strong> Interest is calculated on the remaining loan balance each month. As the principal reduces, the interest amount decreases.</p>
+                <p style="margin-top: 8px;"><strong>Interest Period:</strong> Determined by Math.ceil(term/2) with minimum 3 months, capped at actual loan term.</p>
+                <p style="margin-top: 8px;"><strong>Total Income = Interest + Initiation Fee + (Admin Fee × Term)</strong></p>
+            </div>
+        </div>
+
+        <div class="no-results" id="noResults">
+            <div style="font-size: 48px; margin-bottom: 15px;">📊</div>
+            <h3>Ready to Calculate</h3>
+            <p>Set your parameters above and click "Generate Income Table"</p>
+        </div>
+    </div>
+
+    <script>
+        function calculateLoanIncome(principal, term, interestRate, initiationFeeRate, adminFeePerMonth) {
+            // Convert percentages to decimals
+            const monthlyRate = interestRate / 100;
+            const initFeeRate = initiationFeeRate / 100;
+            
+            // Calculate interest period
+            const calculatedMonths = Math.ceil(term / 2) >= 3 ? Math.ceil(term / 2) : 3;
+            const interestMonths = Math.min(calculatedMonths, term);
+            
+            // Calculate declining balance interest
+            let outstandingBalance = principal;
+            let totalInterest = 0;
+            const monthlyPrincipalPayment = principal / term;
+            
+            for (let month = 1; month <= interestMonths; month++) {
+                if (outstandingBalance > 0) {
+                    const monthlyInterest = outstandingBalance * monthlyRate;
+                    totalInterest += monthlyInterest;
+                    outstandingBalance -= monthlyPrincipalPayment;
+                }
+            }
+            
+            // Calculate fees
+            const initiationFee = principal * initFeeRate;
+            const totalAdminFees = adminFeePerMonth * term;
+            
+            // Total income
+            const totalIncome = totalInterest + initiationFee + totalAdminFees;
+            
+            return {
+                principal,
+                term,
+                interestMonths,
+                totalInterest: Math.round(totalInterest * 100) / 100,
+                initiationFee: Math.round(initiationFee * 100) / 100,
+                totalAdminFees,
+                totalIncome: Math.round(totalIncome * 100) / 100
+            };
+        }
+
+        function formatCurrency(amount) {
+            return 'R ' + amount.toLocaleString('en-ZA', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        }
+
+        function generateTable() {
+            // Get input values
+            const startAmount = parseFloat(document.getElementById('startAmount').value);
+            const endAmount = parseFloat(document.getElementById('endAmount').value);
+            const increment = parseFloat(document.getElementById('increment').value);
+            const interestRate = parseFloat(document.getElementById('interestRate').value);
+            const initiationFee = parseFloat(document.getElementById('initiationFee').value);
+            const adminFee = parseFloat(document.getElementById('adminFee').value);
+
+            // Validate inputs
+            if (isNaN(startAmount) || isNaN(endAmount) || isNaN(increment) || 
+                isNaN(interestRate) || isNaN(initiationFee) || isNaN(adminFee)) {
+                alert('Please enter valid numbers for all fields');
+                return;
+            }
+
+            if (startAmount >= endAmount) {
+                alert('Starting amount must be less than ending amount');
+                return;
+            }
+
+            if (increment <= 0) {
+                alert('Increment must be greater than 0');
+                return;
+            }
+
+            // Generate table
+            const tbody = document.getElementById('tableBody');
+            tbody.innerHTML = '';
+
+            for (let principal = startAmount; principal <= endAmount; principal += increment) {
+                const row = document.createElement('tr');
+                
+                // Loan amount column
+                const amountCell = document.createElement('td');
+                amountCell.innerHTML = `<strong>${formatCurrency(principal)}</strong>`;
+                row.appendChild(amountCell);
+                
+                // Calculate for each term (1-6 months)
+                for (let term = 1; term <= 6; term++) {
+                    const result = calculateLoanIncome(principal, term, interestRate, initiationFee, adminFee);
+                    const cell = document.createElement('td');
+                    cell.textContent = formatCurrency(result.totalIncome);
+                    row.appendChild(cell);
+                }
+                
+                tbody.appendChild(row);
+            }
+
+            // Generate sample breakdown
+            generateSampleBreakdown(startAmount, interestRate, initiationFee, adminFee);
+
+            // Show results
+            document.getElementById('results').style.display = 'block';
+            document.getElementById('noResults').style.display = 'none';
+
+            // Scroll to results
+            document.getElementById('results').scrollIntoView({ behavior: 'smooth' });
+        }
+
+        function generateSampleBreakdown(sampleAmount, interestRate, initiationFee, adminFee) {
+            const sampleTerm = 3; // 3-month example
+            const result = calculateLoanIncome(sampleAmount, sampleTerm, interestRate, initiationFee, adminFee);
+            
+            const container = document.getElementById('sampleBreakdown');
+            container.innerHTML = `
+                <div class="breakdown-card">
+                    <h4>Loan Amount</h4>
+                    <div class="value">${formatCurrency(result.principal)}</div>
+                </div>
+                <div class="breakdown-card">
+                    <h4>Term</h4>
+                    <div class="value">${sampleTerm} Months</div>
+                </div>
+                <div class="breakdown-card">
+                    <h4>Interest Earned</h4>
+                    <div class="value">${formatCurrency(result.totalInterest)}</div>
+                </div>
+                <div class="breakdown-card">
+                    <h4>Initiation Fee</h4>
+                    <div class="value">${formatCurrency(result.initiationFee)}</div>
+                </div>
+                <div class="breakdown-card">
+                    <h4>Admin Fees (${sampleTerm} months)</h4>
+                    <div class="value">${formatCurrency(result.totalAdminFees)}</div>
+                </div>
+                <div class="breakdown-card" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white;">
+                    <h4 style="color: rgba(255,255,255,0.9);">Total Income</h4>
+                    <div class="value" style="color: white;">${formatCurrency(result.totalIncome)}</div>
+                </div>
+            `;
+        }
+
+        function exportToCSV() {
+            const table = document.getElementById('incomeTable');
+            let csv = [];
+            
+            // Get headers
+            const headers = Array.from(table.querySelectorAll('thead th')).map(th => th.textContent);
+            csv.push(headers.join(','));
+            
+            // Get rows
+            const rows = table.querySelectorAll('tbody tr');
+            rows.forEach(row => {
+                const cells = Array.from(row.querySelectorAll('td')).map(td => {
+                    // Remove currency formatting for CSV
+                    return td.textContent.replace(/R\s*/g, '').replace(/,/g, '');
+                });
+                csv.push(cells.join(','));
+            });
+            
+            // Create download
+            const csvContent = csv.join('\n');
+            const blob = new Blob([csvContent], { type: 'text/csv' });
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'TBFS_Loan_Income_Table.csv';
+            a.click();
+            window.URL.revokeObjectURL(url);
+        }
+
+        // Generate table on page load with default values
+        window.addEventListener('load', function() {
+            // Don't auto-generate, let user click the button
+        });
+    </script>
+</body>
+</html>
