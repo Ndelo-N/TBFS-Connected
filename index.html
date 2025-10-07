@@ -2744,6 +2744,22 @@
                 return;
             }
 
+            // Get payment date from user first (default to today)
+            const today = new Date().toISOString().split('T')[0];
+            const paymentDate = prompt(`📅 Enter payment date (YYYY-MM-DD):`, today);
+            
+            if (!paymentDate) {
+                alert('Payment cancelled');
+                return;
+            }
+            
+            // Validate date format
+            const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+            if (!dateRegex.test(paymentDate)) {
+                alert('Invalid date format. Please use YYYY-MM-DD format.');
+                return;
+            }
+
             // Calculate advanced payoff amount using new interest system
             const payoffInterest = AppState.calculateAdvancedInterest(loan, new Date(paymentDate));
             const initiationFeeRemaining = (loan.total_initiation_fee || 0) - (loan.initiation_fee_paid || 0);
@@ -2768,22 +2784,6 @@
             }
 
             const paidAmount = parseFloat(paymentAmount);
-            
-            // Get payment date from user (default to today)
-            const today = new Date().toISOString().split('T')[0];
-            const paymentDate = prompt(`📅 Enter payment date (YYYY-MM-DD):`, today);
-            
-            if (!paymentDate) {
-                alert('Payment cancelled');
-                return;
-            }
-            
-            // Validate date format
-            const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
-            if (!dateRegex.test(paymentDate)) {
-                alert('Invalid date format. Please use YYYY-MM-DD format.');
-                return;
-            }
             
             // Find client to determine type
             const client = AppState.clients.find(c => c.account_number === loan.account_number);
