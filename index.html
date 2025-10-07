@@ -1977,14 +1977,8 @@
                     // Use the new tiered calculation
                     let monthlyInterest = calculateTieredStockvelInterest(outstandingBalance, currentSavings);
                     
-                    // MINIMUM INTEREST RULE: If monthly interest is less than 10% of outstanding balance, use 10%
-                    const minimumMonthlyInterest = outstandingBalance * 0.10;
-                    console.log(`Tiered interest: R${monthlyInterest.toFixed(2)}, Minimum 10%: R${minimumMonthlyInterest.toFixed(2)}`);
-                    
-                    if (monthlyInterest < minimumMonthlyInterest) {
-                        console.log(`Minimum interest rule applied: R${monthlyInterest.toFixed(2)} < R${minimumMonthlyInterest.toFixed(2)}`);
-                        monthlyInterest = minimumMonthlyInterest;
-                    }
+                    // No minimum interest rule for Stockvel members - use tiered calculation only
+                    console.log(`Tiered interest: R${monthlyInterest.toFixed(2)}`);
                     
                     cumulativeInterest += monthlyInterest;
                     console.log(`Final Monthly Interest: R${monthlyInterest.toFixed(2)}`);
@@ -2082,13 +2076,15 @@
                 // INITIATION FEE RULES for Stockvel Members
                 let initiationFee;
                 if (isStockvelMember) {
+                    // Calculate initiation fee: 3% for amount <= contribution, 9% for amount above
                     if (principal <= totalContributions) {
-                        initiationFee = 0; // R0.00 if loan amount <= total contribution
+                        initiationFee = principal * 0.03; // 3% on the loan amount
                     } else {
-                        initiationFee = (principal - totalContributions) * 0.12; // 12% on the difference
+                        // 3% on contribution amount + 9% on the excess
+                        initiationFee = (totalContributions * 0.03) + ((principal - totalContributions) * 0.09);
                     }
                 } else {
-                    initiationFee = principal * 0.12; // Standard 12% for non-Stockvel members
+                    initiationFee = principal * 0.30; // Standard 30% for non-Stockvel members
                 }
                 
                 // ADMIN FEE RULES for Stockvel Members
@@ -2112,7 +2108,7 @@
                     console.log('Stockvel interest calculation:', totalInterest);
                 } else {
                     // Use standard interest calculation
-                    interestRate = 0.30; // 30% per month
+                    interestRate = 0.15; // 15% per month
                     
                     // Interest calculation period: minimum 3 months, or Math.ceil(term/2) if >= 3
                     // BUT cannot exceed the actual loan term (for 1-2 month loans)
