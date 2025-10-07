@@ -121,10 +121,116 @@
         .tab-content {
             display: none;
             padding: 40px;
+            transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.3s ease;
         }
 
         .tab-content.active {
             display: block;
+        }
+
+        /* Swipe Navigation Styles */
+        .tabs-container {
+            position: relative;
+            overflow: hidden;
+            touch-action: pan-y; /* Allow vertical scrolling, detect horizontal swipes */
+        }
+
+        .tab-content.swipe-left {
+            animation: slideOutLeft 0.3s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+        }
+
+        .tab-content.swipe-right {
+            animation: slideOutRight 0.3s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+        }
+
+        .tab-content.slide-in-left {
+            animation: slideInLeft 0.3s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+        }
+
+        .tab-content.slide-in-right {
+            animation: slideInRight 0.3s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+        }
+
+        @keyframes slideOutLeft {
+            from {
+                transform: translateX(0);
+                opacity: 1;
+            }
+            to {
+                transform: translateX(-100%);
+                opacity: 0;
+            }
+        }
+
+        @keyframes slideOutRight {
+            from {
+                transform: translateX(0);
+                opacity: 1;
+            }
+            to {
+                transform: translateX(100%);
+                opacity: 0;
+            }
+        }
+
+        @keyframes slideInLeft {
+            from {
+                transform: translateX(-100%);
+                opacity: 0;
+            }
+            to {
+                transform: translateX(0);
+                opacity: 1;
+            }
+        }
+
+        @keyframes slideInRight {
+            from {
+                transform: translateX(100%);
+                opacity: 0;
+            }
+            to {
+                transform: translateX(0);
+                opacity: 1;
+            }
+        }
+
+        /* Swipe progress indicator */
+        .swipe-indicator {
+            position: fixed;
+            top: 50%;
+            transform: translateY(-50%);
+            font-size: 48px;
+            opacity: 0;
+            transition: opacity 0.2s;
+            pointer-events: none;
+            z-index: 1000;
+        }
+
+        .swipe-indicator.left {
+            left: 30px;
+        }
+
+        .swipe-indicator.right {
+            right: 30px;
+        }
+
+        .swipe-indicator.active {
+            opacity: 0.5;
+        }
+
+        .swipe-indicator.ready {
+            opacity: 1;
+            animation: pulse 0.5s ease-in-out infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% {
+                transform: translateY(-50%) scale(1);
+            }
+            50% {
+                transform: translateY(-50%) scale(1.2);
+            }
         }
 
         .form-section {
@@ -554,6 +660,13 @@
             <button class="tab" data-tab="income-table">💰 Income Table</button>
             <button class="tab" data-tab="settings">⚙️ Settings</button>
         </div>
+
+        <!-- Swipe Indicators -->
+        <div class="swipe-indicator left" id="swipeLeftIndicator">◀</div>
+        <div class="swipe-indicator right" id="swipeRightIndicator">▶</div>
+
+        <!-- Tabs Container for Swipe Detection -->
+        <div class="tabs-container" id="tabsContainer">
 
         <!-- CALCULATOR TAB -->
         <div id="calculator" class="tab-content active">
@@ -1094,6 +1207,8 @@
                 </div>
             </div>
         </div>
+
+        </div> <!-- End tabs-container -->
     </div>
 
     <script>
@@ -1814,6 +1929,157 @@
 
         let loanData = {};
 
+        // Swipe Navigation System
+        function switchTab(tabId, direction = null) {
+            const tabs = document.querySelectorAll('.tab');
+            const contents = document.querySelectorAll('.tab-content');
+            const currentTab = document.querySelector('.tab.active');
+            const currentContent = document.querySelector('.tab-content.active');
+            const newTab = document.querySelector(`[data-tab="${tabId}"]`);
+            const newContent = document.getElementById(tabId);
+
+            if (!newContent || currentContent === newContent) return;
+
+            // Remove active states
+            tabs.forEach(t => t.classList.remove('active'));
+            
+            // Add animation based on swipe direction
+            if (direction === 'left') {
+                currentContent.classList.add('swipe-left');
+                newContent.classList.add('slide-in-right');
+            } else if (direction === 'right') {
+                currentContent.classList.add('swipe-right');
+                newContent.classList.add('slide-in-left');
+            }
+
+            // Show new content
+            newContent.classList.add('active');
+            newContent.style.display = 'block';
+            newTab.classList.add('active');
+
+            // Clean up animations
+            setTimeout(() => {
+                contents.forEach(c => {
+                    c.classList.remove('swipe-left', 'swipe-right', 'slide-in-left', 'slide-in-right');
+                    if (!c.classList.contains('active')) {
+                        c.style.display = 'none';
+                    }
+                });
+            }, 300);
+        }
+
+        function initSwipeNavigation() {
+            const container = document.getElementById('tabsContainer');
+            const leftIndicator = document.getElementById('swipeLeftIndicator');
+            const rightIndicator = document.getElementById('swipeRightIndicator');
+
+            if (!container) return;
+
+            // Get all tabs in order
+            const tabs = Array.from(document.querySelectorAll('.tab')).map(t => t.dataset.tab);
+            
+            let touchStartX = 0;
+            let touchCurrentX = 0;
+            let isSwiping = false;
+            const swipeThreshold = 50; // Minimum distance to trigger swipe
+            const activateThreshold = 100; // Distance to "ready" state
+
+            container.addEventListener('touchstart', (e) => {
+                // Don't interfere with form inputs or scrollable elements
+                if (e.target.tagName === 'INPUT' || 
+                    e.target.tagName === 'TEXTAREA' || 
+                    e.target.tagName === 'SELECT' ||
+                    e.target.closest('iframe')) {
+                    return;
+                }
+
+                touchStartX = e.touches[0].clientX;
+                isSwiping = true;
+            }, { passive: true });
+
+            container.addEventListener('touchmove', (e) => {
+                if (!isSwiping) return;
+
+                touchCurrentX = e.touches[0].clientX;
+                const deltaX = touchCurrentX - touchStartX;
+                const absDeltaX = Math.abs(deltaX);
+
+                // Determine swipe direction
+                if (deltaX > swipeThreshold) {
+                    // Swiping right (go to previous tab)
+                    rightIndicator.classList.remove('active', 'ready');
+                    leftIndicator.classList.add('active');
+                    if (absDeltaX > activateThreshold) {
+                        leftIndicator.classList.add('ready');
+                    }
+                } else if (deltaX < -swipeThreshold) {
+                    // Swiping left (go to next tab)
+                    leftIndicator.classList.remove('active', 'ready');
+                    rightIndicator.classList.add('active');
+                    if (absDeltaX > activateThreshold) {
+                        rightIndicator.classList.add('ready');
+                    }
+                } else {
+                    // Not enough movement
+                    leftIndicator.classList.remove('active', 'ready');
+                    rightIndicator.classList.remove('active', 'ready');
+                }
+            }, { passive: true });
+
+            container.addEventListener('touchend', (e) => {
+                if (!isSwiping) return;
+
+                const deltaX = touchCurrentX - touchStartX;
+                const absDeltaX = Math.abs(deltaX);
+
+                // Clear indicators
+                leftIndicator.classList.remove('active', 'ready');
+                rightIndicator.classList.remove('active', 'ready');
+
+                // Perform tab switch if threshold met
+                if (absDeltaX > activateThreshold) {
+                    const currentTab = document.querySelector('.tab.active');
+                    const currentIndex = tabs.indexOf(currentTab.dataset.tab);
+
+                    if (deltaX > 0 && currentIndex > 0) {
+                        // Swipe right - go to previous tab
+                        switchTab(tabs[currentIndex - 1], 'right');
+                    } else if (deltaX < 0 && currentIndex < tabs.length - 1) {
+                        // Swipe left - go to next tab
+                        switchTab(tabs[currentIndex + 1], 'left');
+                    }
+                }
+
+                isSwiping = false;
+                touchStartX = 0;
+                touchCurrentX = 0;
+            }, { passive: true });
+
+            // Keyboard navigation (bonus)
+            document.addEventListener('keydown', (e) => {
+                // Only if no input is focused
+                if (document.activeElement.tagName === 'INPUT' || 
+                    document.activeElement.tagName === 'TEXTAREA') {
+                    return;
+                }
+
+                const currentTab = document.querySelector('.tab.active');
+                const currentIndex = tabs.indexOf(currentTab.dataset.tab);
+
+                if (e.key === 'ArrowLeft' && currentIndex > 0) {
+                    e.preventDefault();
+                    switchTab(tabs[currentIndex - 1], 'right');
+                } else if (e.key === 'ArrowRight' && currentIndex < tabs.length - 1) {
+                    e.preventDefault();
+                    switchTab(tabs[currentIndex + 1], 'left');
+                }
+            });
+
+            console.log('✨ Advanced Swipe Navigation initialized!');
+            console.log('👆 Swipe left/right to navigate tabs');
+            console.log('⌨️ Use arrow keys on desktop');
+        }
+
         // Wait for DOM to load
         document.addEventListener('DOMContentLoaded', function() {
             console.log('DOM loaded, setting up event listeners');
@@ -1831,13 +2097,12 @@
             // Tab switching
             document.querySelectorAll('.tab').forEach(tab => {
                 tab.addEventListener('click', () => {
-                    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
-                    document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
-                    
-                    tab.classList.add('active');
-                    document.getElementById(tab.dataset.tab).classList.add('active');
+                    switchTab(tab.dataset.tab);
                 });
             });
+
+            // Advanced Swipe Navigation
+            initSwipeNavigation();
             
             const form = document.getElementById('loanForm');
             if (form) {
