@@ -1886,57 +1886,57 @@
             // Calculate interest for each tier
             let remainingLoan = loanAmount;
             
-            // Tier 1: >110% of savings (30%)
+            // Tier 1: >110% of savings (15%)
             if (loanAmount > boundaries.tier1) {
                 const tierAmount = loanAmount - boundaries.tier1;
-                const tierInterest = tierAmount * 0.30;
-                totalInterest += tierInterest;
-                console.log(`Tier >110% of savings: R${tierAmount.toFixed(2)} × 30% = R${tierInterest.toFixed(2)}`);
-                remainingLoan -= tierAmount;
-            }
-            
-            // Tier 2: 105-110% of savings (25%)
-            if (remainingLoan > boundaries.tier2) {
-                const tierAmount = Math.min(remainingLoan - boundaries.tier2, boundaries.tier1 - boundaries.tier2);
-                const tierInterest = tierAmount * 0.25;
-                totalInterest += tierInterest;
-                console.log(`Tier 105-110% of savings: R${tierAmount.toFixed(2)} × 25% = R${tierInterest.toFixed(2)}`);
-                remainingLoan -= tierAmount;
-            }
-            
-            // Tier 3: 75-105% of savings (20%)
-            if (remainingLoan > boundaries.tier3) {
-                const tierAmount = Math.min(remainingLoan - boundaries.tier3, boundaries.tier2 - boundaries.tier3);
-                const tierInterest = tierAmount * 0.20;
-                totalInterest += tierInterest;
-                console.log(`Tier 75-105% of savings: R${tierAmount.toFixed(2)} × 20% = R${tierInterest.toFixed(2)}`);
-                remainingLoan -= tierAmount;
-            }
-            
-            // Tier 4: 50-75% of savings (15%)
-            if (remainingLoan > boundaries.tier4) {
-                const tierAmount = Math.min(remainingLoan - boundaries.tier4, boundaries.tier3 - boundaries.tier4);
                 const tierInterest = tierAmount * 0.15;
                 totalInterest += tierInterest;
-                console.log(`Tier 50-75% of savings: R${tierAmount.toFixed(2)} × 15% = R${tierInterest.toFixed(2)}`);
+                console.log(`Tier >110% of savings: R${tierAmount.toFixed(2)} × 15% = R${tierInterest.toFixed(2)}`);
                 remainingLoan -= tierAmount;
             }
             
-            // Tier 5: 25-50% of savings (8%)
+            // Tier 2: 105-110% of savings (12.5%)
+            if (remainingLoan > boundaries.tier2) {
+                const tierAmount = Math.min(remainingLoan - boundaries.tier2, boundaries.tier1 - boundaries.tier2);
+                const tierInterest = tierAmount * 0.125;
+                totalInterest += tierInterest;
+                console.log(`Tier 105-110% of savings: R${tierAmount.toFixed(2)} × 12.5% = R${tierInterest.toFixed(2)}`);
+                remainingLoan -= tierAmount;
+            }
+            
+            // Tier 3: 75-105% of savings (10%)
+            if (remainingLoan > boundaries.tier3) {
+                const tierAmount = Math.min(remainingLoan - boundaries.tier3, boundaries.tier2 - boundaries.tier3);
+                const tierInterest = tierAmount * 0.10;
+                totalInterest += tierInterest;
+                console.log(`Tier 75-105% of savings: R${tierAmount.toFixed(2)} × 10% = R${tierInterest.toFixed(2)}`);
+                remainingLoan -= tierAmount;
+            }
+            
+            // Tier 4: 50-75% of savings (7.5%)
+            if (remainingLoan > boundaries.tier4) {
+                const tierAmount = Math.min(remainingLoan - boundaries.tier4, boundaries.tier3 - boundaries.tier4);
+                const tierInterest = tierAmount * 0.075;
+                totalInterest += tierInterest;
+                console.log(`Tier 50-75% of savings: R${tierAmount.toFixed(2)} × 7.5% = R${tierInterest.toFixed(2)}`);
+                remainingLoan -= tierAmount;
+            }
+            
+            // Tier 5: 25-50% of savings (4%)
             if (remainingLoan > boundaries.tier5) {
                 const tierAmount = Math.min(remainingLoan - boundaries.tier5, boundaries.tier4 - boundaries.tier5);
-                const tierInterest = tierAmount * 0.08;
+                const tierInterest = tierAmount * 0.04;
                 totalInterest += tierInterest;
-                console.log(`Tier 25-50% of savings: R${tierAmount.toFixed(2)} × 8% = R${tierInterest.toFixed(2)}`);
+                console.log(`Tier 25-50% of savings: R${tierAmount.toFixed(2)} × 4% = R${tierInterest.toFixed(2)}`);
                 remainingLoan -= tierAmount;
             }
             
-            // Tier 6: 5-25% of savings (3%)
+            // Tier 6: 5-25% of savings (1.5%)
             if (remainingLoan > 0) {
                 const tierAmount = Math.min(remainingLoan, boundaries.tier5);
-                const tierInterest = tierAmount * 0.03;
+                const tierInterest = tierAmount * 0.015;
                 totalInterest += tierInterest;
-                console.log(`Tier 5-25% of savings: R${tierAmount.toFixed(2)} × 3% = R${tierInterest.toFixed(2)}`);
+                console.log(`Tier 5-25% of savings: R${tierAmount.toFixed(2)} × 1.5% = R${tierInterest.toFixed(2)}`);
             }
             
             console.log(`Total tiered interest: R${totalInterest.toFixed(2)}`);
@@ -2234,8 +2234,8 @@
                                <span style="font-size: 11px; color: #666;">(3% up to contributions + 9% on excess)</span></p>
                             <div style="background: #e8f5e8; padding: 10px; border-radius: 8px; margin-top: 10px; font-size: 12px;">
                                 <strong>Interest Rate Breakdown (Tiered Calculation):</strong><br>
-                                • >110% of savings: 30% | 105-110%: 25% | 75-105%: 20%<br>
-                                • 50-75%: 15% | 25-50%: 8% | 5-25%: 3%<br>
+                                • >110% of savings: 15% | 105-110%: 12.5% | 75-105%: 10%<br>
+                                • 50-75%: 7.5% | 25-50%: 4% | 5-25%: 1.5%<br>
                                 • Each portion of loan is charged at its applicable rate<br>
                                 • <strong>Admin Fee:</strong> R60 × (100% - initial rate) = R${loanData.adminFee.toFixed(2)}
                             </div>`;
