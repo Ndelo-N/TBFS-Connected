@@ -1958,14 +1958,18 @@
             newContent.style.display = 'block';
             newTab.classList.add('active');
 
-            // Clean up animations
+            // Clean up animations - store reference to prevent race conditions
+            const contentToHide = currentContent;
             setTimeout(() => {
-                contents.forEach(c => {
-                    c.classList.remove('swipe-left', 'swipe-right', 'slide-in-left', 'slide-in-right');
-                    if (!c.classList.contains('active')) {
-                        c.style.display = 'none';
+                // Only clean up the specific content that was active when this switch started
+                if (contentToHide) {
+                    contentToHide.classList.remove('swipe-left', 'swipe-right', 'slide-in-left', 'slide-in-right');
+                    if (!contentToHide.classList.contains('active')) {
+                        contentToHide.style.display = 'none';
                     }
-                });
+                }
+                // Clean up animation classes from the new content too
+                newContent.classList.remove('swipe-left', 'swipe-right', 'slide-in-left', 'slide-in-right');
             }, 300);
         }
 
