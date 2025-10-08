@@ -1940,8 +1940,9 @@
 
             if (!newContent || currentContent === newContent) return;
 
-            // Remove active states
+            // Remove active states from BOTH tabs AND content
             tabs.forEach(t => t.classList.remove('active'));
+            contents.forEach(c => c.classList.remove('active'));
             
             // Add animation based on swipe direction
             if (direction === 'left') {
