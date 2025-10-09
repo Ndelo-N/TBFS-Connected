@@ -3742,7 +3742,23 @@
                     });
                     
                     if (!response.ok) {
-                        throw new Error('No backup found in cloud');
+                        // Handle different error types with specific messages
+                        if (response.status === 404) {
+                            // No backup file exists yet - this is not an error, just information
+                            alert('ℹ️ No cloud backup found yet.\n\n' +
+                                  '💡 To create your first backup:\n' +
+                                  '1. Enable "Auto-Backup" in Settings, or\n' +
+                                  '2. Make any change (add/edit a loan) to trigger automatic backup, or\n' +
+                                  '3. Use "Download Local Backup" to save locally first\n\n' +
+                                  'Once created, your backup will sync across all devices!');
+                            return;
+                        } else if (response.status === 401) {
+                            throw new Error('Authentication failed. Please check your GitHub token in Settings.');
+                        } else if (response.status === 403) {
+                            throw new Error('Access denied. Please verify your token has "Contents: Read and write" permission for the backup repository.');
+                        } else {
+                            throw new Error(`Unable to access cloud backup (Error ${response.status}). Please check your internet connection and try again.`);
+                        }
                     }
                     
                     const fileData = await response.json();
@@ -3754,6 +3770,7 @@
                     AppState.init();
                     alert('✅ Data restored from cloud successfully!');
                 } catch (error) {
+                    // Only show error for actual errors (not 404 which we handled above)
                     alert('❌ Failed to restore from cloud: ' + error.message);
                 }
             }
