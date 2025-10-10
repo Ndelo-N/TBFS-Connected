@@ -4086,18 +4086,16 @@
                 let monthInterest = 0;
                 let monthFees = 0;
                 
-                // Iterate through all loans to find payments made in this month
-                AppState.loans.forEach(loan => {
-                    if (loan.payment_history && Array.isArray(loan.payment_history)) {
-                        loan.payment_history.forEach(payment => {
-                            const paymentDate = new Date(payment.paymentDate || payment.date);
-                            
-                            if (paymentDate >= monthStart && paymentDate <= monthEnd) {
-                                // Accumulate actual revenue from this payment
-                                monthInterest += (payment.interestPaid || 0);
-                                monthFees += (payment.adminFeePaid || 0) + (payment.initiationFeePaid || 0);
-                            }
-                        });
+                // Iterate through AppState.transactionHistory to find payments made in this month
+                AppState.transactionHistory.forEach(transaction => {
+                    if (transaction.type === 'payment' && transaction.details) {
+                        const paymentDate = new Date(transaction.details.paymentDate || transaction.timestamp);
+                        
+                        if (paymentDate >= monthStart && paymentDate <= monthEnd) {
+                            // Accumulate actual revenue from this payment
+                            monthInterest += (transaction.details.interestPaid || 0);
+                            monthFees += (transaction.details.adminFeePaid || 0) + (transaction.details.initiationFeePaid || 0);
+                        }
                     }
                 });
                 
@@ -4400,16 +4398,16 @@
                 const monthStart = new Date(date.getFullYear(), date.getMonth(), 1);
                 const monthEnd = new Date(date.getFullYear(), date.getMonth() + 1, 0, 23, 59, 59);
                 
-                // Calculate revenue for this month
+                // Calculate revenue for this month from transactionHistory
                 let monthRevenue = 0;
-                AppState.loans.forEach(loan => {
-                    if (loan.payment_history && Array.isArray(loan.payment_history)) {
-                        loan.payment_history.forEach(payment => {
-                            const paymentDate = new Date(payment.paymentDate || payment.date);
-                            if (paymentDate >= monthStart && paymentDate <= monthEnd) {
-                                monthRevenue += (payment.interestPaid || 0) + (payment.adminFeePaid || 0) + (payment.initiationFeePaid || 0);
-                            }
-                        });
+                AppState.transactionHistory.forEach(transaction => {
+                    if (transaction.type === 'payment' && transaction.details) {
+                        const paymentDate = new Date(transaction.details.paymentDate || transaction.timestamp);
+                        if (paymentDate >= monthStart && paymentDate <= monthEnd) {
+                            monthRevenue += (transaction.details.interestPaid || 0) + 
+                                          (transaction.details.adminFeePaid || 0) + 
+                                          (transaction.details.initiationFeePaid || 0);
+                        }
                     }
                 });
                 
@@ -4810,15 +4808,14 @@
                 let monthInterest = 0;
                 let monthFees = 0;
                 
-                AppState.loans.forEach(loan => {
-                    if (loan.payment_history && Array.isArray(loan.payment_history)) {
-                        loan.payment_history.forEach(payment => {
-                            const paymentDate = new Date(payment.paymentDate || payment.date);
-                            if (paymentDate >= monthStart && paymentDate <= monthEnd) {
-                                monthInterest += (payment.interestPaid || 0);
-                                monthFees += (payment.adminFeePaid || 0) + (payment.initiationFeePaid || 0);
-                            }
-                        });
+                // Use AppState.transactionHistory for accurate payment tracking
+                AppState.transactionHistory.forEach(transaction => {
+                    if (transaction.type === 'payment' && transaction.details) {
+                        const paymentDate = new Date(transaction.details.paymentDate || transaction.timestamp);
+                        if (paymentDate >= monthStart && paymentDate <= monthEnd) {
+                            monthInterest += (transaction.details.interestPaid || 0);
+                            monthFees += (transaction.details.adminFeePaid || 0) + (transaction.details.initiationFeePaid || 0);
+                        }
                     }
                 });
                 
