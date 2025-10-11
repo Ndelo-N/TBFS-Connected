@@ -1011,6 +1011,74 @@
                 </div>
             </div>
 
+            <!-- REGISTER NEW MEMBER SECTION -->
+            <div class="form-section" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 25px; border-radius: 15px;">
+                <h3 class="section-title" style="color: white; margin-bottom: 20px;">➕ Register New Stockvel Member</h3>
+                <p style="margin-bottom: 20px; opacity: 0.9;">Members registered here are SEPARATE from clients. Contributions tracked independently - NO loan required!</p>
+                <form id="registerMemberForm" style="background: white; padding: 20px; border-radius: 10px;">
+                    <div class="form-grid">
+                        <div class="form-group">
+                            <label for="newMemberName">Full Name:</label>
+                            <input type="text" id="newMemberName" required placeholder="e.g. John Doe">
+                        </div>
+                        <div class="form-group">
+                            <label for="newMemberPhone">Phone Number:</label>
+                            <input type="tel" id="newMemberPhone" required placeholder="e.g. 0821234567">
+                        </div>
+                        <div class="form-group">
+                            <label for="newMemberEmail">Email (Optional):</label>
+                            <input type="email" id="newMemberEmail" placeholder="e.g. john@example.com">
+                        </div>
+                        <div class="form-group">
+                            <label for="newMemberStartDate">Membership Start Date:</label>
+                            <input type="date" id="newMemberStartDate" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="newMemberMonthlyContrib">Monthly Contribution (R):</label>
+                            <input type="number" id="newMemberMonthlyContrib" min="0" step="0.01" required placeholder="e.g. 500.00">
+                        </div>
+                        <div class="form-group">
+                            <label for="newMemberInitialContrib">Initial Contribution (R):</label>
+                            <input type="number" id="newMemberInitialContrib" min="0" step="0.01" value="0" placeholder="Starting balance (optional)">
+                        </div>
+                    </div>
+                    <button type="submit" class="calculate-btn" style="background: linear-gradient(135deg, #27ae60 0%, #229954 100%); margin-top: 15px;">✨ Register Member</button>
+                </form>
+            </div>
+
+            <!-- MEMBER REGISTRY TABLE -->
+            <div class="form-section">
+                <h3 class="section-title">👥 Member Registry</h3>
+                <div style="margin-bottom: 15px;">
+                    <button onclick="refreshMemberRegistry()" class="export-btn">🔄 Refresh</button>
+                    <button onclick="exportMemberRegistry()" class="export-btn" style="margin-left: 10px;">📥 Export Registry</button>
+                </div>
+                <div style="overflow-x: auto;">
+                    <table class="breakdown-table">
+                        <thead>
+                            <tr>
+                                <th>Member #</th>
+                                <th>Name</th>
+                                <th>Phone</th>
+                                <th>Total Contributions</th>
+                                <th>Accumulated Bonus</th>
+                                <th>Monthly Amount</th>
+                                <th>Membership Status</th>
+                                <th>Expires</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="memberRegistryBody">
+                            <tr>
+                                <td colspan="9" style="text-align: center; color: #7f8c8d; padding: 40px;">
+                                    No members registered yet. Register your first member above!
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
             <!-- Receipt Recording Section -->
             <div class="form-section">
                 <h3 class="section-title">📝 Record Receipt / Contribution</h3>
@@ -1472,8 +1540,11 @@
             profitGoal: 500000, // Business profit goal
             clients: [],
             loans: [],
+            stockvelMembers: [], // SEPARATE storage for stockvel members (independent of clients)
+            stockvelReceipts: [], // Transaction history for member contributions
             transactionHistory: [], // Track all changes
             nextAccountNumber: 2025001,
+            nextMemberNumber: 1001,
             
             init() {
                 this.loadFromStorage();
@@ -1491,8 +1562,11 @@
                     this.profitGoal = data.profitGoal || 500000;
                     this.clients = data.clients || [];
                     this.loans = data.loans || [];
+                    this.stockvelMembers = data.stockvelMembers || []; // Load separate member registry
+                    this.stockvelReceipts = data.stockvelReceipts || []; // Load contribution history
                     this.transactionHistory = data.transactionHistory || [];
                     this.nextAccountNumber = data.nextAccountNumber || 2025001;
+                    this.nextMemberNumber = data.nextMemberNumber || 1001;
                 }
             },
             
@@ -1505,8 +1579,11 @@
                     profitGoal: this.profitGoal,
                     clients: this.clients,
                     loans: this.loans,
+                    stockvelMembers: this.stockvelMembers, // Save separate member registry
+                    stockvelReceipts: this.stockvelReceipts, // Save contribution history
                     transactionHistory: this.transactionHistory,
-                    nextAccountNumber: this.nextAccountNumber
+                    nextAccountNumber: this.nextAccountNumber,
+                    nextMemberNumber: this.nextMemberNumber
                 }));
             },
             
@@ -4462,15 +4539,172 @@
         }
         
         // Load stockvel dashboard
+        // REGISTER NEW STOCKVEL MEMBER (SEPARATE FROM CLIENTS)
+        document.getElementById('registerMemberForm').addEventListener('submit', function(e) {
+            e.preventDefault();
+            
+            const name = document.getElementById('newMemberName').value.trim();
+            const phone = document.getElementById('newMemberPhone').value.trim();
+            const email = document.getElementById('newMemberEmail').value.trim();
+            const startDate = document.getElementById('newMemberStartDate').value;
+            const monthlyContrib = parseFloat(document.getElementById('newMemberMonthlyContrib').value);
+            const initialContrib = parseFloat(document.getElementById('newMemberInitialContrib').value) || 0;
+            
+            // Calculate end date (12 months from start)
+            const start = new Date(startDate);
+            const endDate = new Date(start.getFullYear() + 1, start.getMonth(), start.getDate());
+            
+            // Create new member object
+            const newMember = {
+                memberNumber: AppState.nextMemberNumber++,
+                name: name,
+                phone: phone,
+                email: email,
+                membershipStartDate: startDate,
+                membershipEndDate: endDate.toISOString().split('T')[0],
+                monthlyContribution: monthlyContrib,
+                totalContributions: initialContrib,
+                accumulatedBonus: 0, // Bonuses separate from contributions
+                registeredDate: new Date().toISOString(),
+                status: 'active'
+            };
+            
+            // Add to separate member registry
+            AppState.stockvelMembers.push(newMember);
+            
+            // Record initial contribution if any
+            if (initialContrib > 0) {
+                AppState.stockvelReceipts.push({
+                    id: Date.now(),
+                    memberNumber: newMember.memberNumber,
+                    date: startDate,
+                    type: 'contribution',
+                    amount: initialContrib,
+                    newTotal: initialContrib,
+                    bonusAmount: 0,
+                    notes: 'Initial contribution upon registration'
+                });
+            }
+            
+            AppState.save();
+            
+            alert(`✅ Member registered successfully!\n\nMember #: ${newMember.memberNumber}\nName: ${name}\nMonthly Contribution: R${monthlyContrib.toFixed(2)}\n\nMembership valid until: ${endDate.toLocaleDateString()}`);
+            
+            // Reset form
+            document.getElementById('registerMemberForm').reset();
+            
+            // Refresh displays
+            refreshMemberRegistry();
+            loadStockvelDashboard();
+        });
+
+        // REFRESH MEMBER REGISTRY TABLE
+        function refreshMemberRegistry() {
+            const tbody = document.getElementById('memberRegistryBody');
+            
+            if (AppState.stockvelMembers.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="9" style="text-align: center; color: #7f8c8d; padding: 40px;">No members registered yet. Register your first member above!</td></tr>';
+                return;
+            }
+            
+            const today = new Date();
+            tbody.innerHTML = AppState.stockvelMembers.map(member => {
+                const endDate = new Date(member.membershipEndDate);
+                const daysUntilExpiry = Math.ceil((endDate - today) / (1000 * 60 * 60 * 24));
+                
+                let statusBadge = '';
+                if (daysUntilExpiry < 0) {
+                    statusBadge = '<span style="background: #e74c3c; color: white; padding: 4px 8px; border-radius: 4px; font-size: 12px;">⛔ Expired</span>';
+                } else if (daysUntilExpiry <= 7) {
+                    statusBadge = '<span style="background: #e67e22; color: white; padding: 4px 8px; border-radius: 4px; font-size: 12px;">⚠️ Urgent</span>';
+                } else if (daysUntilExpiry <= 30) {
+                    statusBadge = '<span style="background: #f39c12; color: white; padding: 4px 8px; border-radius: 4px; font-size: 12px;">⏰ Soon</span>';
+                } else {
+                    statusBadge = '<span style="background: #27ae60; color: white; padding: 4px 8px; border-radius: 4px; font-size: 12px;">✅ Active</span>';
+                }
+                
+                return `
+                    <tr>
+                        <td><strong>${member.memberNumber}</strong></td>
+                        <td>${member.name}</td>
+                        <td>${member.phone}</td>
+                        <td style="color: #27ae60; font-weight: 600;">R${member.totalContributions.toFixed(2)}</td>
+                        <td style="color: #f39c12; font-weight: 600;">R${member.accumulatedBonus.toFixed(2)}</td>
+                        <td>R${member.monthlyContribution.toFixed(2)}</td>
+                        <td>${statusBadge}</td>
+                        <td>${endDate.toLocaleDateString()}</td>
+                        <td>
+                            <button onclick="viewMemberDetails(${member.memberNumber})" class="export-btn" style="padding: 6px 12px; font-size: 12px;">👁️ View</button>
+                            <button onclick="renewMembershipByNumber(${member.memberNumber})" class="calculate-btn" style="padding: 6px 12px; font-size: 12px;">🔄 Renew</button>
+                        </td>
+                    </tr>
+                `;
+            }).join('');
+        }
+
+        // EXPORT MEMBER REGISTRY
+        function exportMemberRegistry() {
+            const headers = ['Member #', 'Name', 'Phone', 'Email', 'Total Contributions', 'Accumulated Bonus', 'Monthly Contribution', 'Start Date', 'End Date', 'Status'];
+            const rows = AppState.stockvelMembers.map(m => [
+                m.memberNumber,
+                m.name,
+                m.phone,
+                m.email || 'N/A',
+                m.totalContributions.toFixed(2),
+                m.accumulatedBonus.toFixed(2),
+                m.monthlyContribution.toFixed(2),
+                m.membershipStartDate,
+                m.membershipEndDate,
+                m.status
+            ]);
+            
+            const csv = [headers, ...rows].map(row => row.join(',')).join('\n');
+            const blob = new Blob([csv], { type: 'text/csv' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `TBFS_Member_Registry_${new Date().toISOString().split('T')[0]}.csv`;
+            a.click();
+            URL.revokeObjectURL(url);
+        }
+
+        // VIEW MEMBER DETAILS
+        function viewMemberDetails(memberNumber) {
+            const member = AppState.stockvelMembers.find(m => m.memberNumber === memberNumber);
+            if (!member) return;
+            
+            const receipts = AppState.stockvelReceipts.filter(r => r.memberNumber === memberNumber);
+            const receiptCount = receipts.length;
+            
+            alert(`👤 Member Details\n\nMember #: ${member.memberNumber}\nName: ${member.name}\nPhone: ${member.phone}\nEmail: ${member.email || 'Not provided'}\n\n💰 Financial Summary:\nTotal Contributions: R${member.totalContributions.toFixed(2)}\nAccumulated Bonus: R${member.accumulatedBonus.toFixed(2)}\nMonthly Contribution: R${member.monthlyContribution.toFixed(2)}\n\n📅 Membership:\nStart Date: ${new Date(member.membershipStartDate).toLocaleDateString()}\nEnd Date: ${new Date(member.membershipEndDate).toLocaleDateString()}\nStatus: ${member.status}\n\n📊 Activity:\nTotal Receipts: ${receiptCount}`);
+        }
+
+        // RENEW MEMBERSHIP BY MEMBER NUMBER
+        function renewMembershipByNumber(memberNumber) {
+            const member = AppState.stockvelMembers.find(m => m.memberNumber === memberNumber);
+            if (!member) return;
+            
+            const currentEnd = new Date(member.membershipEndDate);
+            const newEnd = new Date(currentEnd.getFullYear() + 1, currentEnd.getMonth(), currentEnd.getDate());
+            
+            member.membershipEndDate = newEnd.toISOString().split('T')[0];
+            AppState.save();
+            
+            alert(`✅ Membership renewed!\n\nMember: ${member.name}\nNew expiry date: ${newEnd.toLocaleDateString()}`);
+            
+            refreshMemberRegistry();
+            loadStockvelDashboard();
+        }
+
         function loadStockvelDashboard() {
-            // Populate member selects
-            const stockvelMembers = appState.clients.filter(c => c.isStockvelMember);
+            // Populate member selects FROM SEPARATE MEMBER REGISTRY (not clients!)
+            const stockvelMembers = AppState.stockvelMembers;
             
             const receiptSelect = document.getElementById('receiptMember');
             const historySelect = document.getElementById('historyMemberSelect');
             
-            const memberOptions = stockvelMembers.map(c => 
-                `<option value="${c.accountNumber}">${c.firstName} ${c.lastName} (${c.accountNumber})</option>`
+            const memberOptions = stockvelMembers.map(m => 
+                `<option value="${m.memberNumber}">${m.name} (Member #${m.memberNumber})</option>`
             ).join('');
             
             receiptSelect.innerHTML = '<option value="">-- Select Stockvel Member --</option>' + memberOptions;
@@ -4482,7 +4716,7 @@
             const totalContributions = stockvelMembers.reduce((sum, m) => sum + (m.totalContributions || 0), 0);
             document.getElementById('totalStockvelContributions').textContent = `R ${totalContributions.toFixed(2)}`;
             
-            const bonusesPaid = Math.abs(stockvelReceipts.filter(r => r.type === 'bonus_payout').reduce((sum, r) => sum + r.amount, 0));
+            const bonusesPaid = Math.abs(AppState.stockvelReceipts.filter(r => r.type === 'bonus_payout').reduce((sum, r) => sum + r.amount, 0));
             document.getElementById('totalBonusesPaid').textContent = `R ${bonusesPaid.toFixed(2)}`;
             
             // Check renewals
@@ -4492,6 +4726,7 @@
             document.getElementById('membersNeedingRenewal').textContent = needsRenewal;
             
             // Load displays
+            refreshMemberRegistry(); // Load separate member registry
             displayContributionHistory();
             checkMembershipRenewals();
             generateBonusReport();
