@@ -2556,8 +2556,9 @@
         });
 
         // Loan calculation functions
-        function calculateTieredStockvelInterest(loanAmount, savingsAmount) {
+        function calculateTieredStockvelInterest(loanAmount, savingsAmount, monthlyInitiationFee = 0, totalContributions = 0) {
             let totalInterest = 0;
+            let tier5Amount = 0;
             
             console.log(`\nTiered calculation for R${loanAmount.toFixed(2)} loan with R${savingsAmount.toFixed(2)} contributions`);
             
@@ -2575,7 +2576,7 @@
             console.log(`  Tier 2 (8%): R${boundaries.tier1_max.toFixed(2)} - R${boundaries.tier2_max.toFixed(2)}`);
             console.log(`  Tier 3 (15%): R${boundaries.tier2_max.toFixed(2)} - R${boundaries.tier3_max.toFixed(2)}`);
             console.log(`  Tier 4 (25%): R${boundaries.tier3_max.toFixed(2)} - R${boundaries.tier4_max.toFixed(2)}`);
-            console.log(`  Tier 5 (30%): Above R${boundaries.tier4_max.toFixed(2)}`);
+            console.log(`  Tier 5 (30% - Income Table): Above R${boundaries.tier4_max.toFixed(2)}`);
             
             let remainingLoan = loanAmount;
             
@@ -2615,16 +2616,52 @@
                 remainingLoan -= tierAmount;
             }
             
-            // Tier 5: Above 110% of contributions @ 30%
+            // Tier 5: Above 110% of contributions @ 30% (INCOME TABLE METHOD)
+            // CRITICAL: Must account for initiation fee waiver zones!
             if (remainingLoan > 0) {
                 const tierAmount = remainingLoan;
-                const tierInterest = tierAmount * 0.30;
-                totalInterest += tierInterest;
-                console.log(`Tier 5 (>110%): R${tierAmount.toFixed(2)} × 30% = R${tierInterest.toFixed(2)}`);
+                tier5Amount = tierAmount;
+                
+                // Determine Tier 5 position relative to initiation waiver threshold
+                const tier5Start = boundaries.tier4_max;
+                const tier5End = tier5Start + tierAmount;
+                
+                // Calculate what portion of Tier 5 has initiation fee
+                let tier5InitiationPortion = 0;
+                if (totalContributions > 0) {
+                    if (tier5Start >= totalContributions) {
+                        // All of Tier 5 is in charged zone
+                        tier5InitiationPortion = 1.0;
+                    } else if (tier5End > totalContributions) {
+                        // Tier 5 spans the threshold
+                        const amountWithInitiation = tier5End - totalContributions;
+                        tier5InitiationPortion = amountWithInitiation / tierAmount;
+                    }
+                } else {
+                    tier5InitiationPortion = 1.0; // No contributions, all has init
+                }
+                
+                // Calculate proportional fees
+                const proportionalInitiation = monthlyInitiationFee * tier5InitiationPortion;
+                const proportionalAdmin = 60 * (tierAmount / loanAmount);
+                
+                // Income Table: 30% = TOTAL charge
+                const tier5TotalCharge = tierAmount * 0.30;
+                const tier5Interest = tier5TotalCharge - proportionalInitiation - proportionalAdmin;
+                
+                totalInterest += tier5Interest;
+                console.log(`Tier 5 (>110%) - INCOME TABLE METHOD:`);
+                console.log(`  Amount: R${tierAmount.toFixed(2)}`);
+                console.log(`  Position: R${tier5Start.toFixed(2)} - R${tier5End.toFixed(2)}`);
+                console.log(`  Initiation applies to: ${(tier5InitiationPortion * 100).toFixed(0)}% of tier`);
+                console.log(`  30% Total Charge: R${tier5TotalCharge.toFixed(2)}`);
+                console.log(`  - Proportional Initiation: R${proportionalInitiation.toFixed(2)}`);
+                console.log(`  - Proportional Admin: R${proportionalAdmin.toFixed(2)}`);
+                console.log(`  = Interest: R${tier5Interest.toFixed(2)}`);
             }
             
             console.log(`Total tiered interest: R${totalInterest.toFixed(2)}`);
-            return totalInterest;
+            return { totalInterest, tier5Amount };
         }
 
         function calculateStockvelInterest(principal, term, totalContributions, monthlyContribution) {
