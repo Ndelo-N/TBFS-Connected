@@ -1075,7 +1075,7 @@
                         </thead>
                         <tbody id="memberRegistryBody">
                             <tr>
-                                <td colspan="10" style="text-align: center; color: #7f8c8d; padding: 40px;">
+                                <td colspan="9" style="text-align: center; color: #7f8c8d; padding: 40px;">
                                     No members registered yet. Register your first member above!
                                 </td>
                             </tr>
@@ -3659,8 +3659,9 @@
                 // Calculate tiered rate for bonus calculation later
                 if (loanData.totalContributions > 0) {
                     const tieredResult = calculateTieredStockvelInterest(loanData.principal, loanData.totalContributions);
-                    const tieredInterest = tieredResult.totalInterest || tieredResult;
-                    tieredRate = tieredInterest / loanData.principal;
+                    // Use tiers 1-4 interest only for bonus calculation
+                    const tieredInterest = tieredResult.tiers1to4Interest;
+                    tieredRate = loanData.totalContributions > 0 ? (tieredInterest / loanData.totalContributions) : 0;
                 }
             }
             
@@ -4799,7 +4800,7 @@
             
             AppState.save();
             
-            alert(`✅ Member registered successfully!\n\nMember #: ${newMember.memberNumber}\nAccount #: ${accountNumber}\nName: ${name}\nMonthly Contribution: R${monthlyContrib.toFixed(2)}\n\nMembership valid until: ${endDate.toLocaleDateString()}`);
+            alert(`✅ Member registered successfully!\n\nMember #: ${newMember.memberNumber}\nName: ${name}\nMonthly Contribution: R${monthlyContrib.toFixed(2)}\n\nMembership valid until: ${endDate.toLocaleDateString()}`);
             
             // Reset form
             document.getElementById('registerMemberForm').reset();
