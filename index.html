@@ -3827,18 +3827,20 @@
 
             // CALCULATE AND RECORD BONUS FOR STOCKVEL MEMBERS
             let bonusEarned = 0;
-            if (stockvelMember && loan.tieredRate !== undefined) {
-                // Calculate bonus based on tiered vs minimum interest
-                // Bonus = (10% minimum charge) - (actual tiered charge)
+            if (stockvelMember) {
+                // Calculate what TBFS is due (tiered interest + fees)
                 const remainingBalance = loan.remaining_principal + principalPaid; // Balance before this payment
-                const minimumInterest = remainingBalance * 0.10;
-                const tieredInterest = remainingBalance * (loan.tieredRate || 0);
                 
-                if (tieredInterest < minimumInterest) {
-                    // Member paid less than 10%, so they earn a bonus!
-                    const minimumCharge = minimumInterest + 60 + (loan.total_initiation_fee / loan.term_months);
-                    const actualCharge = interestForThisPayment + adminFeePerMonth + initiationFeePaid;
-                    bonusEarned = Math.max(0, minimumCharge - actualCharge);
+                // Amount due to TBFS = tiered interest + admin fee + initiation fee
+                const amountDueToTBFS = interestForThisPayment + adminFeePerMonth + initiationFeePaid;
+                
+                // 10% minimum charge
+                const minimumCharge = remainingBalance * 0.10;
+                
+                if (amountDueToTBFS < minimumCharge) {
+                    // Member pays EXACTLY 10% (minimum)
+                    // Bonus = 10% minimum - amount actually due
+                    bonusEarned = minimumCharge - amountDueToTBFS;
                     
                     // Add bonus to member's accumulated bonus (NOT to contributions!)
                     stockvelMember.accumulatedBonus = (stockvelMember.accumulatedBonus || 0) + bonusEarned;
@@ -3851,13 +3853,15 @@
                         type: 'loan_payment',
                         amount: paidAmount,
                         date: paymentDate,
-                        notes: `Loan #${loanId} payment - Bonus earned`,
+                        notes: `Loan #${loanId} payment - Bonus earned (paid 10% minimum, saved ${((bonusEarned/minimumCharge)*100).toFixed(1)}%)`,
                         previousTotal: stockvelMember.totalContributions,
                         newTotal: stockvelMember.totalContributions, // Contributions stay same!
                         bonusAmount: bonusEarned,
                         previousBonus: stockvelMember.accumulatedBonus - bonusEarned
                     });
                 }
+                // else: amountDueToTBFS >= minimumCharge
+                // Member pays tiered amount (already > 10%), no bonus
             }
             
             // Save changes
