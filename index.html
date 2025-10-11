@@ -2847,22 +2847,12 @@
                         const tieredInterest = calculateTieredStockvelInterest(outstandingBalance, currentSavings);
                         const tieredRate = outstandingBalance > 0 ? (tieredInterest / outstandingBalance) : 0;
                         
-                        // CRITICAL: If tiered rate = 30%, apply Income Table logic (30% = TOTAL charge, not interest)
+                        // Calculate actual interest and fees
                         let actualInterest, adminFee, monthlyBonus = 0;
                         
-                        if (Math.abs(tieredRate - 0.30) < 0.001) {
-                            // At 30% tier: Use Income Table method (same as standard loans)
-                            // 30% of balance = TOTAL TBFS income (includes initiation + admin + interest)
-                            const tbfsIncome = outstandingBalance * 0.30;
-                            actualInterest = tbfsIncome - monthlyInitiationFee - 60;
-                            adminFee = 60;
-                            
-                            console.log(`  ⚠️ 30% TIER - Using Income Table method (30% = total charge)`);
-                            console.log(`  TBFS Income (30%): R${tbfsIncome.toFixed(2)}`);
-                            console.log(`  - Initiation: R${monthlyInitiationFee.toFixed(2)}`);
-                            console.log(`  - Admin: R60.00`);
-                            console.log(`  = Interest: R${actualInterest.toFixed(2)}`);
-                        } else {
+                        // Note: Tier 5 (30%) already uses Income Table method in the tiered calculation
+                        // So we just apply 10% minimum check and bonus calculation
+                        {
                             // Below 30%: Apply 10% minimum with bonus system
                             const minimumInterest = outstandingBalance * 0.10;
                             actualInterest = Math.max(tieredInterest, minimumInterest);
