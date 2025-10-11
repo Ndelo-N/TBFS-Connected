@@ -4259,7 +4259,7 @@
             const today = new Date();
             const thirtyDaysFromNow = new Date(today.getTime() + (30 * 24 * 60 * 60 * 1000));
             
-            const stockvelMembers = appState.clients.filter(c => c.isStockvelMember && c.membershipEndDate);
+            const stockvelMembers = AppState.stockvelMembers.filter(m => m.membershipEndDate);
             
             const needsRenewal = stockvelMembers.filter(member => {
                 const endDate = new Date(member.membershipEndDate);
@@ -4281,8 +4281,8 @@
                     <div style="padding: 15px; margin-bottom: 10px; border-radius: 8px; border-left: 4px solid ${urgency === 'expired' ? '#e74c3c' : urgency === 'urgent' ? '#f39c12' : '#f1c40f'}; background: ${urgency === 'expired' ? '#fee' : urgency === 'urgent' ? '#fff3cd' : '#fffbf0'};">
                         <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
                             <div>
-                                <strong style="font-size: 16px;">${member.firstName} ${member.lastName}</strong>
-                                <span style="margin-left: 10px; color: #7f8c8d;">(${member.accountNumber})</span>
+                                <strong style="font-size: 16px;">${member.name}</strong>
+                                <span style="margin-left: 10px; color: #7f8c8d;">(Member #${member.memberNumber})</span>
                                 <br>
                                 <span style="color: ${urgency === 'expired' ? '#e74c3c' : urgency === 'urgent' ? '#f39c12' : '#f1c40f'}; font-weight: 600;">
                                     ${isExpired ? `⚠️ EXPIRED ${Math.abs(daysLeft)} days ago` : `⏰ ${daysLeft} days left`}
@@ -4290,8 +4290,8 @@
                                 <span style="margin-left: 10px; color: #7f8c8d;">Expires: ${endDate.toLocaleDateString('en-ZA')}</span>
                             </div>
                             <div style="display: flex; gap: 8px;">
-                                <button onclick="generateMemberDisbursementPDF('${member.accountNumber}')" class="export-btn" style="padding: 8px 16px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);">📄 Generate Statement</button>
-                                <button onclick="renewMembership('${member.accountNumber}')" class="calculate-btn" style="padding: 8px 16px;">🔄 Renew Membership</button>
+                                <button onclick="viewMemberDetails(${member.memberNumber})" class="export-btn" style="padding: 8px 16px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);">👁️ View Details</button>
+                                <button onclick="renewMembershipByNumber(${member.memberNumber})" class="calculate-btn" style="padding: 8px 16px;">🔄 Renew Membership</button>
                             </div>
                         </div>
                     </div>
@@ -4299,9 +4299,9 @@
             }).join('');
         }
         
-        // Renew membership
+        // Renew membership (OLD - kept for backward compatibility with old clients)
         function renewMembership(accountNumber) {
-            const client = appState.clients.find(c => c.accountNumber === accountNumber);
+            const client = AppState.clients.find(c => c.accountNumber === accountNumber);
             if (!client) return;
             
             const currentEndDate = client.membershipEndDate ? new Date(client.membershipEndDate) : new Date();
@@ -4314,7 +4314,7 @@
                 client.membershipStartDate = new Date().toISOString().split('T')[0];
             }
             
-            localStorage.setItem('clients', JSON.stringify(AppState.clients));
+            AppState.save();
             
             alert(`✅ Membership renewed for ${client.firstName} ${client.lastName}!\\nNew expiry date: ${newEndDate.toLocaleDateString('en-ZA')}`);
             
@@ -4325,7 +4325,7 @@
         // Generate bonus report
         function generateBonusReport() {
             const tbody = document.getElementById('bonusReportBody');
-            const stockvelMembers = appState.clients.filter(c => c.isStockvelMember);
+            const stockvelMembers = AppState.stockvelMembers;
             
             if (stockvelMembers.length === 0) {
                 tbody.innerHTML = '<tr><td colspan="6" style="text-align: center; color: #7f8c8d; padding: 40px;">No stockvel members found</td></tr>';
