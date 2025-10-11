@@ -2617,46 +2617,29 @@
             }
             
             // Tier 5: Above 110% of contributions @ 30% (INCOME TABLE METHOD)
-            // CRITICAL: Must account for initiation fee waiver zones!
+            // For consistency with standard loans: 30% = TOTAL charge (not just interest)
             if (remainingLoan > 0) {
                 const tierAmount = remainingLoan;
                 tier5Amount = tierAmount;
                 
-                // Determine Tier 5 position relative to initiation waiver threshold
-                const tier5Start = boundaries.tier4_max;
-                const tier5End = tier5Start + tierAmount;
+                // Calculate proportional fees for this tier portion
+                // Note: monthlyInitiationFee is ALREADY calculated with zone awareness at loan start
+                // (principal - totalContributions) × 12% / term
+                // So we just allocate proportionally by tier size
+                const tierProportion = tierAmount / loanAmount;
+                const proportionalInitiation = monthlyInitiationFee * tierProportion;
+                const proportionalAdmin = 60 * tierProportion;
                 
-                // Calculate what portion of Tier 5 has initiation fee
-                let tier5InitiationPortion = 0;
-                if (totalContributions > 0) {
-                    if (tier5Start >= totalContributions) {
-                        // All of Tier 5 is in charged zone
-                        tier5InitiationPortion = 1.0;
-                    } else if (tier5End > totalContributions) {
-                        // Tier 5 spans the threshold
-                        const amountWithInitiation = tier5End - totalContributions;
-                        tier5InitiationPortion = amountWithInitiation / tierAmount;
-                    }
-                } else {
-                    tier5InitiationPortion = 1.0; // No contributions, all has init
-                }
-                
-                // Calculate proportional fees
-                const proportionalInitiation = monthlyInitiationFee * tier5InitiationPortion;
-                const proportionalAdmin = 60 * (tierAmount / loanAmount);
-                
-                // Income Table: 30% = TOTAL charge
+                // Income Table method: 30% of tier = TOTAL charge (interest + fees)
                 const tier5TotalCharge = tierAmount * 0.30;
                 const tier5Interest = tier5TotalCharge - proportionalInitiation - proportionalAdmin;
                 
                 totalInterest += tier5Interest;
                 console.log(`Tier 5 (>110%) - INCOME TABLE METHOD:`);
                 console.log(`  Amount: R${tierAmount.toFixed(2)}`);
-                console.log(`  Position: R${tier5Start.toFixed(2)} - R${tier5End.toFixed(2)}`);
-                console.log(`  Initiation applies to: ${(tier5InitiationPortion * 100).toFixed(0)}% of tier`);
                 console.log(`  30% Total Charge: R${tier5TotalCharge.toFixed(2)}`);
-                console.log(`  - Proportional Initiation: R${proportionalInitiation.toFixed(2)}`);
-                console.log(`  - Proportional Admin: R${proportionalAdmin.toFixed(2)}`);
+                console.log(`  - Proportional Initiation (${(tierProportion * 100).toFixed(1)}%): R${proportionalInitiation.toFixed(2)}`);
+                console.log(`  - Proportional Admin (${(tierProportion * 100).toFixed(1)}%): R${proportionalAdmin.toFixed(2)}`);
                 console.log(`  = Interest: R${tier5Interest.toFixed(2)}`);
             }
             
