@@ -64,63 +64,90 @@ Monthly Breakdown (all months equal):
 R750 (principal) + R506.25 (interest) + R90 (init) + R60 (admin) = R1,406.25
 ```
 
-### 2. **Stockvel Loan Calculations (UPDATED v2.0 FINAL)**
+### 2. **Stockvel Loan Calculations (CORRECTED v3.0 FINAL)**
 
 #### Key Changes:
 - **10% Minimum Interest** (kept as is)
-- **Tiered calculation** DOUBLED:
-  - >110% of savings: 30% (was 15%)
-  - 105-110%: 25% (was 12.5%)
-  - 75-105%: 20% (was 10%)
-  - 50-75%: 15% (was 7.5%)
-  - 25-50%: 8% (was 4%)
-  - 5-25%: 3% (was 1.5%)
+- **Tiered calculation based on ABSOLUTE amounts** (not percentages):
+  - First 30% of contributions: 3% (was 1.5%)
+  - 30-75% of contributions: 8% (was 4%)
+  - 75-105% of contributions: 15% (was 7.5%)
+  - 105-110% of contributions: 25% (was 12.5%)
+  - Above 110% of contributions: 30% (was 15%)
 - **Initiation Fee:** WAIVED up to contributions, 12% on excess (distributed over term)
 - **Equal Monthly Payments:** Total cost divided evenly across all months
 
-#### Bonus System:
-- If tiered rate < 10% minimum:
-  - Member pays at the tiered rate
-  - Admin fee adjusted: R60 × (1 - interest rate)
-  - **Bonus** = Difference between minimum charge and actual charge
-  - Bonus is added to member's contributions after payment received
+#### How Tiers Work:
+The loan amount is divided into portions, with each portion charged at its corresponding rate based on the member's contributions.
 
-#### Example 1: R3,000 loan with R5,000 savings (Loan < Savings)
+**Example Tier Structure for R10,500 contributions:**
 ```
-Loan-to-Savings Ratio: 60% (50-75% tier = 15%)
-Initiation Fee: R0 (WAIVED - loan ≤ savings)
-
-Interest Calculation:
-  Month 1: R3,000 × 15% = R450
-  Month 2: R2,000 × 15% = R300
-  Month 3: R1,000 × 15% = R150
-  Total Interest: R900
-
-Admin Fees (15% rate):
-  R60 × (1 - 0.15) = R51 per month
-  Total Admin: R153
-
-Total Cost: R3,000 + R900 + R153 = R4,053
-Equal Monthly Payment: R1,351
+Tier 1: R0 - R3,150 (30% of R10,500) @ 3%
+Tier 2: R3,150 - R7,875 (75% of R10,500) @ 8%
+Tier 3: R7,875 - R11,025 (105% of R10,500) @ 15%
+Tier 4: R11,025 - R11,550 (110% of R10,500) @ 25%
+Tier 5: Above R11,550 @ 30%
 ```
 
-#### Example 2: R5,000 loan with R3,000 savings (Loan > Savings)
+#### Example 1: R5,000 loan with R10,500 contributions
 ```
-Loan-to-Savings Ratio: 167% (>110% tier = 30%)
-Initiation Fee: (R5,000 - R3,000) × 12% = R240 (R80/month)
+Contributions: R10,500
+Tier Boundaries:
+  Tier 1: R0 - R3,150 @ 3%
+  Tier 2: R3,150 - R7,875 @ 8%
+  
+Initiation Fee: R0 (loan < contributions, fully waived)
 
-Interest Calculation:
-  Month 1: R5,000 × 30% = R1,500
-  Month 2: R3,333 × 30% = R1,000
-  Month 3: R1,667 × 30% = R500
-  Total Interest: R3,000
+Interest Calculation (Month 1 on R5,000 outstanding):
+  First R3,150 @ 3% = R94.50
+  Remaining R1,850 @ 8% = R148.00
+  Total Monthly Interest = R242.50
+  
+Effective Rate: R242.50 / R5,000 = 4.85%
 
-Admin Fees (30% rate):
-  R60 × (1 - 0.30) = R42 per month
-  Total Admin: R126
+Since 4.85% < 10% minimum:
+  Minimum Interest: R5,000 × 10% = R500
+  Actual Charged: R242.50 (tiered rate)
+  Admin Fee: R60 × (1 - 0.0485) = R57.09
+  Total TBFS Income: R242.50 + R57.09 = R299.59
+  
+  10% Minimum Would Be: R500 + R54 = R554
+  Bonus to Member: R554 - R299.59 = R254.41
 
-Total Cost: R5,000 + R3,000 + R240 + R126 = R8,366
-Equal Monthly Payment: R2,788.67
+Full 3-Month Calculation:
+  Month 1: R5,000 outstanding → R242.50 interest
+  Month 2: R3,333 outstanding → R161.67 interest
+  Month 3: R1,667 outstanding → R80.83 interest
+  Total Interest: R484.99
+  Total Admin Fees: ~R171 (varies by month)
+  Total Cost: R5,000 + R485 + R171 = R5,656
+  Equal Monthly Payment: R1,885.33
+```
+
+#### Example 2: R12,000 loan with R10,500 contributions (exceeds 110%)
+```
+Contributions: R10,500
+Tier Boundaries:
+  Tier 1: R0 - R3,150 @ 3%
+  Tier 2: R3,150 - R7,875 @ 8%
+  Tier 3: R7,875 - R11,025 @ 15%
+  Tier 4: R11,025 - R11,550 @ 25%
+  Tier 5: Above R11,550 @ 30%
+  
+Initiation Fee: (R12,000 - R10,500) × 12% = R180 (R60/month for 3 months)
+
+Interest Calculation (Month 1 on R12,000 outstanding):
+  First R3,150 @ 3% = R94.50
+  R3,150 - R7,875 (R4,725) @ 8% = R378.00
+  R7,875 - R11,025 (R3,150) @ 15% = R472.50
+  R11,025 - R11,550 (R525) @ 25% = R131.25
+  Above R11,550 (R450) @ 30% = R135.00
+  Total Monthly Interest = R1,211.25
+  
+Effective Rate: R1,211.25 / R12,000 = 10.09% (above 10% minimum)
+Admin Fee: R60 × (1 - 0.1009) = R53.95
+
+Full loan calculation on declining balance...
 ```
 
 ### 3. **Stockvel Membership Tracking (NEW)**
@@ -275,18 +302,38 @@ The application is now ready for testing with the new calculation methods. All c
 - 10% stockvel minimum
 - 1.5%-15% tiered rates
 
-**v2.0 FINAL** (Current)
+**v2.0** (Intermediate)
 - Interest period logic (≤3 = full, >3 = Math.ceil(term/2) min 3)
-- **Equal monthly payments for ALL loans** (total cost ÷ term)
-- **10% stockvel minimum** (kept as is)
-- **3%-30% tiered rates** (doubled)
-- **Stockvel initiation waived** up to contributions, 12% on excess
+- Equal monthly payments for ALL loans (total cost ÷ term)
+- 10% stockvel minimum (kept as is)
+- 3%-30% tiered rates (doubled)
+- Stockvel initiation waived up to contributions, 12% on excess
 - Membership tracking
 - Bonus accumulation
+
+**v3.0 FINAL** (Current)
+- **CORRECTED tiered calculation** - uses absolute amounts, not percentages
+- Tiered rates applied to portions of loan based on contribution brackets
+- Example: R5K loan = R3,150@3% + R1,850@8% = R242.50
+- All other features from v2.0 maintained
 
 ---
 
 **Implementation Date:** October 11, 2025  
 **Implemented by:** AI Assistant  
 **Approved by:** Lindelo (TBFS)  
-**Version:** 2.0 FINAL
+**Version:** 3.0 FINAL
+
+---
+
+## ⚠️ Important Correction (v3.0)
+
+**Issue Found:** The original tiered calculation (v2.0) incorrectly calculated interest based on loan-to-savings **ratios** (percentages).
+
+**Correction:** Tiered calculation now correctly uses **absolute amounts** based on contribution brackets.
+
+**Example Impact:**
+- **OLD (Wrong):** R5K loan with R10.5K savings calculated as "60% of savings = 15% tier"
+- **NEW (Correct):** R5K loan broken into R3,150@3% + R1,850@8% = R242.50 total
+
+This provides **much more favorable rates** for members with higher contributions!
