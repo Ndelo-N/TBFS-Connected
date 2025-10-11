@@ -2697,7 +2697,7 @@
                 // Only calculate interest if there's an outstanding balance
                 if (outstandingBalance > 0) {
                     // Use the new tiered calculation (returns object with totalInterest and tier5Amount)
-                    const tieredResult = calculateTieredStockvelInterest(outstandingBalance, currentSavings, 0);
+                    const tieredResult = calculateTieredStockvelInterest(outstandingBalance, currentSavings, 0, totalContributions);
                     const monthlyInterest = tieredResult.totalInterest || tieredResult; // Handle both old and new format
                     
                     // No minimum interest rule for Stockvel members - use tiered calculation only
@@ -2881,10 +2881,8 @@
                             currentSavings += monthlyContribution;
                         }
                         
-                        // Calculate tiered interest on outstanding balance (legacy function - defaults monthlyInitiation to 0)
-                        const tieredResult = typeof calculateTieredStockvelInterest(outstandingBalance, currentSavings) === 'object' 
-                            ? calculateTieredStockvelInterest(outstandingBalance, currentSavings, 0)
-                            : { totalInterest: calculateTieredStockvelInterest(outstandingBalance, currentSavings), tier5Amount: 0 };
+                        // Calculate tiered interest on outstanding balance (with initiation zone awareness)
+                        const tieredResult = calculateTieredStockvelInterest(outstandingBalance, currentSavings, monthlyInitiationFee, totalContributions);
                         const tieredInterest = tieredResult.totalInterest || tieredResult;
                         const tieredRate = outstandingBalance > 0 ? (tieredInterest / outstandingBalance) : 0;
                         
@@ -3646,7 +3644,8 @@
                 
                 // Calculate tiered rate for bonus calculation later
                 if (loanData.totalContributions > 0) {
-                    const tieredInterest = calculateTieredStockvelInterest(loanData.principal, loanData.totalContributions);
+                    const tieredResult = calculateTieredStockvelInterest(loanData.principal, loanData.totalContributions, 0, loanData.totalContributions);
+                    const tieredInterest = tieredResult.totalInterest || tieredResult;
                     tieredRate = tieredInterest / loanData.principal;
                 }
             }
