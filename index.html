@@ -655,7 +655,6 @@
             <button class="tab active" data-tab="calculator">Loan Calculator</button>
             <button class="tab" data-tab="dashboard">Dashboard</button>
             <button class="tab" data-tab="clients">Clients</button>
-            <button class="tab" data-tab="stockvel">🎁 Stockvel</button>
             <button class="tab" data-tab="loans">Active Loans</button>
             <button class="tab" data-tab="reports">📊 Reports</button>
             <button class="tab" data-tab="income-table">💰 Income Table</button>
@@ -727,32 +726,12 @@
                             <div class="stockvel-info">
                                 <h4>Stockvel Member Benefits</h4>
                                 <ul>
-                                    <li><strong>Initiation Fee:</strong> WAIVED up to contributions, 12% on excess (distributed over term)</li>
-                                    <li><strong>Tiered Interest Rates:</strong> Based on loan amount vs. your contributions
-                                        <ul style="margin-top: 5px; font-size: 12px;">
-                                            <li>First 30% of contributions: 3%</li>
-                                            <li>30-75% of contributions: 8%</li>
-                                            <li>75-105% of contributions: 15%</li>
-                                            <li>105-110% of contributions: 25%</li>
-                                            <li>Above 110% of contributions: 30%</li>
-                                        </ul>
-                                    </li>
-                                    <li><strong>10% Minimum Interest:</strong> Applied if tiered rate is below 10%</li>
-                                    <li><strong>Admin Fee:</strong> R60 × (1 - interest rate)</li>
-                                    <li><strong>Equal Monthly Payments:</strong> Total cost divided evenly across all months</li>
-                                    <li><strong>Special Member Benefits:</strong> Additional rewards tracked automatically</li>
+                                    <li><strong>Initiation Fee:</strong> 3% on loan amount up to your contributions + 9% on any amount above</li>
+                                    <li><strong>Interest Rates:</strong> Tiered calculation based on loan-to-savings ratio (no minimum interest applies)</li>
+                                    <li><strong>Admin Fee:</strong> R60 × (100% - initial month's interest rate)</li>
                                 </ul>
                             </div>
                             <div class="form-grid">
-                                <div class="form-group">
-                                    <label for="membershipStartDate">Membership Start Date:</label>
-                                    <input type="date" id="membershipStartDate" name="membershipStartDate" placeholder="Select start date" onchange="calculateMembershipEndDate()">
-                                </div>
-                                <div class="form-group">
-                                    <label for="membershipEndDate">Membership End Date:</label>
-                                    <input type="date" id="membershipEndDate" name="membershipEndDate" readonly style="background: #f0f0f0; cursor: not-allowed;" title="Auto-calculated as start date + 12 months">
-                                    <small style="color: #666; font-size: 11px;">Automatically calculated (12 months from start)</small>
-                                </div>
                                 <div class="form-group">
                                     <label for="totalContributions">Total Contributions to Date (R):</label>
                                     <input type="number" id="totalContributions" name="totalContributions" min="0" step="100" placeholder="Enter total amount contributed to date">
@@ -760,11 +739,6 @@
                                 <div class="form-group">
                                     <label for="monthlyContribution">Monthly Contribution (R):</label>
                                     <input type="number" id="monthlyContribution" name="monthlyContribution" min="0" step="50" placeholder="Enter monthly contribution amount">
-                                </div>
-                                <div class="form-group">
-                                    <label for="accumulatedBonus">Accumulated Bonus (R):</label>
-                                    <input type="number" id="accumulatedBonus" name="accumulatedBonus" min="0" step="0.01" value="0" placeholder="Bonus from previous loans">
-                                    <small style="color: #666; font-size: 11px;">Total bonus accumulated from all loans</small>
                                 </div>
                             </div>
                         </div>
@@ -809,10 +783,8 @@
                                 <th>Monthly Payment</th>
                                 <th>Principal Payment</th>
                                 <th>Interest</th>
-                                <th>Initiation Fee</th>
                                 <th>Admin Fee</th>
                                 <th>Outstanding Balance</th>
-                                <th class="stockvel-only" style="display: none;">Bonus</th>
                             </tr>
                         </thead>
                         <tbody id="breakdownBody">
@@ -984,150 +956,6 @@
                     <tbody id="clientsTableBody">
                     </tbody>
                 </table>
-            </div>
-        </div>
-
-        <!-- STOCKVEL TAB -->
-        <div id="stockvel" class="tab-content">
-            <h2>🎁 Stockvel Member Management</h2>
-            
-            <!-- Stockvel Summary Stats -->
-            <div class="stats-grid">
-                <div class="stat-card">
-                    <h3>Total Stockvel Members</h3>
-                    <div class="value" id="totalStockvelMembers">0</div>
-                </div>
-                <div class="stat-card">
-                    <h3>Total Contributions</h3>
-                    <div class="value" id="totalStockvelContributions">R 0.00</div>
-                </div>
-                <div class="stat-card">
-                    <h3>Total Bonuses Paid</h3>
-                    <div class="value" id="totalBonusesPaid">R 0.00</div>
-                </div>
-                <div class="stat-card">
-                    <h3>Members Due for Renewal</h3>
-                    <div class="value" id="membersNeedingRenewal">0</div>
-                </div>
-            </div>
-
-            <!-- Receipt Recording Section -->
-            <div class="form-section">
-                <h3 class="section-title">📝 Record Receipt / Contribution</h3>
-                <form id="receiptForm" style="background: #f8f9fa; padding: 20px; border-radius: 10px;">
-                    <div class="form-grid">
-                        <div class="form-group">
-                            <label for="receiptMember">Select Member:</label>
-                            <select id="receiptMember" required onchange="loadMemberReceiptInfo()">
-                                <option value="">-- Select Stockvel Member --</option>
-                            </select>
-                        </div>
-                        <div class="form-group">
-                            <label for="receiptType">Receipt Type:</label>
-                            <select id="receiptType" required>
-                                <option value="contribution">Monthly Contribution</option>
-                                <option value="loan_payment">Loan Payment (with bonus)</option>
-                                <option value="bonus_payout">Bonus Payout</option>
-                                <option value="adjustment">Adjustment</option>
-                            </select>
-                        </div>
-                        <div class="form-group">
-                            <label for="receiptAmount">Amount (R):</label>
-                            <input type="number" id="receiptAmount" min="0" step="0.01" required>
-                        </div>
-                        <div class="form-group">
-                            <label for="receiptDate">Date:</label>
-                            <input type="date" id="receiptDate" required>
-                        </div>
-                        <div class="form-group" style="grid-column: 1 / -1;">
-                            <label for="receiptNotes">Notes:</label>
-                            <textarea id="receiptNotes" rows="2" placeholder="Optional notes about this transaction"></textarea>
-                        </div>
-                    </div>
-                    
-                    <!-- Member Info Display -->
-                    <div id="memberReceiptInfo" style="display: none; background: white; padding: 15px; border-radius: 8px; margin-top: 15px; border: 2px solid #667eea;">
-                        <h4 style="color: #667eea; margin-bottom: 10px;">Member Information</h4>
-                        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px; font-size: 14px;">
-                            <div><strong>Current Contributions:</strong> <span id="memberCurrentContribs">R0.00</span></div>
-                            <div><strong>Accumulated Bonus:</strong> <span id="memberCurrentBonus">R0.00</span></div>
-                            <div><strong>Membership Status:</strong> <span id="memberStatus">Active</span></div>
-                            <div><strong>Membership Expires:</strong> <span id="memberExpiry">N/A</span></div>
-                        </div>
-                    </div>
-                    
-                    <button type="submit" class="calculate-btn" style="margin-top: 15px;">💾 Record Receipt</button>
-                </form>
-            </div>
-
-            <!-- Contribution History Section -->
-            <div class="form-section">
-                <h3 class="section-title">📊 Contribution History</h3>
-                <div style="margin-bottom: 15px;">
-                    <label for="historyMemberSelect" style="font-weight: 600; margin-right: 10px;">Filter by Member:</label>
-                    <select id="historyMemberSelect" style="padding: 8px; border-radius: 5px; border: 2px solid #e9ecef;" onchange="filterContributionHistory()">
-                        <option value="">-- All Members --</option>
-                    </select>
-                    <button onclick="exportContributionHistory()" class="export-btn" style="margin-left: 10px;">📥 Export History</button>
-                </div>
-                <div style="overflow-x: auto;">
-                    <table class="breakdown-table">
-                        <thead>
-                            <tr>
-                                <th>Date</th>
-                                <th>Member</th>
-                                <th>Type</th>
-                                <th>Amount</th>
-                                <th>New Total</th>
-                                <th>Bonus Added</th>
-                                <th>Notes</th>
-                            </tr>
-                        </thead>
-                        <tbody id="contributionHistoryBody">
-                            <tr>
-                                <td colspan="7" style="text-align: center; color: #7f8c8d; padding: 40px;">
-                                    No contribution history yet. Record your first receipt above!
-                                </td>
-                            </tr>
-                        </tbody>
-                    </table>
-                </div>
-            </div>
-
-            <!-- Membership Renewal Notifications -->
-            <div class="form-section">
-                <h3 class="section-title">🔔 Membership Renewal Alerts</h3>
-                <div id="renewalAlerts"></div>
-            </div>
-
-            <!-- Bonus Payout Report -->
-            <div class="form-section">
-                <h3 class="section-title">🎁 Bonus Payout Report</h3>
-                <div style="margin-bottom: 15px;">
-                    <button onclick="generateBonusReport()" class="export-btn">🔄 Generate Report</button>
-                    <button onclick="exportBonusReport()" class="export-btn" style="margin-left: 10px;">📥 Export to Excel</button>
-                </div>
-                <div style="overflow-x: auto;">
-                    <table class="breakdown-table">
-                        <thead>
-                            <tr>
-                                <th>Member</th>
-                                <th>Total Bonuses Earned</th>
-                                <th>Bonuses Paid Out</th>
-                                <th>Pending Bonuses</th>
-                                <th>Last Bonus Date</th>
-                                <th>Actions</th>
-                            </tr>
-                        </thead>
-                        <tbody id="bonusReportBody">
-                            <tr>
-                                <td colspan="6" style="text-align: center; color: #7f8c8d; padding: 40px;">
-                                    Click "Generate Report" to view bonus information
-                                </td>
-                            </tr>
-                        </tbody>
-                    </table>
-                </div>
             </div>
         </div>
 
@@ -2112,19 +1940,9 @@
                     const totalPaid = loan.total_cost - loan.current_balance;
                     const paymentsMade = Math.floor(totalPaid / loan.monthly_payment);
                     
-                    // Calculate next payment due date - last day of start month + payments made
-                    // Use start_month_index if available, otherwise fall back to loan date month
-                    const startMonthIndex = loan.start_month_index !== undefined ? loan.start_month_index : loanStartDate.getMonth();
-                    const startYear = loanStartDate.getFullYear();
-                    
-                    // Calculate the target month for next payment (start month + payments made)
-                    const targetMonthOffset = startMonthIndex + paymentsMade;
-                    const targetYear = startYear + Math.floor(targetMonthOffset / 12);
-                    const targetMonth = targetMonthOffset % 12;
-                    
-                    // Create date for last day of target month
-                    // Using day 0 of next month gives us last day of target month
-                    const nextDueDate = new Date(targetYear, targetMonth + 1, 0);
+                    // Calculate next payment due date (loan start + payments made + 1 month)
+                    const nextDueDate = new Date(loanStartDate);
+                    nextDueDate.setMonth(nextDueDate.getMonth() + paymentsMade + 1);
                     const nextDueStr = nextDueDate.toLocaleDateString('en-ZA', { day: '2-digit', month: 'short', year: 'numeric' });
                     
                     // Check if overdue
@@ -2388,32 +2206,13 @@
                         stockvelFields.style.display = 'block';
                         document.getElementById('totalContributions').required = true;
                         document.getElementById('monthlyContribution').required = true;
-                        document.getElementById('membershipStartDate').required = true;
                     } else {
                         stockvelFields.style.display = 'none';
                         document.getElementById('totalContributions').required = false;
                         document.getElementById('monthlyContribution').required = false;
-                        document.getElementById('membershipStartDate').required = false;
                         document.getElementById('totalContributions').value = '';
                         document.getElementById('monthlyContribution').value = '';
-                        document.getElementById('membershipStartDate').value = '';
-                        document.getElementById('membershipEndDate').value = '';
-                        document.getElementById('accumulatedBonus').value = '0';
                     }
-                });
-            }
-            
-            // Handle Receipt Form submission
-            const receiptForm = document.getElementById('receiptForm');
-            if (receiptForm) {
-                receiptForm.addEventListener('submit', recordReceipt);
-            }
-            
-            // Handle Stockvel tab click
-            const stockvelTab = document.querySelector('[data-tab="stockvel"]');
-            if (stockvelTab) {
-                stockvelTab.addEventListener('click', function() {
-                    setTimeout(loadStockvelDashboard, 100);
                 });
             }
         });
@@ -2422,68 +2221,74 @@
         function calculateTieredStockvelInterest(loanAmount, savingsAmount) {
             let totalInterest = 0;
             
-            console.log(`\nTiered calculation for R${loanAmount.toFixed(2)} loan with R${savingsAmount.toFixed(2)} contributions`);
+            console.log(`\nTiered calculation for R${loanAmount.toFixed(2)} loan with R${savingsAmount.toFixed(2)} savings`);
             
-            // Calculate tier boundaries based on ABSOLUTE amounts from contributions
+            // Calculate tier boundaries based on savings
             const boundaries = {
-                tier1_max: savingsAmount * 0.30,  // Up to 30% of contributions @ 3%
-                tier2_max: savingsAmount * 0.75,  // Up to 75% of contributions @ 8%
-                tier3_max: savingsAmount * 1.05,  // Up to 105% of contributions @ 15%
-                tier4_max: savingsAmount * 1.10,  // Up to 110% of contributions @ 25%
-                // Above 110% @ 30%
+                tier1: savingsAmount * 1.10, // >110% of savings
+                tier2: savingsAmount * 1.05, // 105-110% of savings
+                tier3: savingsAmount * 0.75, // 75-105% of savings
+                tier4: savingsAmount * 0.50, // 50-75% of savings
+                tier5: savingsAmount * 0.25, // 25-50% of savings
+                tier6: 0 // 5-25% of savings
             };
             
-            console.log(`Tier boundaries:`);
-            console.log(`  Tier 1 (3%): R0 - R${boundaries.tier1_max.toFixed(2)}`);
-            console.log(`  Tier 2 (8%): R${boundaries.tier1_max.toFixed(2)} - R${boundaries.tier2_max.toFixed(2)}`);
-            console.log(`  Tier 3 (15%): R${boundaries.tier2_max.toFixed(2)} - R${boundaries.tier3_max.toFixed(2)}`);
-            console.log(`  Tier 4 (25%): R${boundaries.tier3_max.toFixed(2)} - R${boundaries.tier4_max.toFixed(2)}`);
-            console.log(`  Tier 5 (30%): Above R${boundaries.tier4_max.toFixed(2)}`);
+            console.log(`Tier boundaries: 110%: R${boundaries.tier1.toFixed(2)}, 105%: R${boundaries.tier2.toFixed(2)}, 75%: R${boundaries.tier3.toFixed(2)}, 50%: R${boundaries.tier4.toFixed(2)}, 25%: R${boundaries.tier5.toFixed(2)}`);
             
+            // Calculate interest for each tier
             let remainingLoan = loanAmount;
             
-            // Tier 1: First 30% of contributions @ 3%
-            if (remainingLoan > 0) {
-                const tierAmount = Math.min(remainingLoan, boundaries.tier1_max);
-                const tierInterest = tierAmount * 0.03;
-                totalInterest += tierInterest;
-                console.log(`Tier 1 (0-30%): R${tierAmount.toFixed(2)} × 3% = R${tierInterest.toFixed(2)}`);
-                remainingLoan -= tierAmount;
-            }
-            
-            // Tier 2: 30-75% of contributions @ 8%
-            if (remainingLoan > 0) {
-                const tierAmount = Math.min(remainingLoan, boundaries.tier2_max - boundaries.tier1_max);
-                const tierInterest = tierAmount * 0.08;
-                totalInterest += tierInterest;
-                console.log(`Tier 2 (30-75%): R${tierAmount.toFixed(2)} × 8% = R${tierInterest.toFixed(2)}`);
-                remainingLoan -= tierAmount;
-            }
-            
-            // Tier 3: 75-105% of contributions @ 15%
-            if (remainingLoan > 0) {
-                const tierAmount = Math.min(remainingLoan, boundaries.tier3_max - boundaries.tier2_max);
+            // Tier 1: >110% of savings (15%)
+            if (loanAmount > boundaries.tier1) {
+                const tierAmount = loanAmount - boundaries.tier1;
                 const tierInterest = tierAmount * 0.15;
                 totalInterest += tierInterest;
-                console.log(`Tier 3 (75-105%): R${tierAmount.toFixed(2)} × 15% = R${tierInterest.toFixed(2)}`);
+                console.log(`Tier >110% of savings: R${tierAmount.toFixed(2)} × 15% = R${tierInterest.toFixed(2)}`);
                 remainingLoan -= tierAmount;
             }
             
-            // Tier 4: 105-110% of contributions @ 25%
-            if (remainingLoan > 0) {
-                const tierAmount = Math.min(remainingLoan, boundaries.tier4_max - boundaries.tier3_max);
-                const tierInterest = tierAmount * 0.25;
+            // Tier 2: 105-110% of savings (12.5%)
+            if (remainingLoan > boundaries.tier2) {
+                const tierAmount = Math.min(remainingLoan - boundaries.tier2, boundaries.tier1 - boundaries.tier2);
+                const tierInterest = tierAmount * 0.125;
                 totalInterest += tierInterest;
-                console.log(`Tier 4 (105-110%): R${tierAmount.toFixed(2)} × 25% = R${tierInterest.toFixed(2)}`);
+                console.log(`Tier 105-110% of savings: R${tierAmount.toFixed(2)} × 12.5% = R${tierInterest.toFixed(2)}`);
                 remainingLoan -= tierAmount;
             }
             
-            // Tier 5: Above 110% of contributions @ 30%
-            if (remainingLoan > 0) {
-                const tierAmount = remainingLoan;
-                const tierInterest = tierAmount * 0.30;
+            // Tier 3: 75-105% of savings (10%)
+            if (remainingLoan > boundaries.tier3) {
+                const tierAmount = Math.min(remainingLoan - boundaries.tier3, boundaries.tier2 - boundaries.tier3);
+                const tierInterest = tierAmount * 0.10;
                 totalInterest += tierInterest;
-                console.log(`Tier 5 (>110%): R${tierAmount.toFixed(2)} × 30% = R${tierInterest.toFixed(2)}`);
+                console.log(`Tier 75-105% of savings: R${tierAmount.toFixed(2)} × 10% = R${tierInterest.toFixed(2)}`);
+                remainingLoan -= tierAmount;
+            }
+            
+            // Tier 4: 50-75% of savings (7.5%)
+            if (remainingLoan > boundaries.tier4) {
+                const tierAmount = Math.min(remainingLoan - boundaries.tier4, boundaries.tier3 - boundaries.tier4);
+                const tierInterest = tierAmount * 0.075;
+                totalInterest += tierInterest;
+                console.log(`Tier 50-75% of savings: R${tierAmount.toFixed(2)} × 7.5% = R${tierInterest.toFixed(2)}`);
+                remainingLoan -= tierAmount;
+            }
+            
+            // Tier 5: 25-50% of savings (4%)
+            if (remainingLoan > boundaries.tier5) {
+                const tierAmount = Math.min(remainingLoan - boundaries.tier5, boundaries.tier4 - boundaries.tier5);
+                const tierInterest = tierAmount * 0.04;
+                totalInterest += tierInterest;
+                console.log(`Tier 25-50% of savings: R${tierAmount.toFixed(2)} × 4% = R${tierInterest.toFixed(2)}`);
+                remainingLoan -= tierAmount;
+            }
+            
+            // Tier 6: 5-25% of savings (1.5%)
+            if (remainingLoan > 0) {
+                const tierAmount = Math.min(remainingLoan, boundaries.tier5);
+                const tierInterest = tierAmount * 0.015;
+                totalInterest += tierInterest;
+                console.log(`Tier 5-25% of savings: R${tierAmount.toFixed(2)} × 1.5% = R${tierInterest.toFixed(2)}`);
             }
             
             console.log(`Total tiered interest: R${totalInterest.toFixed(2)}`);
@@ -2551,25 +2356,6 @@
             ];
             return months[(startIndex + offset) % 12];
         }
-        
-        function calculateMembershipEndDate() {
-            const startDateInput = document.getElementById('membershipStartDate');
-            const endDateInput = document.getElementById('membershipEndDate');
-            
-            if (startDateInput && endDateInput && startDateInput.value) {
-                const startDate = new Date(startDateInput.value);
-                // Add 12 months to the start date
-                const endDate = new Date(startDate);
-                endDate.setMonth(endDate.getMonth() + 12);
-                
-                // Format the date as YYYY-MM-DD for the input field
-                const year = endDate.getFullYear();
-                const month = String(endDate.getMonth() + 1).padStart(2, '0');
-                const day = String(endDate.getDate()).padStart(2, '0');
-                
-                endDateInput.value = `${year}-${month}-${day}`;
-            }
-        }
 
         function calculateLoan() {
             console.log('calculateLoan function called');
@@ -2588,14 +2374,10 @@
                 const isStockvelMember = document.getElementById('stockvelMember').checked;
                 const totalContributions = isStockvelMember ? parseFloat(document.getElementById('totalContributions').value) : 0;
                 const monthlyContribution = isStockvelMember ? parseFloat(document.getElementById('monthlyContribution').value) : 0;
-                const membershipStartDate = isStockvelMember ? document.getElementById('membershipStartDate').value : '';
-                const membershipEndDate = isStockvelMember ? document.getElementById('membershipEndDate').value : '';
-                const accumulatedBonus = isStockvelMember ? parseFloat(document.getElementById('accumulatedBonus').value) || 0 : 0;
 
                 console.log('Form values:', { 
                     firstName, lastName, accountNumber, principal, term, startMonthIndex,
-                    isStockvelMember, totalContributions, monthlyContribution,
-                    membershipStartDate, membershipEndDate, accumulatedBonus
+                    isStockvelMember, totalContributions, monthlyContribution 
                 });
 
                 // Validate inputs
@@ -2605,10 +2387,6 @@
                 }
 
                 if (isStockvelMember) {
-                    if (!membershipStartDate) {
-                        alert('Please enter the membership start date');
-                        return;
-                    }
                     if (isNaN(totalContributions) || totalContributions < 0) {
                         alert('Please enter a valid total contribution amount');
                         return;
@@ -2648,207 +2426,101 @@
                 // Calculate loan components
                 const basePrincipalPayment = principal / term;
                 
-                // NEW CALCULATION LOGIC
+                // INITIATION FEE RULES for Stockvel Members
                 let initiationFee;
-                let totalInterest = 0;
-                let totalAdminFees = 0;
-                let breakdown = [];
+                if (isStockvelMember) {
+                    // Calculate initiation fee: 3% for amount <= contribution, 9% for amount above
+                    if (principal <= totalContributions) {
+                        initiationFee = principal * 0.03; // 3% on the loan amount
+                    } else {
+                        // 3% on contribution amount + 9% on the excess
+                        initiationFee = (totalContributions * 0.03) + ((principal - totalContributions) * 0.09);
+                    }
+                } else {
+                    initiationFee = principal * 0.09; // Standard 9% for non-Stockvel members
+                }
+                
+                // ADMIN FEE RULES for Stockvel Members
+                let adminFee;
+                if (isStockvelMember) {
+                    // Calculate admin fee: 60 * (1 - initial month's interest rate)
+                    const tieredInterest = calculateTieredStockvelInterest(principal, totalContributions);
+                    const effectiveInterestRate = tieredInterest / principal;
+                    adminFee = 60 * (1 - effectiveInterestRate);
+                } else {
+                    adminFee = 60; // Standard admin fee for non-Stockvel members
+                }
+                
+                let totalInterest;
                 let interestRate;
                 
                 if (isStockvelMember) {
-                    // ===== STOCKVEL LOAN CALCULATION =====
-                    // Calculate with tiered interest but apply 10% minimum
-                    
-                    interestRate = 'Variable (Stockvel) - Min 10%';
-                    let outstandingBalance = principal;
-                    let currentSavings = totalContributions;
-                    let totalBonus = 0; // Track accumulated bonus
-                    
-                    console.log(`\n=== STOCKVEL LOAN CALCULATION ===`);
-                    console.log(`Principal: R${principal.toFixed(2)}`);
-                    console.log(`Term: ${term} months`);
-                    console.log(`Initial Savings: R${currentSavings.toFixed(2)}`);
-                    console.log(`Monthly Contribution: R${monthlyContribution.toFixed(2)}`);
-                    
-                    // Calculate initiation fee: WAIVED for amount <= contribution, 12% on excess
-                    if (principal <= totalContributions) {
-                        initiationFee = 0; // Waived completely
-                    } else {
-                        // Only charge 12% on the amount above contributions
-                        initiationFee = (principal - totalContributions) * 0.12;
-                    }
-                    const monthlyInitiationFee = initiationFee / term;
-                    
-                    // First pass: Calculate all interest, admin fees, and bonuses per month
-                    const monthlyDetails = [];
-                    for (let month = 1; month <= term; month++) {
-                        // Update savings (add contribution after first month)
-                        if (month > 1 && term > 1) {
-                            currentSavings += monthlyContribution;
-                        }
-                        
-                        // Calculate tiered interest on outstanding balance
-                        const tieredInterest = calculateTieredStockvelInterest(outstandingBalance, currentSavings);
-                        const tieredRate = outstandingBalance > 0 ? (tieredInterest / outstandingBalance) : 0;
-                        
-                        // Apply 10% minimum
-                        const minimumInterest = outstandingBalance * 0.10;
-                        const actualInterest = Math.max(tieredInterest, minimumInterest);
-                        
-                        // Calculate admin fee based on actual rate
-                        const actualRate = outstandingBalance > 0 ? (actualInterest / outstandingBalance) : 0;
-                        const adminFee = 60 * (1 - actualRate);
-                        
-                        // If we used the minimum, calculate bonus
-                        let monthlyBonus = 0;
-                        if (actualInterest > tieredInterest) {
-                            // Bonus = difference between minimum charge and what we actually charged
-                            const actualCharge = actualInterest + adminFee + monthlyInitiationFee;
-                            const minimumCharge = minimumInterest + 60 + monthlyInitiationFee;
-                            monthlyBonus = minimumCharge - actualCharge;
-                        }
-                        
-                        totalBonus += monthlyBonus;
-                        totalInterest += actualInterest;
-                        totalAdminFees += adminFee;
-                        
-                        monthlyDetails.push({
-                            tieredInterest,
-                            tieredRate,
-                            actualInterest,
-                            actualRate,
-                            adminFee,
-                            monthlyBonus,
-                            outstandingBalance
-                        });
-                        
-                        console.log(`\nMonth ${month}:`);
-                        console.log(`  Outstanding: R${outstandingBalance.toFixed(2)}`);
-                        console.log(`  Savings: R${currentSavings.toFixed(2)}`);
-                        console.log(`  Tiered Interest: R${tieredInterest.toFixed(2)} (${(tieredRate * 100).toFixed(1)}%)`);
-                        console.log(`  Actual Interest: R${actualInterest.toFixed(2)} (${(actualRate * 100).toFixed(1)}%)`);
-                        console.log(`  Admin Fee: R${adminFee.toFixed(2)}`);
-                        console.log(`  Initiation: R${monthlyInitiationFee.toFixed(2)}`);
-                        console.log(`  Bonus: R${monthlyBonus.toFixed(2)}`);
-                        
-                        outstandingBalance -= basePrincipalPayment;
-                    }
-                    
-                    console.log(`\nTotal Bonus: R${totalBonus.toFixed(2)}`);
-                    console.log(`Total Interest: R${totalInterest.toFixed(2)}`);
-                    console.log(`Total Admin Fees: R${totalAdminFees.toFixed(2)}`);
-                    console.log(`Total Initiation Fee: R${initiationFee.toFixed(2)}`);
-                    
-                    // Calculate total cost and equal monthly payment
-                    const totalCostStockvel = principal + totalInterest + initiationFee + totalAdminFees;
-                    const equalMonthlyPayment = totalCostStockvel / term;
-                    
-                    console.log(`\nTotal Cost: R${totalCostStockvel.toFixed(2)}`);
-                    console.log(`Equal Monthly Payment: R${equalMonthlyPayment.toFixed(2)}`);
-                    
-                    // Second pass: Build breakdown with equal payments
-                    outstandingBalance = principal;
-                    for (let month = 1; month <= term; month++) {
-                        const details = monthlyDetails[month - 1];
-                        
-                        breakdown.push({
-                            month: month,
-                            principalPayment: basePrincipalPayment,
-                            interest: details.actualInterest,
-                            adminFee: details.adminFee,
-                            initiationFee: monthlyInitiationFee,
-                            bonus: details.monthlyBonus,
-                            totalPayment: equalMonthlyPayment, // Equal payment each month
-                            outstandingBalance: Math.max(0, outstandingBalance - basePrincipalPayment)
-                        });
-                        
-                        outstandingBalance -= basePrincipalPayment;
-                    }
-                    
+                    // Use Stockvel interest calculation
+                    totalInterest = calculateStockvelInterest(principal, term, totalContributions, monthlyContribution);
+                    interestRate = 'Variable (Stockvel)';
+                    console.log('Stockvel interest calculation:', totalInterest);
                 } else {
-                    // ===== STANDARD LOAN CALCULATION =====
-                    // Interest period: Full term for loans ≤ 3 months, otherwise Math.ceil(term/2) with min 3
-                    // Total initiation fee = 12% of principal (distributed over term)
-                    // Admin fee = R60 per month
-                    // Interest = calculated on declining balance for interest period
+                    // Use standard interest calculation
+                    interestRate = 0.15; // 15% per month
                     
-                    interestRate = '30% on declining balance';
-                    initiationFee = principal * 0.12;
-                    const monthlyInitiationFee = initiationFee / term;
-                    const adminFee = 60;
+                    // Interest calculation period: minimum 3 months, or Math.ceil(term/2) if >= 3
+                    // BUT cannot exceed the actual loan term (for 1-2 month loans)
+                    const calculatedMonths = Math.ceil(term / 2) >= 3 ? Math.ceil(term / 2) : 3;
+                    const interestMonths = Math.min(calculatedMonths, term);
                     
-                    // Determine interest calculation period
-                    let interestMonths;
-                    if (term <= 3) {
-                        // For loans <= 3 months, calculate interest for full term
-                        interestMonths = term;
-                    } else {
-                        // For loans > 3 months, use Math.ceil(term/2) with minimum of 3
-                        interestMonths = Math.max(Math.ceil(term / 2), 3);
-                    }
-                    
-                    let outstandingBalance = principal;
-                    
-                    console.log(`\n=== STANDARD LOAN CALCULATION ===`);
+                    console.log(`\n=== STANDARD INTEREST CALCULATION ===`);
                     console.log(`Principal: R${principal.toFixed(2)}`);
                     console.log(`Term: ${term} months`);
                     console.log(`Interest Period: ${interestMonths} months`);
-                    console.log(`Total Initiation Fee (12%): R${initiationFee.toFixed(2)}`);
-                    console.log(`Monthly Initiation: R${monthlyInitiationFee.toFixed(2)}`);
-                    console.log(`Monthly Admin Fee: R${adminFee.toFixed(2)}`);
                     
-                    // Calculate interest on declining balance for interest period only
+                    // Calculate interest on declining balance (outstanding amount)
+                    let outstandingBalance = principal;
+                    let cumulativeInterest = 0;
+                    const monthlyPrincipalPayment = principal / term;
+                    
+                    // Calculate interest ONLY for the interest period (not full term)
                     for (let month = 1; month <= interestMonths; month++) {
-                        const monthlyInterest = outstandingBalance * 0.30;
-                        totalInterest += monthlyInterest;
-                        
-                        console.log(`\nMonth ${month} (interest calculation):`);
-                        console.log(`  Outstanding: R${outstandingBalance.toFixed(2)}`);
-                        console.log(`  Interest (30%): R${monthlyInterest.toFixed(2)}`);
-                        
-                        outstandingBalance -= basePrincipalPayment;
+                        if (outstandingBalance > 0) {
+                            // Interest calculated on current outstanding balance
+                            const monthlyInterest = outstandingBalance * interestRate;
+                            cumulativeInterest += monthlyInterest;
+                            
+                            console.log(`Month ${month}: Outstanding: R${outstandingBalance.toFixed(2)}, Interest: R${monthlyInterest.toFixed(2)}`);
+                            
+                            // Reduce outstanding balance by principal payment
+                            outstandingBalance -= monthlyPrincipalPayment;
+                        }
                     }
                     
-                    // Spread interest evenly across all months
-                    const equalMonthlyInterest = totalInterest / term;
-                    totalAdminFees = adminFee * term;
-                    
-                    // Reset for breakdown
-                    outstandingBalance = principal;
-                    
-                    console.log(`\nTotal Interest (${interestMonths} months): R${totalInterest.toFixed(2)}`);
-                    console.log(`Interest per month (spread over ${term} months): R${equalMonthlyInterest.toFixed(2)}`);
-                    console.log(`Total Admin Fees: R${totalAdminFees.toFixed(2)}`);
-                    console.log(`Total Initiation Fee: R${initiationFee.toFixed(2)}`);
-                    
-                    // Build breakdown with equal monthly payments
-                    for (let month = 1; month <= term; month++) {
-                        breakdown.push({
-                            month: month,
-                            principalPayment: basePrincipalPayment,
-                            interest: equalMonthlyInterest,
-                            adminFee: adminFee,
-                            initiationFee: monthlyInitiationFee,
-                            totalPayment: basePrincipalPayment + equalMonthlyInterest + adminFee + monthlyInitiationFee,
-                            outstandingBalance: Math.max(0, outstandingBalance - basePrincipalPayment)
-                        });
-                        
-                        outstandingBalance -= basePrincipalPayment;
-                    }
+                    totalInterest = cumulativeInterest;
+                    console.log(`Total Interest (${interestMonths} months): R${totalInterest.toFixed(2)}`);
+                    console.log('Declining balance interest calculation:', totalInterest);
                 }
-                
+
+                // Spread interest evenly across all months
+                const equalMonthlyInterest = totalInterest / term;
+
                 // Calculate totals
-                const totalCost = principal + totalInterest + initiationFee + totalAdminFees;
+                const totalCost = principal + totalInterest + initiationFee + (adminFee * term);
                 const monthlyPayment = totalCost / term;
 
-                console.log('\n=== FINAL SUMMARY ===');
-                console.log('Total Cost:', totalCost);
-                console.log('Average Monthly Payment:', monthlyPayment);
+                console.log('Final calculations:', { totalCost, monthlyPayment, totalInterest, equalMonthlyInterest });
 
-                // Calculate total bonus for stockvel members
-                const totalBonus = isStockvelMember ? 
-                    breakdown.reduce((sum, month) => sum + (month.bonus || 0), 0) : 0;
-                
+                // Calculate monthly breakdown
+                const breakdown = [];
+                let outstandingBalance = principal;
+                for (let month = 1; month <= term; month++) {
+                    breakdown.push({
+                        month: month,
+                        principalPayment: basePrincipalPayment,
+                        interest: equalMonthlyInterest,
+                        adminFee: adminFee,
+                        totalPayment: basePrincipalPayment + equalMonthlyInterest + adminFee,
+                        outstandingBalance: Math.max(0, outstandingBalance - basePrincipalPayment)
+                    });
+                    outstandingBalance -= basePrincipalPayment;
+                }
+
                 // Store data for PDF generation
                 loanData = {
                     firstName,
@@ -2861,17 +2533,13 @@
                     totalCost,
                     totalInterest,
                     initiationFee,
-                    totalAdminFees,
+                    adminFee,
                     breakdown,
                     startMonthIndex,
                     isStockvelMember,
                     totalContributions,
                     monthlyContribution,
-                    interestRate,
-                    totalBonus, // For stockvel members
-                    membershipStartDate, // Membership tracking
-                    membershipEndDate,
-                    accumulatedBonus
+                    interestRate
                 };
 
                 console.log('Loan data stored, calling displayResults');
@@ -2911,63 +2579,25 @@
                             <p><strong>Start Month:</strong> ${getMonthName(loanData.startMonthIndex, 0)}</p>`;
                     
                     if (loanData.isStockvelMember) {
-                        // Format membership dates
-                        const startDate = loanData.membershipStartDate ? new Date(loanData.membershipStartDate).toLocaleDateString('en-ZA') : 'Not set';
-                        const endDate = loanData.membershipEndDate ? new Date(loanData.membershipEndDate).toLocaleDateString('en-ZA') : 'Not set';
-                        
                         clientInfoHTML += `
                             <p><strong>Stockvel Member:</strong> Yes</p>
-                            <p><strong>Membership Period:</strong> ${startDate} to ${endDate}<br>
-                               <span style="font-size: 11px; color: #666;">(12-month membership)</span></p>
                             <p><strong>Total Contributions:</strong> R ${loanData.totalContributions.toFixed(2)}</p>
                             <p><strong>Monthly Contribution:</strong> R ${loanData.monthlyContribution.toFixed(2)}</p>
-                            <p><strong>Accumulated Bonus:</strong> R ${loanData.accumulatedBonus.toFixed(2)}<br>
-                               <span style="font-size: 11px; color: #666;">(Previous bonuses earned)</span></p>
-                            <p><strong>Interest Rate:</strong> Variable (Tiered, with 10% minimum)</p>
+                            <p><strong>Interest Rate:</strong> Variable (Based on loan-to-savings ratio)</p>
                             <p><strong>Initiation Fee:</strong> R ${loanData.initiationFee.toFixed(2)}<br>
-                               <span style="font-size: 11px; color: #666;">(Waived up to R${loanData.totalContributions.toFixed(2)}, 12% on excess)</span></p>
-                            <p><strong>Total Admin Fees:</strong> R ${loanData.totalAdminFees.toFixed(2)}<br>
-                               <span style="font-size: 11px; color: #666;">(R60 × (1 - interest rate), varies by month)</span></p>`;
-                        // Bonus is tracked internally but not displayed to members (surprise feature)
-                        // if (loanData.totalBonus > 0) {
-                        //     clientInfoHTML += `
-                        //     <div style="background: #fff3cd; padding: 10px; border-radius: 8px; margin-top: 10px; border: 2px solid #ffc107;">
-                        //         <strong style="color: #856404;">🎁 Member Bonus:</strong> R ${loanData.totalBonus.toFixed(2)}<br>
-                        //         <span style="font-size: 11px; color: #856404;">This bonus will be added to your contributions after each payment is received!</span>
-                        //     </div>`;
-                        // }
-                        clientInfoHTML += `
+                               <span style="font-size: 11px; color: #666;">(3% up to contributions + 9% on excess)</span></p>
                             <div style="background: #e8f5e8; padding: 10px; border-radius: 8px; margin-top: 10px; font-size: 12px;">
-                                <strong>Your Tier Boundaries (based on R${loanData.totalContributions.toFixed(2)} contributions):</strong><br>
-                                • Tier 1: R0 - R${(loanData.totalContributions * 0.30).toFixed(2)} @ 3%<br>
-                                • Tier 2: R${(loanData.totalContributions * 0.30).toFixed(2)} - R${(loanData.totalContributions * 0.75).toFixed(2)} @ 8%<br>
-                                • Tier 3: R${(loanData.totalContributions * 0.75).toFixed(2)} - R${(loanData.totalContributions * 1.05).toFixed(2)} @ 15%<br>
-                                • Tier 4: R${(loanData.totalContributions * 1.05).toFixed(2)} - R${(loanData.totalContributions * 1.10).toFixed(2)} @ 25%<br>
-                                • Tier 5: Above R${(loanData.totalContributions * 1.10).toFixed(2)} @ 30%<br>
-                                <strong style="margin-top: 5px; display: block;">10% Minimum Applied</strong> with bonus for difference<br>
-                                Admin Fee varies: R60 × (1 - interest rate)
+                                <strong>Interest Rate Breakdown (Tiered Calculation):</strong><br>
+                                • >110% of savings: 15% | 105-110%: 12.5% | 75-105%: 10%<br>
+                                • 50-75%: 7.5% | 25-50%: 4% | 5-25%: 1.5%<br>
+                                • Each portion of loan is charged at its applicable rate<br>
+                                • <strong>Admin Fee:</strong> R60 × (100% - initial rate) = R${loanData.adminFee.toFixed(2)}
                             </div>`;
                     } else {
-                        // Calculate interest period for display
-                        let interestPeriod;
-                        if (loanData.term <= 3) {
-                            interestPeriod = loanData.term;
-                        } else {
-                            interestPeriod = Math.max(Math.ceil(loanData.term / 2), 3);
-                        }
-                        
+                        const interestPeriod = Math.ceil(loanData.term / 2) >= 3 ? Math.ceil(loanData.term / 2) : 3;
                         clientInfoHTML += `
-                            <p><strong>Interest Rate:</strong> 30% per month on declining balance</p>
-                            <p><strong>Interest Period:</strong> ${interestPeriod} months (calculated for ${interestPeriod} months, spread over ${loanData.term} months)</p>
-                            <p><strong>Initiation Fee:</strong> R ${loanData.initiationFee.toFixed(2)} (12% of loan, distributed over ${loanData.term} months)</p>
-                            <p><strong>Admin Fee:</strong> R 60.00 per month</p>
-                            <div style="background: #e3f2fd; padding: 10px; border-radius: 8px; margin-top: 10px; font-size: 12px;">
-                                <strong>Interest Calculation:</strong><br>
-                                • Loans ≤ 3 months: Full term<br>
-                                • Loans > 3 months: Math.ceil(term/2) with minimum of 3 months<br>
-                                • Interest calculated on declining balance for ${interestPeriod} months<br>
-                                • Total interest spread equally across all ${loanData.term} months
-                            </div>`;
+                            <p><strong>Interest Rate:</strong> 15% per month (calculated for ${interestPeriod} months, spread across ${loanData.term} months)</p>
+                            <p><strong>Initiation Fee:</strong> R ${loanData.initiationFee.toFixed(2)} (9% of loan amount)</p>`;
                     }
                     
                     clientInfoHTML += `
@@ -3019,30 +2649,17 @@
                 const tbody = document.getElementById('breakdownBody');
                 if (tbody) {
                     tbody.innerHTML = '';
-                    
-                    // Show/hide bonus column for stockvel members
-                    const bonusHeaders = document.querySelectorAll('.stockvel-only');
-                    bonusHeaders.forEach(header => {
-                        header.style.display = loanData.isStockvelMember ? 'table-cell' : 'none';
-                    });
 
                     loanData.breakdown.forEach((row, index) => {
                         const tr = document.createElement('tr');
-                        let rowHTML = `
+                        tr.innerHTML = `
                             <td>${getMonthName(loanData.startMonthIndex, index)}</td>
-                            <td>R ${row.totalPayment.toFixed(2)}</td>
+                            <td>R ${loanData.monthlyPayment.toFixed(2)}</td>
                             <td>R ${row.principalPayment.toFixed(2)}</td>
                             <td>R ${row.interest.toFixed(2)}</td>
-                            <td>R ${row.initiationFee.toFixed(2)}</td>
                             <td>R ${row.adminFee.toFixed(2)}</td>
                             <td>R ${row.outstandingBalance.toFixed(2)}</td>
                         `;
-                        
-                        if (loanData.isStockvelMember) {
-                            rowHTML += `<td class="stockvel-only" style="color: #28a745; font-weight: 600;">R ${(row.bonus || 0).toFixed(2)}</td>`;
-                        }
-                        
-                        tr.innerHTML = rowHTML;
                         tbody.appendChild(tr);
                     });
 
@@ -3143,47 +2760,11 @@
                         doc.text(`Stockvel Member: Yes`, 20, 115);
                         doc.text(`Total Contributions: R ${loanData.totalContributions.toFixed(2)}`, 20, 122);
                         doc.text(`Monthly Contribution: R ${loanData.monthlyContribution.toFixed(2)}`, 20, 129);
-                        
-                        // Membership dates
-                        if (loanData.membershipStartDate) {
-                            const startDate = new Date(loanData.membershipStartDate).toLocaleDateString('en-ZA');
-                            const endDate = loanData.membershipEndDate ? new Date(loanData.membershipEndDate).toLocaleDateString('en-ZA') : 'Not set';
-                            doc.text(`Membership: ${startDate} to ${endDate}`, 20, 136);
-                        }
-                        
-                        // Accumulated bonus
-                        if (loanData.accumulatedBonus && loanData.accumulatedBonus > 0) {
-                            doc.text(`Accumulated Bonus: R ${loanData.accumulatedBonus.toFixed(2)}`, 20, 143);
-                        }
-                        
-                        // Initiation fee
                         const initiationFeeText = loanData.initiationFee === 0 ? 
                             `Initiation Fee: R 0.00 (Waived)` : 
                             `Initiation Fee: R ${loanData.initiationFee.toLocaleString('en-ZA', {minimumFractionDigits: 2})}`;
-                        doc.text(initiationFeeText, 20, 150);
-                        
-                        // Total admin fees (varies by month for stockvel)
-                        doc.text(`Total Admin Fees: R ${(loanData.totalAdminFees || 0).toFixed(2)}`, 20, 157);
-                        
-                        // Tier information
-                        doc.setFontSize(8);
-                        doc.setTextColor(100, 100, 100);
-                        doc.text(`Your Tier Boundaries:`, 20, 165);
-                        doc.text(`0-30%: R0-R${(loanData.totalContributions * 0.30).toFixed(0)} @3%`, 20, 170);
-                        doc.text(`30-75%: R${(loanData.totalContributions * 0.30).toFixed(0)}-R${(loanData.totalContributions * 0.75).toFixed(0)} @8%`, 20, 175);
-                        doc.text(`75-105%: R${(loanData.totalContributions * 0.75).toFixed(0)}-R${(loanData.totalContributions * 1.05).toFixed(0)} @15%`, 20, 180);
-                        
-                        // Bonus information hidden from member PDFs (surprise feature)
-                        // if (loanData.totalBonus && loanData.totalBonus > 0) {
-                        //     doc.setFontSize(10);
-                        //     doc.setTextColor(200, 120, 0);
-                        //     doc.text(`Member Bonus: R ${loanData.totalBonus.toFixed(2)}`, 20, 188);
-                        //     doc.setFontSize(8);
-                        //     doc.text(`(To be added to contributions after payment)`, 20, 193);
-                        // }
-                        
-                        doc.setFontSize(10);
-                        doc.setTextColor(44, 62, 80);
+                        doc.text(initiationFeeText, 20, 136);
+                        doc.text(`Admin Fee: R ${loanData.adminFee.toFixed(2)}`, 20, 143);
                     } else {
                         doc.text(`Initiation Fee: R ${loanData.initiationFee.toFixed(2)}`, 20, 115);
                         doc.text(`Admin Fee: R ${loanData.adminFee.toFixed(2)}`, 20, 122);
@@ -3217,34 +2798,19 @@
                     const tableStartY = bankingDetailsY + 60;
                     doc.text('Monthly Payment Breakdown', 20, tableStartY);
 
-                    // Table headers - different layout for stockvel vs standard
+                    // Table headers
                     doc.setFontSize(8);
                     const startY = tableStartY + 10;
                     const rowHeight = 7;
                     doc.setFillColor(44, 62, 80);
                     doc.setTextColor(255, 255, 255);
                     doc.rect(20, startY, 170, rowHeight, 'F');
-                    
-                    if (loanData.isStockvelMember && loanData.totalBonus > 0) {
-                        // Stockvel with bonus
-                        doc.text('Month', 22, startY + 5);
-                        doc.text('Payment', 40, startY + 5);
-                        doc.text('Principal', 60, startY + 5);
-                        doc.text('Interest', 80, startY + 5);
-                        doc.text('Init Fee', 100, startY + 5);
-                        doc.text('Admin', 120, startY + 5);
-                        doc.text('Bonus', 140, startY + 5);
-                        doc.text('Balance', 160, startY + 5);
-                    } else {
-                        // Standard or stockvel without bonus
-                        doc.text('Month', 25, startY + 5);
-                        doc.text('Payment', 45, startY + 5);
-                        doc.text('Principal', 68, startY + 5);
-                        doc.text('Interest', 92, startY + 5);
-                        doc.text('Init Fee', 115, startY + 5);
-                        doc.text('Admin', 138, startY + 5);
-                        doc.text('Balance', 160, startY + 5);
-                    }
+                    doc.text('Month', 25, startY + 5);
+                    doc.text('Monthly', 45, startY + 5);
+                    doc.text('Principal', 70, startY + 5);
+                    doc.text('Interest', 95, startY + 5);
+                    doc.text('Admin', 120, startY + 5);
+                    doc.text('Balance', 145, startY + 5);
 
                     // Table rows with month names
                     doc.setTextColor(0, 0, 0);
@@ -3260,30 +2826,12 @@
                             doc.rect(20, currentY, 170, rowHeight, 'F');
                         }
                         doc.setTextColor(0, 0, 0);
-                        
-                        if (loanData.isStockvelMember && loanData.totalBonus > 0) {
-                            // Stockvel with bonus
-                            doc.text(getMonthName(loanData.startMonthIndex, i), 22, currentY + 5);
-                            doc.text(`R${row.totalPayment.toFixed(2)}`, 40, currentY + 5);
-                            doc.text(`R${row.principalPayment.toFixed(2)}`, 60, currentY + 5);
-                            doc.text(`R${row.interest.toFixed(2)}`, 80, currentY + 5);
-                            doc.text(`R${(row.initiationFee || 0).toFixed(2)}`, 100, currentY + 5);
-                            doc.text(`R${row.adminFee.toFixed(2)}`, 120, currentY + 5);
-                            doc.setTextColor(39, 174, 96);
-                            doc.text(`R${(row.bonus || 0).toFixed(2)}`, 140, currentY + 5);
-                            doc.setTextColor(0, 0, 0);
-                            doc.text(`R${row.outstandingBalance.toFixed(2)}`, 160, currentY + 5);
-                        } else {
-                            // Standard or stockvel without bonus
-                            doc.text(getMonthName(loanData.startMonthIndex, i), 25, currentY + 5);
-                            doc.text(`R${row.totalPayment.toFixed(2)}`, 45, currentY + 5);
-                            doc.text(`R${row.principalPayment.toFixed(2)}`, 68, currentY + 5);
-                            doc.text(`R${row.interest.toFixed(2)}`, 92, currentY + 5);
-                            doc.text(`R${(row.initiationFee || 0).toFixed(2)}`, 115, currentY + 5);
-                            doc.text(`R${row.adminFee.toFixed(2)}`, 138, currentY + 5);
-                            doc.text(`R${row.outstandingBalance.toFixed(2)}`, 160, currentY + 5);
-                        }
-                        
+                        doc.text(getMonthName(loanData.startMonthIndex, i), 25, currentY + 5);
+                        doc.text(`R${loanData.monthlyPayment.toFixed(2)}`, 45, currentY + 5);
+                        doc.text(`R${row.principalPayment.toFixed(2)}`, 70, currentY + 5);
+                        doc.text(`R${row.interest.toFixed(2)}`, 95, currentY + 5);
+                        doc.text(`R${row.adminFee.toFixed(2)}`, 120, currentY + 5);
+                        doc.text(`R${row.outstandingBalance.toFixed(2)}`, 145, currentY + 5);
                         currentY += rowHeight;
                     }
                     
@@ -3455,8 +3003,7 @@
                 total_interest_charged: 0, // Track total interest charged so far
                 payments_made: 0, // Track number of payments received
                 status: 'active',
-                created_at: new Date(loanData.loanDate + 'T12:00:00').toISOString(), // Use custom loan date
-                start_month_index: loanData.startMonthIndex // Store start month for due date calculations
+                created_at: new Date(loanData.loanDate + 'T12:00:00').toISOString() // Use custom loan date
             };
 
             // Add loan to system
@@ -3888,617 +3435,6 @@
         // ===== UPDATE MANAGEMENT SYSTEM =====
         let updateAvailable = false;
         let waitingServiceWorker = null;
-        
-        // ============================================
-        // STOCKVEL MANAGEMENT FUNCTIONS
-        // ============================================
-        
-        // Initialize stockvel receipts storage
-        let stockvelReceipts = JSON.parse(localStorage.getItem('stockvelReceipts') || '[]');
-        
-        // Load member info when selected for receipt
-        function loadMemberReceiptInfo() {
-            const accountNumber = document.getElementById('receiptMember').value;
-            if (!accountNumber) {
-                document.getElementById('memberReceiptInfo').style.display = 'none';
-                return;
-            }
-            
-            const client = appState.clients.find(c => c.accountNumber === accountNumber);
-            if (client && client.isStockvelMember) {
-                document.getElementById('memberCurrentContribs').textContent = `R${(client.totalContributions || 0).toFixed(2)}`;
-                document.getElementById('memberCurrentBonus').textContent = `R${(client.accumulatedBonus || 0).toFixed(2)}`;
-                
-                // Check membership status
-                if (client.membershipEndDate) {
-                    const endDate = new Date(client.membershipEndDate);
-                    const today = new Date();
-                    const daysLeft = Math.ceil((endDate - today) / (1000 * 60 * 60 * 24));
-                    
-                    if (daysLeft < 0) {
-                        document.getElementById('memberStatus').innerHTML = '<span style="color: #e74c3c;">Expired</span>';
-                    } else if (daysLeft < 30) {
-                        document.getElementById('memberStatus').innerHTML = '<span style="color: #f39c12;">Expiring Soon</span>';
-                    } else {
-                        document.getElementById('memberStatus').innerHTML = '<span style="color: #27ae60;">Active</span>';
-                    }
-                    document.getElementById('memberExpiry').textContent = endDate.toLocaleDateString('en-ZA');
-                } else {
-                    document.getElementById('memberStatus').textContent = 'Active';
-                    document.getElementById('memberExpiry').textContent = 'Not set';
-                }
-                
-                document.getElementById('memberReceiptInfo').style.display = 'block';
-            }
-        }
-        
-        // Record receipt
-        function recordReceipt(e) {
-            e.preventDefault();
-            
-            const accountNumber = document.getElementById('receiptMember').value;
-            const type = document.getElementById('receiptType').value;
-            const amount = parseFloat(document.getElementById('receiptAmount').value);
-            const date = document.getElementById('receiptDate').value;
-            const notes = document.getElementById('receiptNotes').value;
-            
-            const client = appState.clients.find(c => c.accountNumber === accountNumber);
-            if (!client) {
-                alert('Client not found');
-                return;
-            }
-            
-            // Create receipt record
-            const receipt = {
-                id: Date.now(),
-                accountNumber,
-                memberName: `${client.firstName} ${client.lastName}`,
-                type,
-                amount,
-                date,
-                notes,
-                previousTotal: client.totalContributions || 0,
-                previousBonus: client.accumulatedBonus || 0
-            };
-            
-            // Update client based on receipt type
-            if (type === 'contribution') {
-                client.totalContributions = (client.totalContributions || 0) + amount;
-                receipt.newTotal = client.totalContributions;
-                receipt.bonusAdded = 0;
-            } else if (type === 'loan_payment') {
-                // Bonus should be calculated from the loan payment
-                const bonusAmount = parseFloat(prompt('Enter bonus amount earned from this payment (R):', '0') || '0');
-                client.accumulatedBonus = (client.accumulatedBonus || 0) + bonusAmount;
-                client.totalContributions = (client.totalContributions || 0) + bonusAmount;
-                receipt.bonusAdded = bonusAmount;
-                receipt.newTotal = client.totalContributions;
-            } else if (type === 'bonus_payout') {
-                client.accumulatedBonus = Math.max(0, (client.accumulatedBonus || 0) - amount);
-                receipt.bonusAdded = -amount;
-                receipt.newTotal = client.totalContributions;
-            } else if (type === 'adjustment') {
-                client.totalContributions = (client.totalContributions || 0) + amount;
-                receipt.newTotal = client.totalContributions;
-                receipt.bonusAdded = 0;
-            }
-            
-            // Save receipt
-            stockvelReceipts.push(receipt);
-            localStorage.setItem('stockvelReceipts', JSON.stringify(stockvelReceipts));
-            localStorage.setItem('clients', JSON.stringify(appState.clients));
-            
-            alert('✅ Receipt recorded successfully!');
-            document.getElementById('receiptForm').reset();
-            document.getElementById('memberReceiptInfo').style.display = 'none';
-            
-            // Refresh displays
-            loadStockvelDashboard();
-            displayContributionHistory();
-        }
-        
-        // Display contribution history
-        function displayContributionHistory() {
-            const tbody = document.getElementById('contributionHistoryBody');
-            const filterAccount = document.getElementById('historyMemberSelect').value;
-            
-            let filtered = stockvelReceipts;
-            if (filterAccount) {
-                filtered = stockvelReceipts.filter(r => r.accountNumber === filterAccount);
-            }
-            
-            if (filtered.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="7" style="text-align: center; color: #7f8c8d; padding: 40px;">No receipts recorded yet</td></tr>';
-                return;
-            }
-            
-            // Sort by date descending
-            filtered.sort((a, b) => new Date(b.date) - new Date(a.date));
-            
-            tbody.innerHTML = filtered.map(r => `
-                <tr>
-                    <td>${new Date(r.date).toLocaleDateString('en-ZA')}</td>
-                    <td>${r.memberName}</td>
-                    <td><span style="display: inline-block; padding: 4px 8px; border-radius: 4px; font-size: 12px; background: ${getReceiptTypeColor(r.type)}; color: white;">${formatReceiptType(r.type)}</span></td>
-                    <td>R${r.amount.toFixed(2)}</td>
-                    <td>R${r.newTotal.toFixed(2)}</td>
-                    <td style="color: ${r.bonusAdded > 0 ? '#27ae60' : r.bonusAdded < 0 ? '#e74c3c' : '#7f8c8d'}; font-weight: 600;">R${r.bonusAdded.toFixed(2)}</td>
-                    <td>${r.notes || '-'}</td>
-                </tr>
-            `).join('');
-        }
-        
-        function getReceiptTypeColor(type) {
-            const colors = {
-                contribution: '#3498db',
-                loan_payment: '#27ae60',
-                bonus_payout: '#f39c12',
-                adjustment: '#9b59b6'
-            };
-            return colors[type] || '#95a5a6';
-        }
-        
-        function formatReceiptType(type) {
-            const labels = {
-                contribution: 'Contribution',
-                loan_payment: 'Loan Payment',
-                bonus_payout: 'Bonus Payout',
-                adjustment: 'Adjustment'
-            };
-            return labels[type] || type;
-        }
-        
-        function filterContributionHistory() {
-            displayContributionHistory();
-        }
-        
-        // Export contribution history
-        function exportContributionHistory() {
-            const headers = ['Date', 'Member', 'Type', 'Amount', 'New Total', 'Bonus Added', 'Notes'];
-            const data = stockvelReceipts.map(r => [
-                new Date(r.date).toLocaleDateString('en-ZA'),
-                r.memberName,
-                formatReceiptType(r.type),
-                r.amount.toFixed(2),
-                r.newTotal.toFixed(2),
-                r.bonusAdded.toFixed(2),
-                r.notes || ''
-            ]);
-            
-            const csv = [headers.join(','), ...data.map(row => row.join(','))].join('\\n');
-            const blob = new Blob([csv], { type: 'text/csv' });
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = `stockvel_contributions_${new Date().toISOString().split('T')[0]}.csv`;
-            a.click();
-        }
-        
-        // Check membership renewals
-        function checkMembershipRenewals() {
-            const alertsDiv = document.getElementById('renewalAlerts');
-            const today = new Date();
-            const thirtyDaysFromNow = new Date(today.getTime() + (30 * 24 * 60 * 60 * 1000));
-            
-            const stockvelMembers = appState.clients.filter(c => c.isStockvelMember && c.membershipEndDate);
-            
-            const needsRenewal = stockvelMembers.filter(member => {
-                const endDate = new Date(member.membershipEndDate);
-                return endDate <= thirtyDaysFromNow;
-            });
-            
-            if (needsRenewal.length === 0) {
-                alertsDiv.innerHTML = '<div style="padding: 20px; text-align: center; color: #27ae60; background: #e8f5e9; border-radius: 8px;">✅ All memberships are current. No renewals needed in the next 30 days.</div>';
-                return;
-            }
-            
-            alertsDiv.innerHTML = needsRenewal.map(member => {
-                const endDate = new Date(member.membershipEndDate);
-                const daysLeft = Math.ceil((endDate - today) / (1000 * 60 * 60 * 24));
-                const isExpired = daysLeft < 0;
-                const urgency = isExpired ? 'expired' : daysLeft <= 7 ? 'urgent' : 'warning';
-                
-                return `
-                    <div style="padding: 15px; margin-bottom: 10px; border-radius: 8px; border-left: 4px solid ${urgency === 'expired' ? '#e74c3c' : urgency === 'urgent' ? '#f39c12' : '#f1c40f'}; background: ${urgency === 'expired' ? '#fee' : urgency === 'urgent' ? '#fff3cd' : '#fffbf0'};">
-                        <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
-                            <div>
-                                <strong style="font-size: 16px;">${member.firstName} ${member.lastName}</strong>
-                                <span style="margin-left: 10px; color: #7f8c8d;">(${member.accountNumber})</span>
-                                <br>
-                                <span style="color: ${urgency === 'expired' ? '#e74c3c' : urgency === 'urgent' ? '#f39c12' : '#f1c40f'}; font-weight: 600;">
-                                    ${isExpired ? `⚠️ EXPIRED ${Math.abs(daysLeft)} days ago` : `⏰ ${daysLeft} days left`}
-                                </span>
-                                <span style="margin-left: 10px; color: #7f8c8d;">Expires: ${endDate.toLocaleDateString('en-ZA')}</span>
-                            </div>
-                            <div style="display: flex; gap: 8px;">
-                                <button onclick="generateMemberDisbursementPDF('${member.accountNumber}')" class="export-btn" style="padding: 8px 16px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);">📄 Generate Statement</button>
-                                <button onclick="renewMembership('${member.accountNumber}')" class="calculate-btn" style="padding: 8px 16px;">🔄 Renew Membership</button>
-                            </div>
-                        </div>
-                    </div>
-                `;
-            }).join('');
-        }
-        
-        // Renew membership
-        function renewMembership(accountNumber) {
-            const client = appState.clients.find(c => c.accountNumber === accountNumber);
-            if (!client) return;
-            
-            const currentEndDate = client.membershipEndDate ? new Date(client.membershipEndDate) : new Date();
-            const newEndDate = new Date(currentEndDate.getTime() + (365 * 24 * 60 * 60 * 1000));
-            
-            client.membershipEndDate = newEndDate.toISOString().split('T')[0];
-            
-            // If no start date, set it to now
-            if (!client.membershipStartDate) {
-                client.membershipStartDate = new Date().toISOString().split('T')[0];
-            }
-            
-            localStorage.setItem('clients', JSON.stringify(appState.clients));
-            
-            alert(`✅ Membership renewed for ${client.firstName} ${client.lastName}!\\nNew expiry date: ${newEndDate.toLocaleDateString('en-ZA')}`);
-            
-            checkMembershipRenewals();
-            loadStockvelDashboard();
-        }
-        
-        // Generate bonus report
-        function generateBonusReport() {
-            const tbody = document.getElementById('bonusReportBody');
-            const stockvelMembers = appState.clients.filter(c => c.isStockvelMember);
-            
-            if (stockvelMembers.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="6" style="text-align: center; color: #7f8c8d; padding: 40px;">No stockvel members found</td></tr>';
-                return;
-            }
-            
-            tbody.innerHTML = stockvelMembers.map(member => {
-                const memberReceipts = stockvelReceipts.filter(r => r.accountNumber === member.accountNumber);
-                const totalBonusesEarned = memberReceipts.filter(r => r.type === 'loan_payment').reduce((sum, r) => sum + (r.bonusAdded || 0), 0);
-                const bonusesPaidOut = Math.abs(memberReceipts.filter(r => r.type === 'bonus_payout').reduce((sum, r) => sum + r.amount, 0));
-                const pendingBonuses = member.accumulatedBonus || 0;
-                
-                const lastBonusReceipt = memberReceipts.filter(r => r.type === 'loan_payment' && r.bonusAdded > 0).sort((a, b) => new Date(b.date) - new Date(a.date))[0];
-                const lastBonusDate = lastBonusReceipt ? new Date(lastBonusReceipt.date).toLocaleDateString('en-ZA') : 'Never';
-                
-                return `
-                    <tr>
-                        <td><strong>${member.firstName} ${member.lastName}</strong><br><small style="color: #7f8c8d;">${member.accountNumber}</small></td>
-                        <td style="color: #27ae60; font-weight: 600;">R${totalBonusesEarned.toFixed(2)}</td>
-                        <td style="color: #3498db;">R${bonusesPaidOut.toFixed(2)}</td>
-                        <td style="color: #f39c12; font-weight: 600;">R${pendingBonuses.toFixed(2)}</td>
-                        <td>${lastBonusDate}</td>
-                        <td>
-                            <button onclick="generateMemberDisbursementPDF('${member.accountNumber}')" class="export-btn" style="padding: 4px 10px; font-size: 11px; margin-right: 5px;">📄 Statement</button>
-                            ${pendingBonuses > 0 ? `<button onclick="payoutBonus('${member.accountNumber}')" class="export-btn" style="padding: 4px 10px; font-size: 11px;">💰 Payout</button>` : ''}
-                        </td>
-                    </tr>
-                `;
-            }).join('');
-        }
-        
-        // Payout bonus
-        function payoutBonus(accountNumber) {
-            const client = appState.clients.find(c => c.accountNumber === accountNumber);
-            if (!client || !client.accumulatedBonus || client.accumulatedBonus <= 0) {
-                alert('No bonus to payout');
-                return;
-            }
-            
-            const amount = parseFloat(prompt(`Enter bonus amount to payout (Available: R${client.accumulatedBonus.toFixed(2)}):`, client.accumulatedBonus.toFixed(2)));
-            if (isNaN(amount) || amount <= 0 || amount > client.accumulatedBonus) {
-                alert('Invalid amount');
-                return;
-            }
-            
-            // Record as receipt
-            const receipt = {
-                id: Date.now(),
-                accountNumber,
-                memberName: `${client.firstName} ${client.lastName}`,
-                type: 'bonus_payout',
-                amount,
-                date: new Date().toISOString().split('T')[0],
-                notes: 'Bonus payout',
-                previousTotal: client.totalContributions,
-                previousBonus: client.accumulatedBonus,
-                newTotal: client.totalContributions,
-                bonusAdded: -amount
-            };
-            
-            client.accumulatedBonus -= amount;
-            
-            stockvelReceipts.push(receipt);
-            localStorage.setItem('stockvelReceipts', JSON.stringify(stockvelReceipts));
-            localStorage.setItem('clients', JSON.stringify(appState.clients));
-            
-            alert(`✅ Bonus of R${amount.toFixed(2)} paid out to ${client.firstName} ${client.lastName}`);
-            
-            generateBonusReport();
-            displayContributionHistory();
-        }
-        
-        // Export bonus report
-        function exportBonusReport() {
-            const stockvelMembers = appState.clients.filter(c => c.isStockvelMember);
-            
-            const headers = ['Member Name', 'Account Number', 'Total Bonuses Earned', 'Bonuses Paid Out', 'Pending Bonuses', 'Last Bonus Date'];
-            const data = stockvelMembers.map(member => {
-                const memberReceipts = stockvelReceipts.filter(r => r.accountNumber === member.accountNumber);
-                const totalBonusesEarned = memberReceipts.filter(r => r.type === 'loan_payment').reduce((sum, r) => sum + (r.bonusAdded || 0), 0);
-                const bonusesPaidOut = Math.abs(memberReceipts.filter(r => r.type === 'bonus_payout').reduce((sum, r) => sum + r.amount, 0));
-                const lastBonusReceipt = memberReceipts.filter(r => r.type === 'loan_payment' && r.bonusAdded > 0).sort((a, b) => new Date(b.date) - new Date(a.date))[0];
-                
-                return [
-                    `${member.firstName} ${member.lastName}`,
-                    member.accountNumber,
-                    totalBonusesEarned.toFixed(2),
-                    bonusesPaidOut.toFixed(2),
-                    (member.accumulatedBonus || 0).toFixed(2),
-                    lastBonusReceipt ? new Date(lastBonusReceipt.date).toLocaleDateString('en-ZA') : 'Never'
-                ];
-            });
-            
-            const csv = [headers.join(','), ...data.map(row => row.join(','))].join('\\n');
-            const blob = new Blob([csv], { type: 'text/csv' });
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = `stockvel_bonus_report_${new Date().toISOString().split('T')[0]}.csv`;
-            a.click();
-        }
-        
-        // Generate Member Disbursement PDF
-        function generateMemberDisbursementPDF(accountNumber) {
-            const client = appState.clients.find(c => c.accountNumber === accountNumber);
-            if (!client || !client.isStockvelMember) {
-                alert('Member not found');
-                return;
-            }
-            
-            // Check if jsPDF is loaded
-            if (typeof window.jspdf === 'undefined') {
-                alert('PDF library not loaded. Please refresh the page.');
-                return;
-            }
-            
-            const { jsPDF } = window.jspdf;
-            const doc = new jsPDF();
-            
-            // Get member receipts
-            const memberReceipts = stockvelReceipts.filter(r => r.accountNumber === accountNumber);
-            
-            // Calculate totals for current month
-            const today = new Date();
-            const currentMonth = today.getMonth();
-            const currentYear = today.getFullYear();
-            
-            const currentMonthReceipts = memberReceipts.filter(r => {
-                const receiptDate = new Date(r.date);
-                return receiptDate.getMonth() === currentMonth && receiptDate.getFullYear() === currentYear;
-            });
-            
-            const currentMonthContributions = currentMonthReceipts
-                .filter(r => r.type === 'contribution' || r.type === 'adjustment')
-                .reduce((sum, r) => sum + r.amount, 0);
-            
-            const currentMonthBonuses = currentMonthReceipts
-                .filter(r => r.type === 'loan_payment')
-                .reduce((sum, r) => sum + (r.bonusAdded || 0), 0);
-            
-            // Get membership end date info
-            const membershipEndDate = client.membershipEndDate ? new Date(client.membershipEndDate) : null;
-            const daysUntilEnd = membershipEndDate ? Math.ceil((membershipEndDate - today) / (1000 * 60 * 60 * 24)) : null;
-            
-            // Load logo and generate PDF
-            getBase64Image('./TBFS_Logo.png', function(logoDataUrl) {
-                // Header with logo
-                if (logoDataUrl) {
-                    doc.addImage(logoDataUrl, 'PNG', 85, 5, 40, 40);
-                }
-                
-                doc.setFont('helvetica', 'bold');
-                doc.setFontSize(18);
-                doc.setTextColor(44, 62, 80);
-                doc.text('THABA BOSIU FINANCIAL SERVICES', 105, 50, { align: 'center' });
-                
-                doc.setFont('helvetica', 'normal');
-                doc.setFontSize(10);
-                doc.setTextColor(100, 100, 100);
-                doc.text('Your Financial Refuge', 105, 57, { align: 'center' });
-                
-                // Document Title
-                doc.setFontSize(16);
-                doc.setTextColor(102, 126, 234);
-                doc.text('🎁 MEMBER DISBURSEMENT STATEMENT', 105, 68, { align: 'center' });
-                
-                // Line separator
-                doc.setDrawColor(102, 126, 234);
-                doc.setLineWidth(0.5);
-                doc.line(20, 72, 190, 72);
-                
-                // Member Information
-                doc.setFontSize(12);
-                doc.setTextColor(44, 62, 80);
-                doc.setFont('helvetica', 'bold');
-                doc.text('Member Information', 20, 82);
-                
-                doc.setFont('helvetica', 'normal');
-                doc.setFontSize(10);
-                doc.text(`Name: ${client.firstName} ${client.lastName}`, 20, 90);
-                doc.text(`Account Number: ${client.accountNumber}`, 20, 97);
-                doc.text(`Membership Period: ${client.membershipStartDate ? new Date(client.membershipStartDate).toLocaleDateString('en-ZA') : 'N/A'} to ${membershipEndDate ? membershipEndDate.toLocaleDateString('en-ZA') : 'N/A'}`, 20, 104);
-                
-                if (daysUntilEnd !== null && daysUntilEnd <= 30) {
-                    doc.setTextColor(231, 76, 60);
-                    doc.setFont('helvetica', 'bold');
-                    doc.text(`⚠️ Membership expires in ${daysUntilEnd} days`, 20, 111);
-                    doc.setFont('helvetica', 'normal');
-                    doc.setTextColor(44, 62, 80);
-                }
-                
-                // Summary Box
-                const summaryY = daysUntilEnd !== null && daysUntilEnd <= 30 ? 120 : 113;
-                doc.setFillColor(102, 126, 234);
-                doc.rect(20, summaryY, 170, 35, 'F');
-                
-                doc.setTextColor(255, 255, 255);
-                doc.setFont('helvetica', 'bold');
-                doc.setFontSize(11);
-                doc.text('ACCOUNT SUMMARY', 105, summaryY + 8, { align: 'center' });
-                
-                doc.setFont('helvetica', 'normal');
-                doc.setFontSize(10);
-                doc.text(`Total Contributions:`, 25, summaryY + 16);
-                doc.text(`R ${(client.totalContributions || 0).toFixed(2)}`, 85, summaryY + 16);
-                
-                doc.text(`Accumulated Bonuses:`, 25, summaryY + 23);
-                doc.text(`R ${(client.accumulatedBonus || 0).toFixed(2)}`, 85, summaryY + 23);
-                
-                doc.text(`Monthly Contribution:`, 25, summaryY + 30);
-                doc.text(`R ${(client.monthlyContribution || 0).toFixed(2)}`, 85, summaryY + 30);
-                
-                // Current Month Activity
-                const activityY = summaryY + 42;
-                doc.setTextColor(44, 62, 80);
-                doc.setFont('helvetica', 'bold');
-                doc.setFontSize(12);
-                doc.text(`Activity for ${today.toLocaleDateString('en-ZA', { month: 'long', year: 'numeric' })}`, 20, activityY);
-                
-                doc.setFont('helvetica', 'normal');
-                doc.setFontSize(10);
-                doc.text(`Contributions this month:`, 25, activityY + 10);
-                doc.setTextColor(39, 174, 96);
-                doc.setFont('helvetica', 'bold');
-                doc.text(`R ${currentMonthContributions.toFixed(2)}`, 85, activityY + 10);
-                
-                doc.setFont('helvetica', 'normal');
-                doc.setTextColor(44, 62, 80);
-                doc.text(`Bonuses earned this month:`, 25, activityY + 17);
-                doc.setTextColor(241, 196, 15);
-                doc.setFont('helvetica', 'bold');
-                doc.text(`R ${currentMonthBonuses.toFixed(2)}`, 85, activityY + 17);
-                
-                // Bonuses Explanation
-                if (currentMonthBonuses > 0) {
-                    doc.setFont('helvetica', 'italic');
-                    doc.setFontSize(8);
-                    doc.setTextColor(100, 100, 100);
-                    doc.text('🎁 Surprise! You earned bonuses from your loan payments!', 25, activityY + 24);
-                    doc.text('These have been added to your total contributions.', 25, activityY + 29);
-                }
-                
-                // Transaction History Table
-                const tableY = activityY + (currentMonthBonuses > 0 ? 38 : 28);
-                doc.setFont('helvetica', 'bold');
-                doc.setFontSize(12);
-                doc.setTextColor(44, 62, 80);
-                doc.text('Recent Transaction History', 20, tableY);
-                
-                // Table header
-                doc.setFontSize(8);
-                doc.setFillColor(44, 62, 80);
-                doc.setTextColor(255, 255, 255);
-                doc.rect(20, tableY + 5, 170, 7, 'F');
-                doc.text('Date', 22, tableY + 10);
-                doc.text('Type', 45, tableY + 10);
-                doc.text('Amount', 85, tableY + 10);
-                doc.text('Bonus', 115, tableY + 10);
-                doc.text('New Total', 145, tableY + 10);
-                
-                // Table rows - show last 10 receipts
-                doc.setTextColor(0, 0, 0);
-                const recentReceipts = memberReceipts.slice(-10).reverse();
-                let currentY = tableY + 17;
-                
-                recentReceipts.forEach((receipt, idx) => {
-                    if (idx % 2 === 0) {
-                        doc.setFillColor(248, 249, 250);
-                        doc.rect(20, currentY - 5, 170, 7, 'F');
-                    }
-                    
-                    doc.text(new Date(receipt.date).toLocaleDateString('en-ZA'), 22, currentY);
-                    doc.text(formatReceiptType(receipt.type), 45, currentY);
-                    doc.text(`R${receipt.amount.toFixed(2)}`, 85, currentY);
-                    
-                    if (receipt.bonusAdded && receipt.bonusAdded !== 0) {
-                        doc.setTextColor(receipt.bonusAdded > 0 ? 39 : 231, receipt.bonusAdded > 0 ? 174 : 76, receipt.bonusAdded > 0 ? 96 : 60);
-                        doc.text(`R${receipt.bonusAdded.toFixed(2)}`, 115, currentY);
-                        doc.setTextColor(0, 0, 0);
-                    } else {
-                        doc.text('-', 115, currentY);
-                    }
-                    
-                    doc.text(`R${receipt.newTotal.toFixed(2)}`, 145, currentY);
-                    currentY += 7;
-                });
-                
-                // Important Information
-                const infoY = Math.max(currentY + 5, 245);
-                doc.setFillColor(254, 243, 199);
-                doc.rect(20, infoY, 170, 25, 'F');
-                
-                doc.setFontSize(10);
-                doc.setTextColor(133, 100, 4);
-                doc.setFont('helvetica', 'bold');
-                doc.text('📌 Important Information', 25, infoY + 7);
-                
-                doc.setFont('helvetica', 'normal');
-                doc.setFontSize(8);
-                doc.text('• Your bonuses are calculated automatically when you make loan payments', 25, infoY + 13);
-                doc.text('• All bonuses are added to your total contributions', 25, infoY + 18);
-                doc.text('• Higher contributions give you access to better loan rates', 25, infoY + 23);
-                
-                // Footer
-                doc.setFontSize(8);
-                doc.setTextColor(100, 100, 100);
-                doc.text(`Statement generated on: ${today.toLocaleDateString('en-ZA')}`, 20, 285);
-                doc.text('Thank you for being a valued member!', 105, 290, { align: 'center' });
-                
-                // Save PDF
-                doc.save(`TBFS_Member_Statement_${client.accountNumber}_${today.toISOString().split('T')[0]}.pdf`);
-            });
-        }
-        
-        // Load stockvel dashboard
-        function loadStockvelDashboard() {
-            // Populate member selects
-            const stockvelMembers = appState.clients.filter(c => c.isStockvelMember);
-            
-            const receiptSelect = document.getElementById('receiptMember');
-            const historySelect = document.getElementById('historyMemberSelect');
-            
-            const memberOptions = stockvelMembers.map(c => 
-                `<option value="${c.accountNumber}">${c.firstName} ${c.lastName} (${c.accountNumber})</option>`
-            ).join('');
-            
-            receiptSelect.innerHTML = '<option value="">-- Select Stockvel Member --</option>' + memberOptions;
-            historySelect.innerHTML = '<option value="">-- All Members --</option>' + memberOptions;
-            
-            // Update stats
-            document.getElementById('totalStockvelMembers').textContent = stockvelMembers.length;
-            
-            const totalContributions = stockvelMembers.reduce((sum, m) => sum + (m.totalContributions || 0), 0);
-            document.getElementById('totalStockvelContributions').textContent = `R ${totalContributions.toFixed(2)}`;
-            
-            const bonusesPaid = Math.abs(stockvelReceipts.filter(r => r.type === 'bonus_payout').reduce((sum, r) => sum + r.amount, 0));
-            document.getElementById('totalBonusesPaid').textContent = `R ${bonusesPaid.toFixed(2)}`;
-            
-            // Check renewals
-            const today = new Date();
-            const thirtyDaysFromNow = new Date(today.getTime() + (30 * 24 * 60 * 60 * 1000));
-            const needsRenewal = stockvelMembers.filter(m => m.membershipEndDate && new Date(m.membershipEndDate) <= thirtyDaysFromNow).length;
-            document.getElementById('membersNeedingRenewal').textContent = needsRenewal;
-            
-            // Load displays
-            displayContributionHistory();
-            checkMembershipRenewals();
-            generateBonusReport();
-            
-            // Set today's date as default for receipt
-            document.getElementById('receiptDate').valueAsDate = new Date();
-        }
         
         // Display current version
         document.getElementById('currentVersion').textContent = `v${APP_VERSION}`;

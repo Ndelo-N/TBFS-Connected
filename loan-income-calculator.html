@@ -376,11 +376,22 @@
                 </div>
             </div>
 
-            <div style="background: #e3f2fd; padding: 15px; border-radius: 10px; margin-bottom: 20px; border-left: 4px solid #2196f3;">
-                <h4 style="color: #1976d2; margin-bottom: 10px; font-size: 16px;">📋 Fixed Calculation Parameters</h4>
-                <p style="color: #424242; font-size: 14px; margin-bottom: 5px;"><strong>Monthly TBFS Income:</strong> 30% of outstanding balance</p>
-                <p style="color: #424242; font-size: 14px; margin-bottom: 5px;"><strong>Initiation Fee:</strong> 12% of principal (distributed over term)</p>
-                <p style="color: #424242; font-size: 14px;"><strong>Admin Fee:</strong> R60 per month</p>
+            <div class="input-grid">
+                <div class="input-group">
+                    <label for="interestRate">Monthly Interest Rate (%)</label>
+                    <input type="number" id="interestRate" value="15" min="0" max="100" step="0.1">
+                    <span class="unit">Applied on declining balance</span>
+                </div>
+                <div class="input-group">
+                    <label for="initiationFee">Initiation Fee (%)</label>
+                    <input type="number" id="initiationFee" value="9" min="0" max="100" step="0.1">
+                    <span class="unit">One-time upfront fee</span>
+                </div>
+                <div class="input-group">
+                    <label for="adminFee">Admin Fee per Month (R)</label>
+                    <input type="number" id="adminFee" value="60" min="0" step="10">
+                    <span class="unit">Fixed monthly charge</span>
+                </div>
             </div>
 
             <div style="text-align: center; margin-top: 20px;">
@@ -431,14 +442,10 @@
             </div>
 
             <div class="info-box">
-                <h4>ℹ️ New Calculation Method (Updated)</h4>
-                <p><strong>Monthly TBFS Income:</strong> 30% of outstanding balance each month</p>
-                <p style="margin-top: 8px;"><strong>Breakdown:</strong> 
-                    • Initiation Fee: 12% of principal (distributed evenly over term)<br>
-                    • Admin Fee: R60 per month<br>
-                    • Interest: Remainder (30% - initiation portion - admin fee)
-                </p>
-                <p style="margin-top: 8px;"><strong>Total Income = Interest + Initiation Fee (12%) + (R60 × Term)</strong></p>
+                <h4>ℹ️ How Interest is Calculated</h4>
+                <p><strong>Declining Balance Method:</strong> Interest is calculated on the remaining loan balance each month. As the principal reduces, the interest amount decreases.</p>
+                <p style="margin-top: 8px;"><strong>Interest Period:</strong> Determined by Math.ceil(term/2) with minimum 3 months, capped at actual loan term.</p>
+                <p style="margin-top: 8px;"><strong>Total Income = Interest + Initiation Fee + (Admin Fee × Term)</strong></p>
             </div>
         </div>
 
@@ -450,33 +457,30 @@
     </div>
 
     <script>
-        function calculateLoanIncome(principal, term) {
-            // NEW CALCULATION METHOD:
-            // Monthly TBFS income = 30% of outstanding balance
-            // Total initiation fee = 12% of principal (distributed over term)
-            // Admin fee = R60 per month
-            // Interest = TBFS income - initiation portion - admin fee
+        function calculateLoanIncome(principal, term, interestRate, initiationFeeRate, adminFeePerMonth) {
+            // Convert percentages to decimals
+            const monthlyRate = interestRate / 100;
+            const initFeeRate = initiationFeeRate / 100;
             
-            const initiationFee = principal * 0.12;
-            const monthlyInitiationFee = initiationFee / term;
-            const adminFeePerMonth = 60;
+            // Calculate interest period
+            const calculatedMonths = Math.ceil(term / 2) >= 3 ? Math.ceil(term / 2) : 3;
+            const interestMonths = Math.min(calculatedMonths, term);
             
+            // Calculate declining balance interest
             let outstandingBalance = principal;
             let totalInterest = 0;
             const monthlyPrincipalPayment = principal / term;
             
-            for (let month = 1; month <= term; month++) {
-                // Calculate TBFS income as 30% of outstanding balance
-                const tbfsIncome = outstandingBalance * 0.30;
-                
-                // Break down TBFS income
-                const monthlyInterest = tbfsIncome - monthlyInitiationFee - adminFeePerMonth;
-                
-                totalInterest += monthlyInterest;
-                outstandingBalance -= monthlyPrincipalPayment;
+            for (let month = 1; month <= interestMonths; month++) {
+                if (outstandingBalance > 0) {
+                    const monthlyInterest = outstandingBalance * monthlyRate;
+                    totalInterest += monthlyInterest;
+                    outstandingBalance -= monthlyPrincipalPayment;
+                }
             }
             
             // Calculate fees
+            const initiationFee = principal * initFeeRate;
             const totalAdminFees = adminFeePerMonth * term;
             
             // Total income
@@ -485,6 +489,7 @@
             return {
                 principal,
                 term,
+                interestMonths,
                 totalInterest: Math.round(totalInterest * 100) / 100,
                 initiationFee: Math.round(initiationFee * 100) / 100,
                 totalAdminFees,
@@ -501,9 +506,13 @@
             const startAmount = parseFloat(document.getElementById('startAmount').value);
             const endAmount = parseFloat(document.getElementById('endAmount').value);
             const increment = parseFloat(document.getElementById('increment').value);
+            const interestRate = parseFloat(document.getElementById('interestRate').value);
+            const initiationFee = parseFloat(document.getElementById('initiationFee').value);
+            const adminFee = parseFloat(document.getElementById('adminFee').value);
 
             // Validate inputs
-            if (isNaN(startAmount) || isNaN(endAmount) || isNaN(increment)) {
+            if (isNaN(startAmount) || isNaN(endAmount) || isNaN(increment) || 
+                isNaN(interestRate) || isNaN(initiationFee) || isNaN(adminFee)) {
                 alert('Please enter valid numbers for all fields');
                 return;
             }
@@ -532,7 +541,7 @@
                 
                 // Calculate for each term (1-6 months)
                 for (let term = 1; term <= 6; term++) {
-                    const result = calculateLoanIncome(principal, term);
+                    const result = calculateLoanIncome(principal, term, interestRate, initiationFee, adminFee);
                     const cell = document.createElement('td');
                     
                     // Calculate ROI
@@ -552,7 +561,7 @@
             }
 
             // Generate sample breakdown
-            generateSampleBreakdown(startAmount);
+            generateSampleBreakdown(startAmount, interestRate, initiationFee, adminFee);
 
             // Show results
             document.getElementById('results').style.display = 'block';
@@ -562,9 +571,9 @@
             document.getElementById('results').scrollIntoView({ behavior: 'smooth' });
         }
 
-        function generateSampleBreakdown(sampleAmount) {
+        function generateSampleBreakdown(sampleAmount, interestRate, initiationFee, adminFee) {
             const sampleTerm = 3; // 3-month example
-            const result = calculateLoanIncome(sampleAmount, sampleTerm);
+            const result = calculateLoanIncome(sampleAmount, sampleTerm, interestRate, initiationFee, adminFee);
             
             const container = document.getElementById('sampleBreakdown');
             container.innerHTML = `
