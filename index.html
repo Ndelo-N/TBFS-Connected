@@ -4314,7 +4314,7 @@
                 client.membershipStartDate = new Date().toISOString().split('T')[0];
             }
             
-            localStorage.setItem('clients', JSON.stringify(appState.clients));
+            localStorage.setItem('clients', JSON.stringify(AppState.clients));
             
             alert(`✅ Membership renewed for ${client.firstName} ${client.lastName}!\\nNew expiry date: ${newEndDate.toLocaleDateString('en-ZA')}`);
             
@@ -4390,7 +4390,7 @@
             
             stockvelReceipts.push(receipt);
             localStorage.setItem('stockvelReceipts', JSON.stringify(stockvelReceipts));
-            localStorage.setItem('clients', JSON.stringify(appState.clients));
+            localStorage.setItem('clients', JSON.stringify(AppState.clients));
             
             alert(`✅ Bonus of R${amount.toFixed(2)} paid out to ${client.firstName} ${client.lastName}`);
             
