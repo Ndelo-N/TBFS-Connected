@@ -1070,7 +1070,7 @@
                         </thead>
                         <tbody id="memberRegistryBody">
                             <tr>
-                                <td colspan="9" style="text-align: center; color: #7f8c8d; padding: 40px;">
+                                <td colspan="10" style="text-align: center; color: #7f8c8d; padding: 40px;">
                                     No members registered yet. Register your first member above!
                                 </td>
                             </tr>
@@ -2493,13 +2493,8 @@
                 }
             }
             
-            // Attach auto-detection to name/account fields
-            const firstNameField = document.getElementById('firstName');
-            const lastNameField = document.getElementById('lastName');
+            // Attach auto-detection to account number field ONLY (unique identifier!)
             const accountNumberField = document.getElementById('accountNumber');
-            
-            if (firstNameField) firstNameField.addEventListener('blur', checkForStockvelMember);
-            if (lastNameField) lastNameField.addEventListener('blur', checkForStockvelMember);
             if (accountNumberField) accountNumberField.addEventListener('blur', checkForStockvelMember);
             
             // Handle Stockvel Member checkbox
@@ -4737,7 +4732,7 @@
             
             AppState.save();
             
-            alert(`✅ Member registered successfully!\n\nMember #: ${newMember.memberNumber}\nName: ${name}\nMonthly Contribution: R${monthlyContrib.toFixed(2)}\n\nMembership valid until: ${endDate.toLocaleDateString()}`);
+            alert(`✅ Member registered successfully!\n\nMember #: ${newMember.memberNumber}\nAccount #: ${accountNumber}\nName: ${name}\nMonthly Contribution: R${monthlyContrib.toFixed(2)}\n\nMembership valid until: ${endDate.toLocaleDateString()}`);
             
             // Reset form
             document.getElementById('registerMemberForm').reset();
@@ -4825,7 +4820,7 @@
             const receipts = AppState.stockvelReceipts.filter(r => r.memberNumber === memberNumber);
             const receiptCount = receipts.length;
             
-            alert(`👤 Member Details\n\nMember #: ${member.memberNumber}\nName: ${member.name}\nPhone: ${member.phone}\nEmail: ${member.email || 'Not provided'}\n\n💰 Financial Summary:\nTotal Contributions: R${member.totalContributions.toFixed(2)}\nAccumulated Bonus: R${member.accumulatedBonus.toFixed(2)}\nMonthly Contribution: R${member.monthlyContribution.toFixed(2)}\n\n📅 Membership:\nStart Date: ${new Date(member.membershipStartDate).toLocaleDateString()}\nEnd Date: ${new Date(member.membershipEndDate).toLocaleDateString()}\nStatus: ${member.status}\n\n📊 Activity:\nTotal Receipts: ${receiptCount}`);
+            alert(`👤 Member Details\n\nMember #: ${member.memberNumber}\nAccount #: ${member.account_number || 'Not provided'}\nName: ${member.name}\nPhone: ${member.phone || 'Not provided'}\nEmail: ${member.email || 'Not provided'}\n\n💰 Financial Summary:\nTotal Contributions: R${member.totalContributions.toFixed(2)}\nAccumulated Bonus: R${member.accumulatedBonus.toFixed(2)}\nMonthly Contribution: R${member.monthlyContribution.toFixed(2)}\n\n📅 Membership:\nStart Date: ${new Date(member.membershipStartDate).toLocaleDateString()}\nEnd Date: ${new Date(member.membershipEndDate).toLocaleDateString()}\nStatus: ${member.status}\n\n📊 Activity:\nTotal Receipts: ${receiptCount}`);
         }
 
         // RENEW MEMBERSHIP BY MEMBER NUMBER
