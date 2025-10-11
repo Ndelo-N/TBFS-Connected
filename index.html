@@ -2686,6 +2686,10 @@
                         alert('Please enter the membership start date');
                         return;
                     }
+                    if (!membershipEndDate) {
+                        alert('Please enter the membership end date');
+                        return;
+                    }
                     if (isNaN(totalContributions) || totalContributions < 0) {
                         alert('Please enter a valid total contribution amount');
                         return;
@@ -2696,6 +2700,21 @@
                     }
                     if (totalContributions === 0 && monthlyContribution === 0) {
                         alert('Please enter your contribution amounts as a Stockvel member');
+                        return;
+                    }
+                    
+                    // VALIDATE MAX LOAN TERM based on membership expiry
+                    const today = new Date();
+                    const membershipExpiry = new Date(membershipEndDate);
+                    const monthsUntilExpiry = Math.floor((membershipExpiry - today) / (1000 * 60 * 60 * 24 * 30));
+                    
+                    if (monthsUntilExpiry < 1) {
+                        alert('❌ Membership has expired! Please renew membership before taking a loan.');
+                        return;
+                    }
+                    
+                    if (term > monthsUntilExpiry) {
+                        alert(`❌ Loan term too long!\n\nYour membership expires in ${monthsUntilExpiry} month(s).\nMaximum loan term: ${monthsUntilExpiry} month(s)\n\nPlease reduce the loan term or renew your membership first.`);
                         return;
                     }
                 }
@@ -3513,6 +3532,29 @@
             const interestMonths = Math.min(calculatedMonths, loanData.term);
             
             // Create loan record with payment flexibility tracking
+            // Detect if this is a stockvel MEMBER loan (from separate registry)
+            let memberNumber = null;
+            let tieredRate = null;
+            
+            if (loanData.isStockvelMember) {
+                // Try to find member by name and phone/account
+                const memberName = `${loanData.firstName} ${loanData.lastName}`;
+                const possibleMember = AppState.stockvelMembers.find(m => 
+                    m.name === memberName || 
+                    m.phone === loanData.accountNumber
+                );
+                
+                if (possibleMember) {
+                    memberNumber = possibleMember.memberNumber;
+                }
+                
+                // Calculate tiered rate for bonus calculation later
+                if (loanData.totalContributions > 0) {
+                    const tieredInterest = calculateTieredStockvelInterest(loanData.principal, loanData.totalContributions);
+                    tieredRate = tieredInterest / loanData.principal;
+                }
+            }
+            
             const loan = {
                 loan_id: AppState.loans.length + 1,
                 client_name: `${loanData.firstName} ${loanData.lastName}`,
@@ -3533,7 +3575,10 @@
                 payments_made: 0, // Track number of payments received
                 status: 'active',
                 created_at: new Date(loanData.loanDate + 'T12:00:00').toISOString(), // Use custom loan date
-                start_month_index: loanData.startMonthIndex // Store start month for due date calculations
+                start_month_index: loanData.startMonthIndex, // Store start month for due date calculations
+                memberNumber: memberNumber, // Link to stockvel member registry (null if not stockvel)
+                tieredRate: tieredRate, // Store tiered rate for bonus calculation (null if not stockvel)
+                isStockvelLoan: loanData.isStockvelMember // Flag for easy identification
             };
 
             // Add loan to system
