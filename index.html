@@ -2557,8 +2557,9 @@
 
         // Loan calculation functions
         function calculateTieredStockvelInterest(loanAmount, savingsAmount) {
-            let totalInterest = 0;
+            let tiers1to4Interest = 0;
             let tier5Amount = 0;
+            let tier1to4Amount = 0;
             
             console.log(`\nTiered calculation for R${loanAmount.toFixed(2)} loan with R${savingsAmount.toFixed(2)} contributions`);
             
@@ -2568,7 +2569,7 @@
                 tier2_max: savingsAmount * 0.75,  // Up to 75% of contributions @ 8%
                 tier3_max: savingsAmount * 1.05,  // Up to 105% of contributions @ 15%
                 tier4_max: savingsAmount * 1.10,  // Up to 110% of contributions @ 25%
-                // Above 110% @ 30%
+                // Above 110% @ 30% (Income Table)
             };
             
             console.log(`Tier boundaries:`);
@@ -2576,7 +2577,7 @@
             console.log(`  Tier 2 (8%): R${boundaries.tier1_max.toFixed(2)} - R${boundaries.tier2_max.toFixed(2)}`);
             console.log(`  Tier 3 (15%): R${boundaries.tier2_max.toFixed(2)} - R${boundaries.tier3_max.toFixed(2)}`);
             console.log(`  Tier 4 (25%): R${boundaries.tier3_max.toFixed(2)} - R${boundaries.tier4_max.toFixed(2)}`);
-            console.log(`  Tier 5 (30%): Above R${boundaries.tier4_max.toFixed(2)}`);
+            console.log(`  Tier 5 (30% Income Table): Above R${boundaries.tier4_max.toFixed(2)}`);
             
             let remainingLoan = loanAmount;
             
@@ -2584,7 +2585,8 @@
             if (remainingLoan > 0) {
                 const tierAmount = Math.min(remainingLoan, boundaries.tier1_max);
                 const tierInterest = tierAmount * 0.03;
-                totalInterest += tierInterest;
+                tiers1to4Interest += tierInterest;
+                tier1to4Amount += tierAmount;
                 console.log(`Tier 1 (0-30%): R${tierAmount.toFixed(2)} × 3% = R${tierInterest.toFixed(2)}`);
                 remainingLoan -= tierAmount;
             }
@@ -2593,7 +2595,8 @@
             if (remainingLoan > 0) {
                 const tierAmount = Math.min(remainingLoan, boundaries.tier2_max - boundaries.tier1_max);
                 const tierInterest = tierAmount * 0.08;
-                totalInterest += tierInterest;
+                tiers1to4Interest += tierInterest;
+                tier1to4Amount += tierAmount;
                 console.log(`Tier 2 (30-75%): R${tierAmount.toFixed(2)} × 8% = R${tierInterest.toFixed(2)}`);
                 remainingLoan -= tierAmount;
             }
@@ -2602,7 +2605,8 @@
             if (remainingLoan > 0) {
                 const tierAmount = Math.min(remainingLoan, boundaries.tier3_max - boundaries.tier2_max);
                 const tierInterest = tierAmount * 0.15;
-                totalInterest += tierInterest;
+                tiers1to4Interest += tierInterest;
+                tier1to4Amount += tierAmount;
                 console.log(`Tier 3 (75-105%): R${tierAmount.toFixed(2)} × 15% = R${tierInterest.toFixed(2)}`);
                 remainingLoan -= tierAmount;
             }
@@ -2611,22 +2615,31 @@
             if (remainingLoan > 0) {
                 const tierAmount = Math.min(remainingLoan, boundaries.tier4_max - boundaries.tier3_max);
                 const tierInterest = tierAmount * 0.25;
-                totalInterest += tierInterest;
+                tiers1to4Interest += tierInterest;
+                tier1to4Amount += tierAmount;
                 console.log(`Tier 4 (105-110%): R${tierAmount.toFixed(2)} × 25% = R${tierInterest.toFixed(2)}`);
                 remainingLoan -= tierAmount;
             }
             
-            // Tier 5: Above 110% of contributions @ 30%
+            // Tier 5: Above 110% of contributions
+            // This will be calculated using Income Table method in the main function
             if (remainingLoan > 0) {
-                const tierAmount = remainingLoan;
-                tier5Amount = tierAmount;
-                const tierInterest = tierAmount * 0.30;
-                totalInterest += tierInterest;
-                console.log(`Tier 5 (>110%): R${tierAmount.toFixed(2)} × 30% = R${tierInterest.toFixed(2)}`);
+                tier5Amount = remainingLoan;
+                console.log(`Tier 5 (>110%): R${tier5Amount.toFixed(2)} [Income Table method]`);
             }
             
-            console.log(`Total tiered interest: R${totalInterest.toFixed(2)}`);
-            return { totalInterest, tier5Amount };
+            console.log(`Tiers 1-4 interest: R${tiers1to4Interest.toFixed(2)}`);
+            console.log(`Tiers 1-4 amount: R${tier1to4Amount.toFixed(2)}`);
+            if (tier5Amount > 0) {
+                console.log(`Tier 5 amount: R${tier5Amount.toFixed(2)} (to be calculated with Income Table)`);
+            }
+            
+            return { 
+                tiers1to4Interest, 
+                tier1to4Amount, 
+                tier5Amount,
+                tier4Boundary: boundaries.tier4_max
+            };
         }
 
         function calculateStockvelInterest(principal, term, totalContributions, monthlyContribution) {
@@ -2661,9 +2674,9 @@
                 
                 // Only calculate interest if there's an outstanding balance
                 if (outstandingBalance > 0) {
-                    // Use the new tiered calculation (returns object with totalInterest and tier5Amount)
+                    // Use the new tiered calculation
                     const tieredResult = calculateTieredStockvelInterest(outstandingBalance, currentSavings);
-                    const monthlyInterest = tieredResult.totalInterest || tieredResult; // Handle both old and new format
+                    const monthlyInterest = tieredResult.tiers1to4Interest; // Legacy function uses tiers 1-4 only
                     
                     // No minimum interest rule for Stockvel members - use tiered calculation only
                     console.log(`Tiered interest: R${monthlyInterest.toFixed(2)}`);
@@ -2846,32 +2859,65 @@
                             currentSavings += monthlyContribution;
                         }
                         
-                        // Calculate tiered interest on outstanding balance
+                        // Calculate tiered interest using NEW LOGIC:
+                        // - Tiers 1-4 interest calculated normally
+                        // - If Tier 5 exists, use Income Table method
+                        // - Admin fee based on Tiers 1-4 rate only
                         const tieredResult = calculateTieredStockvelInterest(outstandingBalance, currentSavings);
-                        const tieredInterest = tieredResult.totalInterest || tieredResult;
-                        const tieredRate = outstandingBalance > 0 ? (tieredInterest / outstandingBalance) : 0;
+                        const tiers1to4Interest = tieredResult.tiers1to4Interest;
+                        const tier1to4Amount = tieredResult.tier1to4Amount;
+                        const tier5Amount = tieredResult.tier5Amount;
                         
-                        // Calculate actual interest and fees
-                        let actualInterest, adminFee, monthlyBonus = 0;
+                        let totalTieredInterest = tiers1to4Interest;
+                        let adminFee = 0;
                         
-                        // Note: Tier 5 (30%) already uses Income Table method in the tiered calculation
-                        // So we just apply 10% minimum check and bonus calculation
-                        {
-                            // Below 30%: Apply 10% minimum with bonus system
-                            const minimumInterest = outstandingBalance * 0.10;
-                            actualInterest = Math.max(tieredInterest, minimumInterest);
+                        // Calculate admin fee based on Tiers 1-4 effective rate
+                        if (tier1to4Amount > 0) {
+                            const tiers1to4Rate = tiers1to4Interest / tier1to4Amount;
+                            adminFee = 60 * (1 - tiers1to4Rate);
+                            console.log(`  Tiers 1-4 effective rate: ${(tiers1to4Rate * 100).toFixed(2)}%`);
+                            console.log(`  Admin fee (based on Tiers 1-4): R${adminFee.toFixed(2)}`);
+                        } else {
+                            // No tiers 1-4, use full R60
+                            adminFee = 60;
+                        }
+                        
+                        // If Tier 5 exists, apply Income Table method
+                        let tier5Interest = 0;
+                        if (tier5Amount > 0) {
+                            // Income Table: 30% of Tier 5 = TOTAL charge (interest + fees)
+                            const tier5TotalCharge = tier5Amount * 0.30;
                             
-                            // Calculate admin fee based on actual rate
-                            const actualRate = outstandingBalance > 0 ? (actualInterest / outstandingBalance) : 0;
-                            adminFee = 60 * (1 - actualRate);
+                            // Calculate proportional fees for Tier 5
+                            const tier5Proportion = tier5Amount / outstandingBalance;
+                            const tier5ProportionalAdmin = adminFee * tier5Proportion;
+                            const tier5ProportionalInitiation = monthlyInitiationFee * tier5Proportion;
                             
-                            // If we used the minimum, calculate bonus
-                            if (actualInterest > tieredInterest) {
-                                // Bonus = difference between minimum charge and what we actually charged
-                                const actualCharge = actualInterest + adminFee + monthlyInitiationFee;
-                                const minimumCharge = minimumInterest + 60 + monthlyInitiationFee;
-                                monthlyBonus = minimumCharge - actualCharge;
-                            }
+                            // Tier 5 interest = 30% charge - proportional fees
+                            tier5Interest = tier5TotalCharge - tier5ProportionalAdmin - tier5ProportionalInitiation;
+                            totalTieredInterest += tier5Interest;
+                            
+                            console.log(`  Tier 5 Income Table:`);
+                            console.log(`    Amount: R${tier5Amount.toFixed(2)}`);
+                            console.log(`    30% Total Charge: R${tier5TotalCharge.toFixed(2)}`);
+                            console.log(`    - Proportional Admin (${(tier5Proportion * 100).toFixed(1)}%): R${tier5ProportionalAdmin.toFixed(2)}`);
+                            console.log(`    - Proportional Initiation (${(tier5Proportion * 100).toFixed(1)}%): R${tier5ProportionalInitiation.toFixed(2)}`);
+                            console.log(`    = Interest: R${tier5Interest.toFixed(2)}`);
+                        }
+                        
+                        const tieredRate = outstandingBalance > 0 ? (totalTieredInterest / outstandingBalance) : 0;
+                        
+                        // Apply 10% minimum check
+                        let actualInterest, monthlyBonus = 0;
+                        const minimumInterest = outstandingBalance * 0.10;
+                        actualInterest = Math.max(totalTieredInterest, minimumInterest);
+                        
+                        // If we used the minimum, calculate bonus
+                        if (actualInterest > totalTieredInterest) {
+                            // Bonus = difference between minimum charge and what we actually charged
+                            const actualCharge = actualInterest + adminFee + monthlyInitiationFee;
+                            const minimumCharge = minimumInterest + 60 + monthlyInitiationFee;
+                            monthlyBonus = minimumCharge - actualCharge;
                         }
                         
                         const actualRate = outstandingBalance > 0 ? (actualInterest / outstandingBalance) : 0;
@@ -2881,19 +2927,26 @@
                         totalAdminFees += adminFee;
                         
                         monthlyDetails.push({
-                            tieredInterest,
+                            tieredInterest: totalTieredInterest,
                             tieredRate,
                             actualInterest,
                             actualRate,
                             adminFee,
                             monthlyBonus,
-                            outstandingBalance
+                            outstandingBalance,
+                            tiers1to4Interest,
+                            tier5Interest,
+                            tier5Amount
                         });
                         
                         console.log(`\nMonth ${month}:`);
                         console.log(`  Outstanding: R${outstandingBalance.toFixed(2)}`);
                         console.log(`  Savings: R${currentSavings.toFixed(2)}`);
-                        console.log(`  Tiered Interest: R${tieredInterest.toFixed(2)} (${(tieredRate * 100).toFixed(1)}%)`);
+                        console.log(`  Tiers 1-4 Interest: R${tiers1to4Interest.toFixed(2)}`);
+                        if (tier5Amount > 0) {
+                            console.log(`  Tier 5 Interest: R${tier5Interest.toFixed(2)}`);
+                        }
+                        console.log(`  Total Tiered Interest: R${totalTieredInterest.toFixed(2)} (${(tieredRate * 100).toFixed(1)}%)`);
                         console.log(`  Actual Interest: R${actualInterest.toFixed(2)} (${(actualRate * 100).toFixed(1)}%)`);
                         console.log(`  Admin Fee: R${adminFee.toFixed(2)}`);
                         console.log(`  Initiation: R${monthlyInitiationFee.toFixed(2)}`);
