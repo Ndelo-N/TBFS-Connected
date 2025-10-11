@@ -739,8 +739,8 @@
                                     </li>
                                     <li><strong>10% Minimum Interest:</strong> Applied if tiered rate is below 10%</li>
                                     <li><strong>Admin Fee:</strong> R60 × (1 - interest rate)</li>
-                                    <li><strong>Membership Bonus:</strong> Difference between tiered and minimum rates added to contributions</li>
                                     <li><strong>Equal Monthly Payments:</strong> Total cost divided evenly across all months</li>
+                                    <li><strong>Special Member Benefits:</strong> Additional rewards tracked automatically</li>
                                 </ul>
                             </div>
                             <div class="form-grid">
@@ -2112,9 +2112,19 @@
                     const totalPaid = loan.total_cost - loan.current_balance;
                     const paymentsMade = Math.floor(totalPaid / loan.monthly_payment);
                     
-                    // Calculate next payment due date (loan start + payments made + 1 month)
-                    const nextDueDate = new Date(loanStartDate);
-                    nextDueDate.setMonth(nextDueDate.getMonth() + paymentsMade + 1);
+                    // Calculate next payment due date - last day of start month + payments made
+                    // Use start_month_index if available, otherwise fall back to loan date month
+                    const startMonthIndex = loan.start_month_index !== undefined ? loan.start_month_index : loanStartDate.getMonth();
+                    const startYear = loanStartDate.getFullYear();
+                    
+                    // Calculate the target month for next payment (start month + payments made)
+                    const targetMonthOffset = startMonthIndex + paymentsMade;
+                    const targetYear = startYear + Math.floor(targetMonthOffset / 12);
+                    const targetMonth = targetMonthOffset % 12;
+                    
+                    // Create date for last day of target month
+                    // Using day 0 of next month gives us last day of target month
+                    const nextDueDate = new Date(targetYear, targetMonth + 1, 0);
                     const nextDueStr = nextDueDate.toLocaleDateString('en-ZA', { day: '2-digit', month: 'short', year: 'numeric' });
                     
                     // Check if overdue
@@ -2918,13 +2928,14 @@
                                <span style="font-size: 11px; color: #666;">(Waived up to R${loanData.totalContributions.toFixed(2)}, 12% on excess)</span></p>
                             <p><strong>Total Admin Fees:</strong> R ${loanData.totalAdminFees.toFixed(2)}<br>
                                <span style="font-size: 11px; color: #666;">(R60 × (1 - interest rate), varies by month)</span></p>`;
-                        if (loanData.totalBonus > 0) {
-                            clientInfoHTML += `
-                            <div style="background: #fff3cd; padding: 10px; border-radius: 8px; margin-top: 10px; border: 2px solid #ffc107;">
-                                <strong style="color: #856404;">🎁 Member Bonus:</strong> R ${loanData.totalBonus.toFixed(2)}<br>
-                                <span style="font-size: 11px; color: #856404;">This bonus will be added to your contributions after each payment is received!</span>
-                            </div>`;
-                        }
+                        // Bonus is tracked internally but not displayed to members (surprise feature)
+                        // if (loanData.totalBonus > 0) {
+                        //     clientInfoHTML += `
+                        //     <div style="background: #fff3cd; padding: 10px; border-radius: 8px; margin-top: 10px; border: 2px solid #ffc107;">
+                        //         <strong style="color: #856404;">🎁 Member Bonus:</strong> R ${loanData.totalBonus.toFixed(2)}<br>
+                        //         <span style="font-size: 11px; color: #856404;">This bonus will be added to your contributions after each payment is received!</span>
+                        //     </div>`;
+                        // }
                         clientInfoHTML += `
                             <div style="background: #e8f5e8; padding: 10px; border-radius: 8px; margin-top: 10px; font-size: 12px;">
                                 <strong>Your Tier Boundaries (based on R${loanData.totalContributions.toFixed(2)} contributions):</strong><br>
@@ -3162,14 +3173,14 @@
                         doc.text(`30-75%: R${(loanData.totalContributions * 0.30).toFixed(0)}-R${(loanData.totalContributions * 0.75).toFixed(0)} @8%`, 20, 175);
                         doc.text(`75-105%: R${(loanData.totalContributions * 0.75).toFixed(0)}-R${(loanData.totalContributions * 1.05).toFixed(0)} @15%`, 20, 180);
                         
-                        // Bonus information if applicable
-                        if (loanData.totalBonus && loanData.totalBonus > 0) {
-                            doc.setFontSize(10);
-                            doc.setTextColor(200, 120, 0);
-                            doc.text(`Member Bonus: R ${loanData.totalBonus.toFixed(2)}`, 20, 188);
-                            doc.setFontSize(8);
-                            doc.text(`(To be added to contributions after payment)`, 20, 193);
-                        }
+                        // Bonus information hidden from member PDFs (surprise feature)
+                        // if (loanData.totalBonus && loanData.totalBonus > 0) {
+                        //     doc.setFontSize(10);
+                        //     doc.setTextColor(200, 120, 0);
+                        //     doc.text(`Member Bonus: R ${loanData.totalBonus.toFixed(2)}`, 20, 188);
+                        //     doc.setFontSize(8);
+                        //     doc.text(`(To be added to contributions after payment)`, 20, 193);
+                        // }
                         
                         doc.setFontSize(10);
                         doc.setTextColor(44, 62, 80);
@@ -3444,7 +3455,8 @@
                 total_interest_charged: 0, // Track total interest charged so far
                 payments_made: 0, // Track number of payments received
                 status: 'active',
-                created_at: new Date(loanData.loanDate + 'T12:00:00').toISOString() // Use custom loan date
+                created_at: new Date(loanData.loanDate + 'T12:00:00').toISOString(), // Use custom loan date
+                start_month_index: loanData.startMonthIndex // Store start month for due date calculations
             };
 
             // Add loan to system
@@ -4098,7 +4110,10 @@
                                 </span>
                                 <span style="margin-left: 10px; color: #7f8c8d;">Expires: ${endDate.toLocaleDateString('en-ZA')}</span>
                             </div>
-                            <button onclick="renewMembership('${member.accountNumber}')" class="calculate-btn" style="padding: 8px 16px;">🔄 Renew Membership</button>
+                            <div style="display: flex; gap: 8px;">
+                                <button onclick="generateMemberDisbursementPDF('${member.accountNumber}')" class="export-btn" style="padding: 8px 16px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);">📄 Generate Statement</button>
+                                <button onclick="renewMembership('${member.accountNumber}')" class="calculate-btn" style="padding: 8px 16px;">🔄 Renew Membership</button>
+                            </div>
                         </div>
                     </div>
                 `;
@@ -4155,7 +4170,8 @@
                         <td style="color: #f39c12; font-weight: 600;">R${pendingBonuses.toFixed(2)}</td>
                         <td>${lastBonusDate}</td>
                         <td>
-                            ${pendingBonuses > 0 ? `<button onclick="payoutBonus('${member.accountNumber}')" class="export-btn" style="padding: 6px 12px; font-size: 12px;">💰 Payout</button>` : '<span style="color: #7f8c8d;">-</span>'}
+                            <button onclick="generateMemberDisbursementPDF('${member.accountNumber}')" class="export-btn" style="padding: 4px 10px; font-size: 11px; margin-right: 5px;">📄 Statement</button>
+                            ${pendingBonuses > 0 ? `<button onclick="payoutBonus('${member.accountNumber}')" class="export-btn" style="padding: 4px 10px; font-size: 11px;">💰 Payout</button>` : ''}
                         </td>
                     </tr>
                 `;
@@ -4231,6 +4247,218 @@
             a.href = url;
             a.download = `stockvel_bonus_report_${new Date().toISOString().split('T')[0]}.csv`;
             a.click();
+        }
+        
+        // Generate Member Disbursement PDF
+        function generateMemberDisbursementPDF(accountNumber) {
+            const client = appState.clients.find(c => c.accountNumber === accountNumber);
+            if (!client || !client.isStockvelMember) {
+                alert('Member not found');
+                return;
+            }
+            
+            // Check if jsPDF is loaded
+            if (typeof window.jspdf === 'undefined') {
+                alert('PDF library not loaded. Please refresh the page.');
+                return;
+            }
+            
+            const { jsPDF } = window.jspdf;
+            const doc = new jsPDF();
+            
+            // Get member receipts
+            const memberReceipts = stockvelReceipts.filter(r => r.accountNumber === accountNumber);
+            
+            // Calculate totals for current month
+            const today = new Date();
+            const currentMonth = today.getMonth();
+            const currentYear = today.getFullYear();
+            
+            const currentMonthReceipts = memberReceipts.filter(r => {
+                const receiptDate = new Date(r.date);
+                return receiptDate.getMonth() === currentMonth && receiptDate.getFullYear() === currentYear;
+            });
+            
+            const currentMonthContributions = currentMonthReceipts
+                .filter(r => r.type === 'contribution' || r.type === 'adjustment')
+                .reduce((sum, r) => sum + r.amount, 0);
+            
+            const currentMonthBonuses = currentMonthReceipts
+                .filter(r => r.type === 'loan_payment')
+                .reduce((sum, r) => sum + (r.bonusAdded || 0), 0);
+            
+            // Get membership end date info
+            const membershipEndDate = client.membershipEndDate ? new Date(client.membershipEndDate) : null;
+            const daysUntilEnd = membershipEndDate ? Math.ceil((membershipEndDate - today) / (1000 * 60 * 60 * 24)) : null;
+            
+            // Load logo and generate PDF
+            getBase64Image('./TBFS_Logo.png', function(logoDataUrl) {
+                // Header with logo
+                if (logoDataUrl) {
+                    doc.addImage(logoDataUrl, 'PNG', 85, 5, 40, 40);
+                }
+                
+                doc.setFont('helvetica', 'bold');
+                doc.setFontSize(18);
+                doc.setTextColor(44, 62, 80);
+                doc.text('THABA BOSIU FINANCIAL SERVICES', 105, 50, { align: 'center' });
+                
+                doc.setFont('helvetica', 'normal');
+                doc.setFontSize(10);
+                doc.setTextColor(100, 100, 100);
+                doc.text('Your Financial Refuge', 105, 57, { align: 'center' });
+                
+                // Document Title
+                doc.setFontSize(16);
+                doc.setTextColor(102, 126, 234);
+                doc.text('🎁 MEMBER DISBURSEMENT STATEMENT', 105, 68, { align: 'center' });
+                
+                // Line separator
+                doc.setDrawColor(102, 126, 234);
+                doc.setLineWidth(0.5);
+                doc.line(20, 72, 190, 72);
+                
+                // Member Information
+                doc.setFontSize(12);
+                doc.setTextColor(44, 62, 80);
+                doc.setFont('helvetica', 'bold');
+                doc.text('Member Information', 20, 82);
+                
+                doc.setFont('helvetica', 'normal');
+                doc.setFontSize(10);
+                doc.text(`Name: ${client.firstName} ${client.lastName}`, 20, 90);
+                doc.text(`Account Number: ${client.accountNumber}`, 20, 97);
+                doc.text(`Membership Period: ${client.membershipStartDate ? new Date(client.membershipStartDate).toLocaleDateString('en-ZA') : 'N/A'} to ${membershipEndDate ? membershipEndDate.toLocaleDateString('en-ZA') : 'N/A'}`, 20, 104);
+                
+                if (daysUntilEnd !== null && daysUntilEnd <= 30) {
+                    doc.setTextColor(231, 76, 60);
+                    doc.setFont('helvetica', 'bold');
+                    doc.text(`⚠️ Membership expires in ${daysUntilEnd} days`, 20, 111);
+                    doc.setFont('helvetica', 'normal');
+                    doc.setTextColor(44, 62, 80);
+                }
+                
+                // Summary Box
+                const summaryY = daysUntilEnd !== null && daysUntilEnd <= 30 ? 120 : 113;
+                doc.setFillColor(102, 126, 234);
+                doc.rect(20, summaryY, 170, 35, 'F');
+                
+                doc.setTextColor(255, 255, 255);
+                doc.setFont('helvetica', 'bold');
+                doc.setFontSize(11);
+                doc.text('ACCOUNT SUMMARY', 105, summaryY + 8, { align: 'center' });
+                
+                doc.setFont('helvetica', 'normal');
+                doc.setFontSize(10);
+                doc.text(`Total Contributions:`, 25, summaryY + 16);
+                doc.text(`R ${(client.totalContributions || 0).toFixed(2)}`, 85, summaryY + 16);
+                
+                doc.text(`Accumulated Bonuses:`, 25, summaryY + 23);
+                doc.text(`R ${(client.accumulatedBonus || 0).toFixed(2)}`, 85, summaryY + 23);
+                
+                doc.text(`Monthly Contribution:`, 25, summaryY + 30);
+                doc.text(`R ${(client.monthlyContribution || 0).toFixed(2)}`, 85, summaryY + 30);
+                
+                // Current Month Activity
+                const activityY = summaryY + 42;
+                doc.setTextColor(44, 62, 80);
+                doc.setFont('helvetica', 'bold');
+                doc.setFontSize(12);
+                doc.text(`Activity for ${today.toLocaleDateString('en-ZA', { month: 'long', year: 'numeric' })}`, 20, activityY);
+                
+                doc.setFont('helvetica', 'normal');
+                doc.setFontSize(10);
+                doc.text(`Contributions this month:`, 25, activityY + 10);
+                doc.setTextColor(39, 174, 96);
+                doc.setFont('helvetica', 'bold');
+                doc.text(`R ${currentMonthContributions.toFixed(2)}`, 85, activityY + 10);
+                
+                doc.setFont('helvetica', 'normal');
+                doc.setTextColor(44, 62, 80);
+                doc.text(`Bonuses earned this month:`, 25, activityY + 17);
+                doc.setTextColor(241, 196, 15);
+                doc.setFont('helvetica', 'bold');
+                doc.text(`R ${currentMonthBonuses.toFixed(2)}`, 85, activityY + 17);
+                
+                // Bonuses Explanation
+                if (currentMonthBonuses > 0) {
+                    doc.setFont('helvetica', 'italic');
+                    doc.setFontSize(8);
+                    doc.setTextColor(100, 100, 100);
+                    doc.text('🎁 Surprise! You earned bonuses from your loan payments!', 25, activityY + 24);
+                    doc.text('These have been added to your total contributions.', 25, activityY + 29);
+                }
+                
+                // Transaction History Table
+                const tableY = activityY + (currentMonthBonuses > 0 ? 38 : 28);
+                doc.setFont('helvetica', 'bold');
+                doc.setFontSize(12);
+                doc.setTextColor(44, 62, 80);
+                doc.text('Recent Transaction History', 20, tableY);
+                
+                // Table header
+                doc.setFontSize(8);
+                doc.setFillColor(44, 62, 80);
+                doc.setTextColor(255, 255, 255);
+                doc.rect(20, tableY + 5, 170, 7, 'F');
+                doc.text('Date', 22, tableY + 10);
+                doc.text('Type', 45, tableY + 10);
+                doc.text('Amount', 85, tableY + 10);
+                doc.text('Bonus', 115, tableY + 10);
+                doc.text('New Total', 145, tableY + 10);
+                
+                // Table rows - show last 10 receipts
+                doc.setTextColor(0, 0, 0);
+                const recentReceipts = memberReceipts.slice(-10).reverse();
+                let currentY = tableY + 17;
+                
+                recentReceipts.forEach((receipt, idx) => {
+                    if (idx % 2 === 0) {
+                        doc.setFillColor(248, 249, 250);
+                        doc.rect(20, currentY - 5, 170, 7, 'F');
+                    }
+                    
+                    doc.text(new Date(receipt.date).toLocaleDateString('en-ZA'), 22, currentY);
+                    doc.text(formatReceiptType(receipt.type), 45, currentY);
+                    doc.text(`R${receipt.amount.toFixed(2)}`, 85, currentY);
+                    
+                    if (receipt.bonusAdded && receipt.bonusAdded !== 0) {
+                        doc.setTextColor(receipt.bonusAdded > 0 ? 39 : 231, receipt.bonusAdded > 0 ? 174 : 76, receipt.bonusAdded > 0 ? 96 : 60);
+                        doc.text(`R${receipt.bonusAdded.toFixed(2)}`, 115, currentY);
+                        doc.setTextColor(0, 0, 0);
+                    } else {
+                        doc.text('-', 115, currentY);
+                    }
+                    
+                    doc.text(`R${receipt.newTotal.toFixed(2)}`, 145, currentY);
+                    currentY += 7;
+                });
+                
+                // Important Information
+                const infoY = Math.max(currentY + 5, 245);
+                doc.setFillColor(254, 243, 199);
+                doc.rect(20, infoY, 170, 25, 'F');
+                
+                doc.setFontSize(10);
+                doc.setTextColor(133, 100, 4);
+                doc.setFont('helvetica', 'bold');
+                doc.text('📌 Important Information', 25, infoY + 7);
+                
+                doc.setFont('helvetica', 'normal');
+                doc.setFontSize(8);
+                doc.text('• Your bonuses are calculated automatically when you make loan payments', 25, infoY + 13);
+                doc.text('• All bonuses are added to your total contributions', 25, infoY + 18);
+                doc.text('• Higher contributions give you access to better loan rates', 25, infoY + 23);
+                
+                // Footer
+                doc.setFontSize(8);
+                doc.setTextColor(100, 100, 100);
+                doc.text(`Statement generated on: ${today.toLocaleDateString('en-ZA')}`, 20, 285);
+                doc.text('Thank you for being a valued member!', 105, 290, { align: 'center' });
+                
+                // Save PDF
+                doc.save(`TBFS_Member_Statement_${client.accountNumber}_${today.toISOString().split('T')[0]}.pdf`);
+            });
         }
         
         // Load stockvel dashboard
