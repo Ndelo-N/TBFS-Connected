@@ -4013,59 +4013,66 @@
         function recordReceipt(e) {
             e.preventDefault();
             
-            const accountNumber = document.getElementById('receiptMember').value;
+            const memberNumber = parseInt(document.getElementById('receiptMember').value);
             const type = document.getElementById('receiptType').value;
             const amount = parseFloat(document.getElementById('receiptAmount').value);
             const date = document.getElementById('receiptDate').value;
             const notes = document.getElementById('receiptNotes').value;
             
-            const client = appState.clients.find(c => c.accountNumber === accountNumber);
-            if (!client) {
-                alert('Client not found');
+            // Find member from SEPARATE registry (not clients!)
+            const member = AppState.stockvelMembers.find(m => m.memberNumber === memberNumber);
+            if (!member) {
+                alert('Member not found in registry');
                 return;
             }
             
             // Create receipt record
             const receipt = {
                 id: Date.now(),
-                accountNumber,
-                memberName: `${client.firstName} ${client.lastName}`,
+                memberNumber,
+                memberName: member.name,
                 type,
                 amount,
                 date,
                 notes,
-                previousTotal: client.totalContributions || 0,
-                previousBonus: client.accumulatedBonus || 0
+                previousTotal: member.totalContributions || 0,
+                previousBonus: member.accumulatedBonus || 0
             };
             
-            // Update client based on receipt type
+            // Update member based on receipt type
+            // IMPORTANT: Bonuses are tracked SEPARATELY and NOT added to contributions
             if (type === 'contribution') {
-                client.totalContributions = (client.totalContributions || 0) + amount;
-                receipt.newTotal = client.totalContributions;
-                receipt.bonusAdded = 0;
+                member.totalContributions = (member.totalContributions || 0) + amount;
+                receipt.newTotal = member.totalContributions;
+                receipt.bonusAmount = 0;
             } else if (type === 'loan_payment') {
-                // Bonus should be calculated from the loan payment
+                // Bonuses earned but tracked separately (NOT added to contributions!)
                 const bonusAmount = parseFloat(prompt('Enter bonus amount earned from this payment (R):', '0') || '0');
-                client.accumulatedBonus = (client.accumulatedBonus || 0) + bonusAmount;
-                client.totalContributions = (client.totalContributions || 0) + bonusAmount;
-                receipt.bonusAdded = bonusAmount;
-                receipt.newTotal = client.totalContributions;
+                member.accumulatedBonus = (member.accumulatedBonus || 0) + bonusAmount;
+                // NOTE: Contributions stay the same - bonuses are separate!
+                receipt.newTotal = member.totalContributions;
+                receipt.bonusAmount = bonusAmount;
             } else if (type === 'bonus_payout') {
-                client.accumulatedBonus = Math.max(0, (client.accumulatedBonus || 0) - amount);
-                receipt.bonusAdded = -amount;
-                receipt.newTotal = client.totalContributions;
+                member.accumulatedBonus = Math.max(0, (member.accumulatedBonus || 0) - amount);
+                receipt.bonusAmount = -amount;
+                receipt.newTotal = member.totalContributions;
             } else if (type === 'adjustment') {
-                client.totalContributions = (client.totalContributions || 0) + amount;
-                receipt.newTotal = client.totalContributions;
-                receipt.bonusAdded = 0;
+                member.totalContributions = (member.totalContributions || 0) + amount;
+                receipt.newTotal = member.totalContributions;
+                receipt.bonusAmount = 0;
             }
             
-            // Save receipt
-            stockvelReceipts.push(receipt);
-            localStorage.setItem('stockvelReceipts', JSON.stringify(stockvelReceipts));
-            localStorage.setItem('clients', JSON.stringify(appState.clients));
+            // Save receipt to SEPARATE storage
+            AppState.stockvelReceipts.push(receipt);
+            AppState.save();
             
-            alert('✅ Receipt recorded successfully!');
+            alert('✅ Receipt recorded successfully!\n\n' + 
+                  `Member: ${member.name}\n` +
+                  `Type: ${type}\n` +
+                  `Amount: R${amount.toFixed(2)}\n` +
+                  `New Contributions: R${member.totalContributions.toFixed(2)}\n` +
+                  `Accumulated Bonus: R${member.accumulatedBonus.toFixed(2)}`);
+            
             document.getElementById('receiptForm').reset();
             document.getElementById('memberReceiptInfo').style.display = 'none';
             
