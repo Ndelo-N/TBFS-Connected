@@ -15,43 +15,68 @@
 ## 📊 THE BONUS FORMULA
 
 ```javascript
-// Step 1: Calculate what member WOULD pay at 10% minimum
-minimumInterest = balance × 0.10
-minimumCharge = minimumInterest + R60 (admin) + initiation fee portion
+// Step 1: Calculate what TBFS is actually due (tiered calculation)
+amountDueToTBFS = tieredInterest + adminFee + initiationFee
 
-// Step 2: Calculate what member ACTUALLY pays (tiered rate)
-tieredInterest = calculateTieredStockvelInterest(balance, contributions)
-actualCharge = tieredInterest + adminFee + initiation fee portion
+// Step 2: Calculate 10% minimum
+minimumCharge = balance × 0.10
 
-// Step 3: The difference is the BONUS!
-bonus = minimumCharge - actualCharge
+// Step 3: Compare and determine bonus
+if (amountDueToTBFS < minimumCharge) {
+    // Member pays 10% minimum
+    memberPays = minimumCharge
+    bonus = minimumCharge - amountDueToTBFS  // The savings!
+} else {
+    // Member pays tiered amount (already > 10%)
+    memberPays = amountDueToTBFS
+    bonus = 0  // No bonus when already above 10%
+}
 ```
 
-### Example Calculation:
+### Example Calculation (Low Loan - Gets Bonus):
 ```
 Member has R10,500 contributions
 Takes R5,000 loan for 3 months
 Outstanding balance: R5,000
 
-TIERED CALCULATION:
-- First R3,150 @ 3% = R94.50
-- Next R1,850 @ 8% = R148.00
-- Total tiered interest = R242.50 (4.85% effective rate)
+AMOUNT DUE TO TBFS:
+- Tiered interest: R242.50 (4.85% rate)
+- Admin fee: R60 × (1 - 0.0485) = R57.09
+- Initiation: R0 (waived - loan < contributions)
+- Total due to TBFS = R299.59
 
-Admin fee @ 4.85%: R60 × (1 - 0.0485) = R57.09
-Initiation (assuming R0 waived): R0
-Actual charge = R242.50 + R57.09 = R299.59
+10% MINIMUM:
+- R5,000 × 0.10 = R500.00
 
-MINIMUM CALCULATION:
-- Interest @ 10% = R500.00
-- Admin fee = R60.00
-- Initiation = R0
-- Minimum charge = R560.00
+COMPARISON:
+- R299.59 < R500.00? YES ✅
+- Member pays: R500.00 (the 10% minimum)
+- Bonus earned: R500.00 - R299.59 = R200.41
 
-BONUS EARNED:
-R560.00 - R299.59 = R260.41
+✨ Member pays exactly 10%, earns R200.41 bonus!
+```
 
-✨ Member saves R260.41 and gets it as a bonus!
+### Example Calculation (High Loan - No Bonus):
+```
+Member has R10,500 contributions
+Takes R12,000 loan
+Outstanding balance: R12,000
+
+AMOUNT DUE TO TBFS:
+- Tiered interest: R1,211.25 (10.09% rate - high tiers)
+- Admin fee: R60 × (1 - 0.1009) = R53.95
+- Initiation: (R12,000 - R10,500) × 0.12 / term = R60
+- Total due to TBFS = R1,325.20
+
+10% MINIMUM:
+- R12,000 × 0.10 = R1,200.00
+
+COMPARISON:
+- R1,325.20 < R1,200.00? NO ❌
+- Member pays: R1,325.20 (the higher tiered amount)
+- Bonus earned: R0 (no bonus - already above 10%)
+
+✨ Member pays tiered rate, no bonus awarded
 ```
 
 ---
@@ -68,10 +93,15 @@ Enter amount: R1,780.00
 
 **Step 2: System Calculates Bonus**
 ```javascript
-if (tieredRate < 10%) {
-    bonusEarned = minimumCharge - actualCharge;
+amountDueToTBFS = tieredInterest + adminFee + initiationFee
+minimumCharge = balance × 0.10
+
+if (amountDueToTBFS < minimumCharge) {
+    bonusEarned = minimumCharge - amountDueToTBFS;
     member.accumulatedBonus += bonusEarned;  // Added here!
     // member.totalContributions UNCHANGED!   // Important!
+} else {
+    bonusEarned = 0;  // No bonus when already > 10%
 }
 ```
 
@@ -96,8 +126,9 @@ AppState.stockvelReceipts.push({
 • Initiation Fee: R0.00
 
 🎁 Stockvel Member Bonus:
-• Bonus Earned: R260.41
-• Total Accumulated: R260.41
+• Bonus Earned: R200.41
+• Total Accumulated: R200.41
+• (Paid 10% minimum, saved 40.1%)
 
 📈 Loan Status:
 • Remaining Principal: R4,000.00
@@ -176,29 +207,32 @@ member.accumulatedBonus = 260.41
 
 ## 📈 BONUS ACCUMULATION OVER LOAN TERM
 
-### Example: R5,000 Loan / 3 Months
+### Example: R5,000 Loan / 3 Months (R10,500 contributions)
 
 **Month 1:**
 - Balance: R5,000
-- Tiered rate: ~4.85%
-- Bonus earned: R260.41
-- Accumulated: R260.41
+- Amount due to TBFS: R299.59
+- 10% minimum: R500.00
+- Bonus earned: R200.41
+- Accumulated: R200.41
 
 **Month 2:**
 - Balance: R4,000
 - Contributions now: R11,000 (added monthly)
-- Tiered rate: ~3.8%
-- Bonus earned: R248.30
-- Accumulated: R508.71
+- Amount due to TBFS: R239.67
+- 10% minimum: R400.00
+- Bonus earned: R160.33
+- Accumulated: R360.74
 
 **Month 3:**
 - Balance: R3,000
 - Contributions now: R11,500
-- Tiered rate: ~3.5%
-- Bonus earned: R195.20
-- Accumulated: R703.91
+- Amount due to TBFS: R179.75
+- 10% minimum: R300.00
+- Bonus earned: R120.25
+- Accumulated: R480.99
 
-**Total Bonuses: R703.91** 🎉
+**Total Bonuses: R480.99** 🎉
 
 ---
 
@@ -263,18 +297,23 @@ member.accumulatedBonus = 260.41
 
 ### Bonus Calculation in makePayment():
 ```javascript
-if (stockvelMember && loan.tieredRate !== undefined) {
+if (stockvelMember) {
     const remainingBalance = loan.remaining_principal + principalPaid;
-    const minimumInterest = remainingBalance * 0.10;
-    const tieredInterest = remainingBalance * (loan.tieredRate || 0);
     
-    if (tieredInterest < minimumInterest) {
-        const minimumCharge = minimumInterest + 60 + initFeePerMonth;
-        const actualCharge = interestPaid + adminFee + initFeePaid;
-        bonusEarned = Math.max(0, minimumCharge - actualCharge);
-        
+    // What TBFS is actually due
+    const amountDueToTBFS = interestPaid + adminFee + initFeePaid;
+    
+    // 10% minimum
+    const minimumCharge = remainingBalance * 0.10;
+    
+    if (amountDueToTBFS < minimumCharge) {
+        // Member pays 10%, earns bonus on savings
+        bonusEarned = minimumCharge - amountDueToTBFS;
         stockvelMember.accumulatedBonus += bonusEarned;  // ✅
         // Contributions unchanged!                       // ✅
+    } else {
+        // Already paying > 10%, no bonus
+        bonusEarned = 0;
     }
 }
 ```
