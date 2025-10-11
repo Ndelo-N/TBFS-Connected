@@ -1,78 +1,96 @@
 # TBFS Calculation Update Summary
 **Date:** 2025-10-11  
-**Branch:** cursor/update-loan-and-stockvel-calculations-c11f
+**Branch:** cursor/update-loan-and-stockvel-calculations-c11f  
+**Version:** 2.0 (FINAL)
 
 ## ✅ Changes Implemented
 
-### 1. **Standard Loan Calculations (REVISED)**
+### 1. **Standard Loan Calculations (REVISED v2.0)**
 
 #### New Calculation Method:
-- **Monthly TBFS Income** = 30% of outstanding balance
+- **Interest Period:**
+  - Loans ≤ 3 months: Full term
+  - Loans > 3 months: Math.ceil(term/2) with minimum of 3 months
+- **Interest Rate:** 30% per month on declining balance
 - **Total Initiation Fee** = 12% of principal (distributed evenly over term)
 - **Admin Fee** = R60 per month
-- **Interest** = TBFS Income - Monthly Initiation Portion - Admin Fee
+- **Monthly Payment** = EQUAL amount each month (Total Cost ÷ Term)
 
 #### Example: R3,000 loan over 3 months
 ```
-Month 1 (Outstanding R3,000):
-  TBFS Income (30%): R900
-    - Initiation: R120
-    - Admin: R60
-    - Interest: R720
-  Principal Payment: R1,000
-  Total Payment: R1,900
+Interest Period: 3 months (≤ 3, so full term)
 
-Month 2 (Outstanding R2,000):
-  TBFS Income (30%): R600
-    - Initiation: R120
-    - Admin: R60
-    - Interest: R420
-  Principal Payment: R1,000
-  Total Payment: R1,600
+Interest Calculation (declining balance):
+  Month 1: R3,000 × 30% = R900
+  Month 2: R2,000 × 30% = R600
+  Month 3: R1,000 × 30% = R300
+  Total Interest: R1,800
 
-Month 3 (Outstanding R1,000):
-  TBFS Income (30%): R300
-    - Initiation: R120
-    - Admin: R60
-    - Interest: R120
-  Principal Payment: R1,000
-  Total Payment: R1,300
+Spread interest evenly: R1,800 ÷ 3 = R600 per month
+Total Initiation Fee: R360 (R120 per month)
+Total Admin Fees: R180 (R60 per month)
+Total Cost: R3,000 + R1,800 + R360 + R180 = R5,340
+Equal Monthly Payment: R5,340 ÷ 3 = R1,780
+
+Monthly Breakdown:
+Month 1: R1,000 (principal) + R600 (interest) + R120 (init) + R60 (admin) = R1,780
+Month 2: R1,000 (principal) + R600 (interest) + R120 (init) + R60 (admin) = R1,780
+Month 3: R1,000 (principal) + R600 (interest) + R120 (init) + R60 (admin) = R1,780
 
 TOTALS:
-  Total Interest: R1,260
+  Total Interest: R1,800
   Total Initiation Fee: R360
   Total Admin Fees: R180
-  Total TBFS Income: R1,800
-  Total Paid: R4,800
+  Total Paid: R5,340
 ```
 
-### 2. **Stockvel Loan Calculations (UPDATED)**
+#### Example: R3,000 loan over 4 months
+```
+Interest Period: 3 months (Math.ceil(4/2) = 2, but min is 3)
+
+Interest Calculation (declining balance):
+  Month 1: R3,000 × 30% = R900.00
+  Month 2: R2,250 × 30% = R675.00
+  Month 3: R1,500 × 30% = R450.00
+  Total Interest: R2,025.00
+
+Spread interest evenly: R2,025 ÷ 4 = R506.25 per month
+Total Initiation Fee: R360 (R90 per month)
+Total Admin Fees: R240 (R60 per month)
+Total Cost: R3,000 + R2,025 + R360 + R240 = R5,625
+Equal Monthly Payment: R5,625 ÷ 4 = R1,406.25
+
+Monthly Breakdown (all months equal):
+R750 (principal) + R506.25 (interest) + R90 (init) + R60 (admin) = R1,406.25
+```
+
+### 2. **Stockvel Loan Calculations (UPDATED v2.0)**
 
 #### Key Changes:
-- **10% Minimum Interest** reinstated
-- **Tiered calculation** still applies:
-  - >110% of savings: 15%
-  - 105-110%: 12.5%
-  - 75-105%: 10%
-  - 50-75%: 7.5%
-  - 25-50%: 4%
-  - 5-25%: 1.5%
+- **20% Minimum Interest** (doubled from 10%)
+- **Tiered calculation** DOUBLED:
+  - >110% of savings: 30% (was 15%)
+  - 105-110%: 25% (was 12.5%)
+  - 75-105%: 20% (was 10%)
+  - 50-75%: 15% (was 7.5%)
+  - 25-50%: 8% (was 4%)
+  - 5-25%: 3% (was 1.5%)
 
 #### Bonus System:
-- If tiered rate < 10% minimum:
+- If tiered rate < 20% minimum:
   - Member pays at the tiered rate
   - Admin fee adjusted: R60 × (1 - interest rate)
   - **Bonus** = Difference between minimum charge and actual charge
   - Bonus is added to member's contributions after payment received
 
-#### Example: R3,000 loan with 5% calculated rate
+#### Example: R3,000 loan with 10% calculated rate
 ```
-Tiered calculation: 5% = R150 interest
-Admin fee: R60 × (1 - 0.05) = R57
-Total charged: R150 + R57 = R207
+Tiered calculation: 10% = R300 interest
+Admin fee: R60 × (1 - 0.10) = R54
+Total charged: R300 + R54 = R354
 
-10% minimum would be: R300 interest + R60 admin = R360
-Bonus to member: R360 - R207 = R153
+20% minimum would be: R600 interest
+Bonus to member: (R600 + R60) - (R300 + R54) = R306
 ```
 
 ### 3. **Stockvel Membership Tracking (NEW)**
@@ -111,7 +129,7 @@ Stockvel members now have:
 
 ## 🧮 Calculation Formula Changes
 
-### Before (OLD):
+### Before (v1.0):
 ```
 Interest Period = min(Math.ceil(term/2) >= 3 ? Math.ceil(term/2) : 3, term)
 Interest = Sum of (Outstanding × 15%) for interest period
@@ -120,14 +138,31 @@ Admin Fee = R60 per month
 Monthly Payment = (Principal + Interest + Initiation + Admin) / term
 ```
 
-### After (NEW):
+### After (v2.0 FINAL):
 ```
-Monthly TBFS Income = Outstanding Balance × 30%
-Total Initiation Fee = Principal × 12% (distributed over term)
+Interest Period:
+  - If term <= 3: Full term
+  - If term > 3: max(Math.ceil(term/2), 3)
+
+Interest Calculation:
+  - Calculate 30% of declining balance for interest period
+  - Spread total interest evenly across all months
+
+Total Initiation Fee = Principal × 12%
 Monthly Initiation = Total Initiation / term
 Admin Fee = R60 per month
-Interest = TBFS Income - Monthly Initiation - Admin Fee
-Monthly Payment = (Principal / term) + TBFS Income
+
+Total Cost = Principal + Total Interest + Total Initiation + Total Admin
+Monthly Payment = Total Cost / term (EQUAL PAYMENTS)
+```
+
+### Stockvel Changes:
+```
+OLD Tiered Rates: 1.5% - 15%
+NEW Tiered Rates: 3% - 30% (DOUBLED)
+
+OLD Minimum: 10%
+NEW Minimum: 20% (DOUBLED)
 ```
 
 ## 💡 Key Benefits
@@ -145,32 +180,44 @@ Monthly Payment = (Principal / term) + TBFS Income
 4. ✅ Membership tracking for 12-month cycles
 5. ✅ Accumulated bonuses added to contributions
 
-## 📊 Comparison Example
+## 📊 Comparison Examples
 
 ### R3,000 Loan for 3 Months
 
-**OLD METHOD:**
-- Interest calculated for 2 months (Math.ceil(3/2))
-- Total Interest: ~R900 (15% declining balance)
-- Initiation: R270 (9%)
-- Admin: R180 (R60 × 3)
-- **Total Cost: R4,350**
+**OLD METHOD (v1.0):**
+- Interest: 2 months (Math.ceil(3/2)) × 15% declining = ~R900
+- Varying monthly payments: R1,900, R1,600, R1,300
+- Total Cost: R4,800
+
+**NEW METHOD (v2.0 FINAL):**
+- Interest: 3 months (full term) × 30% declining = R1,800
+- **Equal monthly payments: R1,780, R1,780, R1,780**
+- **Total Cost: R5,340**
+- **Increase: R540 (11.3%)**
+
+### R3,000 Loan for 4 Months
 
 **NEW METHOD:**
-- Interest based on 30% of outstanding
-- Total Interest: R1,260
-- Initiation: R360 (12%)
-- Admin: R180 (R60 × 3)
-- **Total Cost: R4,800**
-- **Increase: R450 (10.3%)**
+- Interest Period: 3 months (Math.ceil(4/2) = 2, min 3)
+- Interest: R900 + R675 + R450 = R2,025
+- **Equal monthly payments: R1,406.25 each month**
+- **Total Cost: R5,625**
 
 ## 🎯 Testing Completed
 
-✅ Standard loan calculation verified (3K over 3 months)  
+✅ Standard loan calculation verified:
+  - 3K over 3 months: R1,780 monthly payment ✅
+  - 3K over 4 months: R1,406.25 monthly payment ✅
+✅ Interest period logic verified:
+  - ≤ 3 months: Full term ✅
+  - > 3 months: Math.ceil(term/2) with min 3 ✅
+✅ Equal monthly payments working ✅
+✅ Tiered rates doubled (3%-30%) ✅
+✅ Stockvel minimum updated to 20% ✅
 ✅ Breakdown table displays correctly  
 ✅ Membership date auto-calculation working  
 ✅ Bonus tracking implemented  
-✅ Income table calculator updated
+✅ All display text updated
 
 ## 📝 Next Steps (Optional)
 
@@ -186,6 +233,25 @@ The application is now ready for testing with the new calculation methods. All c
 
 ---
 
+## 🔄 Version History
+
+**v1.0** (Initial implementation)
+- 30% of outstanding calculation
+- Varying monthly payments
+- 10% stockvel minimum
+- 1.5%-15% tiered rates
+
+**v2.0 FINAL** (Current)
+- Interest period logic (≤3 = full, >3 = Math.ceil(term/2) min 3)
+- **Equal monthly payments** (total cost ÷ term)
+- **20% stockvel minimum** (doubled)
+- **3%-30% tiered rates** (doubled)
+- Membership tracking
+- Bonus accumulation
+
+---
+
 **Implementation Date:** October 11, 2025  
 **Implemented by:** AI Assistant  
-**Approved by:** Lindelo (TBFS)
+**Approved by:** Lindelo (TBFS)  
+**Version:** 2.0 FINAL
