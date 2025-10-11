@@ -6,16 +6,15 @@
 
 ---
 
-## 🎯 **8 Main Sections (Tabs)**
+## 🎯 **7 Main Sections (Tabs)**
 
 1. 💳 **Loan Calculator**
 2. 📊 **Dashboard**
 3. 👥 **Clients**
-4. 🎁 **Stockvel** *(NEW!)*
-5. 💰 **Active Loans**
-6. 📈 **Reports**
-7. 💵 **Income Table**
-8. ⚙️ **Settings**
+4. 💰 **Active Loans**
+5. 📈 **Reports**
+6. 💵 **Income Table** *(NEW)*
+7. ⚙️ **Settings**
 
 ---
 
@@ -188,69 +187,7 @@
 
 ---
 
-## 4️⃣ **STOCKVEL TAB** 🎁 *(NEW!)*
-
-### **Member Management:**
-- ✅ **Receipt Recording System**
-  - Record monthly contributions
-  - Record loan payments with bonuses
-  - Record bonus payouts
-  - Add transaction notes
-  - Real-time member info display
-
-- ✅ **Contribution History Tracking**
-  - Complete transaction audit trail
-  - Filter by member
-  - Color-coded transaction types
-  - Running contribution totals
-  - Bonus tracking per transaction
-  - Export to CSV
-
-- ✅ **Membership Renewal Notifications**
-  - Automatic 30-day advance alerts
-  - Color-coded urgency (expired, urgent, warning)
-  - One-click renewal (auto-extends 12 months)
-  - Shows days remaining
-  - Tracks all membership dates
-
-- ✅ **Bonus Payout Reporting**
-  - Total bonuses earned per member
-  - Bonuses already paid out
-  - Pending bonus balances
-  - Last bonus date tracking
-  - Quick payout buttons
-  - Export to Excel
-
-### **Dashboard Statistics:**
-- ✅ Total stockvel members count
-- ✅ Total contributions sum
-- ✅ Total bonuses paid lifetime
-- ✅ Members due for renewal
-
-### **Advanced Calculations:**
-- ✅ **Tiered Interest Structure** (based on absolute amounts):
-  - First 30% of contributions @ 3%
-  - 30-75% of contributions @ 8%
-  - 75-105% of contributions @ 15%
-  - 105-110% of contributions @ 25%
-  - Above 110% @ 30%
-
-- ✅ **10% Minimum Interest** with bonus rewards
-- ✅ **Personalized Tier Boundaries** - shown for each member
-- ✅ **Initiation Fee Waivers** - waived up to contribution amount
-- ✅ **Variable Admin Fees** - R60 × (1 - interest rate)
-
-### **Member Benefits:**
-- Lower interest rates for better savers
-- Bonus system rewards
-- Fee waivers
-- Transparent tier structure
-- Complete transaction history
-- Professional documentation
-
----
-
-## 5️⃣ **ACTIVE LOANS TAB** 💰
+## 4️⃣ **ACTIVE LOANS TAB** 💰
 
 ### **Loan Portfolio View:**
 - ✅ **All Active Loans Display**
@@ -318,7 +255,7 @@
 
 ---
 
-## 6️⃣ **REPORTS TAB** 📈
+## 5️⃣ **REPORTS TAB** 📈
 
 ### **Business Performance Reports:**
 
@@ -397,7 +334,7 @@
 
 ---
 
-## 7️⃣ **INCOME TABLE TAB** 💵
+## 6️⃣ **INCOME TABLE TAB** 💵 *(NEW!)*
 
 ### **Interactive Income Calculator:**
 - ✅ **Customizable Parameters**
@@ -435,7 +372,7 @@
 
 ---
 
-## 8️⃣ **SETTINGS TAB** ⚙️
+## 7️⃣ **SETTINGS TAB** ⚙️
 
 ### **App Version & Updates:**
 - ✅ **Version Display**
