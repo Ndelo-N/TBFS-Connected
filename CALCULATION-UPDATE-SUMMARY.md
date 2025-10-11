@@ -64,10 +64,10 @@ Monthly Breakdown (all months equal):
 R750 (principal) + R506.25 (interest) + R90 (init) + R60 (admin) = R1,406.25
 ```
 
-### 2. **Stockvel Loan Calculations (UPDATED v2.0)**
+### 2. **Stockvel Loan Calculations (UPDATED v2.0 FINAL)**
 
 #### Key Changes:
-- **20% Minimum Interest** (doubled from 10%)
+- **10% Minimum Interest** (kept as is)
 - **Tiered calculation** DOUBLED:
   - >110% of savings: 30% (was 15%)
   - 105-110%: 25% (was 12.5%)
@@ -75,22 +75,52 @@ R750 (principal) + R506.25 (interest) + R90 (init) + R60 (admin) = R1,406.25
   - 50-75%: 15% (was 7.5%)
   - 25-50%: 8% (was 4%)
   - 5-25%: 3% (was 1.5%)
+- **Initiation Fee:** WAIVED up to contributions, 12% on excess (distributed over term)
+- **Equal Monthly Payments:** Total cost divided evenly across all months
 
 #### Bonus System:
-- If tiered rate < 20% minimum:
+- If tiered rate < 10% minimum:
   - Member pays at the tiered rate
   - Admin fee adjusted: R60 × (1 - interest rate)
   - **Bonus** = Difference between minimum charge and actual charge
   - Bonus is added to member's contributions after payment received
 
-#### Example: R3,000 loan with 10% calculated rate
+#### Example 1: R3,000 loan with R5,000 savings (Loan < Savings)
 ```
-Tiered calculation: 10% = R300 interest
-Admin fee: R60 × (1 - 0.10) = R54
-Total charged: R300 + R54 = R354
+Loan-to-Savings Ratio: 60% (50-75% tier = 15%)
+Initiation Fee: R0 (WAIVED - loan ≤ savings)
 
-20% minimum would be: R600 interest
-Bonus to member: (R600 + R60) - (R300 + R54) = R306
+Interest Calculation:
+  Month 1: R3,000 × 15% = R450
+  Month 2: R2,000 × 15% = R300
+  Month 3: R1,000 × 15% = R150
+  Total Interest: R900
+
+Admin Fees (15% rate):
+  R60 × (1 - 0.15) = R51 per month
+  Total Admin: R153
+
+Total Cost: R3,000 + R900 + R153 = R4,053
+Equal Monthly Payment: R1,351
+```
+
+#### Example 2: R5,000 loan with R3,000 savings (Loan > Savings)
+```
+Loan-to-Savings Ratio: 167% (>110% tier = 30%)
+Initiation Fee: (R5,000 - R3,000) × 12% = R240 (R80/month)
+
+Interest Calculation:
+  Month 1: R5,000 × 30% = R1,500
+  Month 2: R3,333 × 30% = R1,000
+  Month 3: R1,667 × 30% = R500
+  Total Interest: R3,000
+
+Admin Fees (30% rate):
+  R60 × (1 - 0.30) = R42 per month
+  Total Admin: R126
+
+Total Cost: R5,000 + R3,000 + R240 + R126 = R8,366
+Equal Monthly Payment: R2,788.67
 ```
 
 ### 3. **Stockvel Membership Tracking (NEW)**
@@ -162,7 +192,10 @@ OLD Tiered Rates: 1.5% - 15%
 NEW Tiered Rates: 3% - 30% (DOUBLED)
 
 OLD Minimum: 10%
-NEW Minimum: 20% (DOUBLED)
+NEW Minimum: 10% (UNCHANGED)
+
+OLD Initiation: 3% up to contributions + 9% on excess
+NEW Initiation: WAIVED up to contributions, 12% on excess
 ```
 
 ## 💡 Key Benefits
@@ -211,9 +244,10 @@ NEW Minimum: 20% (DOUBLED)
 ✅ Interest period logic verified:
   - ≤ 3 months: Full term ✅
   - > 3 months: Math.ceil(term/2) with min 3 ✅
-✅ Equal monthly payments working ✅
+✅ Equal monthly payments working (standard & stockvel) ✅
 ✅ Tiered rates doubled (3%-30%) ✅
-✅ Stockvel minimum updated to 20% ✅
+✅ Stockvel minimum kept at 10% ✅
+✅ Stockvel initiation fee: waived up to contributions, 12% on excess ✅
 ✅ Breakdown table displays correctly  
 ✅ Membership date auto-calculation working  
 ✅ Bonus tracking implemented  
@@ -243,9 +277,10 @@ The application is now ready for testing with the new calculation methods. All c
 
 **v2.0 FINAL** (Current)
 - Interest period logic (≤3 = full, >3 = Math.ceil(term/2) min 3)
-- **Equal monthly payments** (total cost ÷ term)
-- **20% stockvel minimum** (doubled)
+- **Equal monthly payments for ALL loans** (total cost ÷ term)
+- **10% stockvel minimum** (kept as is)
 - **3%-30% tiered rates** (doubled)
+- **Stockvel initiation waived** up to contributions, 12% on excess
 - Membership tracking
 - Bonus accumulation
 
