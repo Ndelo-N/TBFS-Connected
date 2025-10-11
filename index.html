@@ -2659,8 +2659,9 @@
                 
                 // Only calculate interest if there's an outstanding balance
                 if (outstandingBalance > 0) {
-                    // Use the new tiered calculation
-                    let monthlyInterest = calculateTieredStockvelInterest(outstandingBalance, currentSavings);
+                    // Use the new tiered calculation (returns object with totalInterest and tier5Amount)
+                    const tieredResult = calculateTieredStockvelInterest(outstandingBalance, currentSavings, 0);
+                    const monthlyInterest = tieredResult.totalInterest || tieredResult; // Handle both old and new format
                     
                     // No minimum interest rule for Stockvel members - use tiered calculation only
                     console.log(`Tiered interest: R${monthlyInterest.toFixed(2)}`);
@@ -2843,8 +2844,11 @@
                             currentSavings += monthlyContribution;
                         }
                         
-                        // Calculate tiered interest on outstanding balance
-                        const tieredInterest = calculateTieredStockvelInterest(outstandingBalance, currentSavings);
+                        // Calculate tiered interest on outstanding balance (legacy function - defaults monthlyInitiation to 0)
+                        const tieredResult = typeof calculateTieredStockvelInterest(outstandingBalance, currentSavings) === 'object' 
+                            ? calculateTieredStockvelInterest(outstandingBalance, currentSavings, 0)
+                            : { totalInterest: calculateTieredStockvelInterest(outstandingBalance, currentSavings), tier5Amount: 0 };
+                        const tieredInterest = tieredResult.totalInterest || tieredResult;
                         const tieredRate = outstandingBalance > 0 ? (tieredInterest / outstandingBalance) : 0;
                         
                         // Calculate actual interest and fees
