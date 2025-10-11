@@ -2804,7 +2804,7 @@
                 // Calculate loan components
                 const basePrincipalPayment = principal / term;
                 
-                // NEW CALCULATION LOGIC
+                // CALCULATION LOGIC (aligned with Income Table for standard clients)
                 let initiationFee;
                 let totalInterest = 0;
                 let totalAdminFees = 0;
@@ -2923,74 +2923,61 @@
                     
                 } else {
                     // ===== STANDARD LOAN CALCULATION =====
-                    // Interest period: Full term for loans ≤ 3 months, otherwise Math.ceil(term/2) with min 3
+                    // ALIGNED WITH INCOME TABLE METHOD:
+                    // Monthly TBFS Income = 30% of outstanding balance
+                    // This 30% = Interest + Initiation portion + Admin fee
                     // Total initiation fee = 12% of principal (distributed over term)
                     // Admin fee = R60 per month
-                    // Interest = calculated on declining balance for interest period
+                    // Interest = 30% of balance - initiation portion - R60
                     
-                    interestRate = '30% on declining balance';
+                    interestRate = '30% monthly charge (Income Table method)';
                     initiationFee = principal * 0.12;
                     const monthlyInitiationFee = initiationFee / term;
-                    const adminFee = 60;
-                    
-                    // Determine interest calculation period
-                    let interestMonths;
-                    if (term <= 3) {
-                        // For loans <= 3 months, calculate interest for full term
-                        interestMonths = term;
-                    } else {
-                        // For loans > 3 months, use Math.ceil(term/2) with minimum of 3
-                        interestMonths = Math.max(Math.ceil(term / 2), 3);
-                    }
+                    const adminFeePerMonth = 60;
                     
                     let outstandingBalance = principal;
                     
-                    console.log(`\n=== STANDARD LOAN CALCULATION ===`);
+                    console.log(`\n=== STANDARD LOAN CALCULATION (Income Table Rules) ===`);
                     console.log(`Principal: R${principal.toFixed(2)}`);
                     console.log(`Term: ${term} months`);
-                    console.log(`Interest Period: ${interestMonths} months`);
                     console.log(`Total Initiation Fee (12%): R${initiationFee.toFixed(2)}`);
                     console.log(`Monthly Initiation: R${monthlyInitiationFee.toFixed(2)}`);
-                    console.log(`Monthly Admin Fee: R${adminFee.toFixed(2)}`);
+                    console.log(`Monthly Admin Fee: R${adminFeePerMonth.toFixed(2)}`);
                     
-                    // Calculate interest on declining balance for interest period only
-                    for (let month = 1; month <= interestMonths; month++) {
-                        const monthlyInterest = outstandingBalance * 0.30;
-                        totalInterest += monthlyInterest;
-                        
-                        console.log(`\nMonth ${month} (interest calculation):`);
-                        console.log(`  Outstanding: R${outstandingBalance.toFixed(2)}`);
-                        console.log(`  Interest (30%): R${monthlyInterest.toFixed(2)}`);
-                        
-                        outstandingBalance -= basePrincipalPayment;
-                    }
-                    
-                    // Spread interest evenly across all months
-                    const equalMonthlyInterest = totalInterest / term;
-                    totalAdminFees = adminFee * term;
-                    
-                    // Reset for breakdown
-                    outstandingBalance = principal;
-                    
-                    console.log(`\nTotal Interest (${interestMonths} months): R${totalInterest.toFixed(2)}`);
-                    console.log(`Interest per month (spread over ${term} months): R${equalMonthlyInterest.toFixed(2)}`);
-                    console.log(`Total Admin Fees: R${totalAdminFees.toFixed(2)}`);
-                    console.log(`Total Initiation Fee: R${initiationFee.toFixed(2)}`);
-                    
-                    // Build breakdown with equal monthly payments
+                    // Calculate for each month on declining balance
                     for (let month = 1; month <= term; month++) {
+                        // Calculate TBFS income as 30% of outstanding balance
+                        const tbfsIncome = outstandingBalance * 0.30;
+                        
+                        // Break down TBFS income into components
+                        const monthlyInterest = tbfsIncome - monthlyInitiationFee - adminFeePerMonth;
+                        
+                        totalInterest += monthlyInterest;
+                        totalAdminFees += adminFeePerMonth;
+                        
+                        console.log(`\nMonth ${month}:`);
+                        console.log(`  Outstanding: R${outstandingBalance.toFixed(2)}`);
+                        console.log(`  TBFS Income (30%): R${tbfsIncome.toFixed(2)}`);
+                        console.log(`  - Initiation Portion: R${monthlyInitiationFee.toFixed(2)}`);
+                        console.log(`  - Admin Fee: R${adminFeePerMonth.toFixed(2)}`);
+                        console.log(`  = Interest: R${monthlyInterest.toFixed(2)}`);
+                        
                         breakdown.push({
                             month: month,
                             principalPayment: basePrincipalPayment,
-                            interest: equalMonthlyInterest,
-                            adminFee: adminFee,
+                            interest: monthlyInterest,
+                            adminFee: adminFeePerMonth,
                             initiationFee: monthlyInitiationFee,
-                            totalPayment: basePrincipalPayment + equalMonthlyInterest + adminFee + monthlyInitiationFee,
+                            totalPayment: basePrincipalPayment + tbfsIncome,
                             outstandingBalance: Math.max(0, outstandingBalance - basePrincipalPayment)
                         });
                         
                         outstandingBalance -= basePrincipalPayment;
                     }
+                    
+                    console.log(`\nTotal Interest: R${totalInterest.toFixed(2)}`);
+                    console.log(`Total Admin Fees: R${totalAdminFees.toFixed(2)}`);
+                    console.log(`Total Initiation Fee: R${initiationFee.toFixed(2)}`);
                 }
                 
                 // Calculate totals
