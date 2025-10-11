@@ -2885,23 +2885,19 @@
                         // If Tier 5 exists, apply Income Table method
                         let tier5Interest = 0;
                         if (tier5Amount > 0) {
-                            // Income Table: 30% of Tier 5 = TOTAL charge (interest + fees)
+                            // Income Table: 30% of Tier 5 = TOTAL TBFS income from this portion
                             const tier5TotalCharge = tier5Amount * 0.30;
                             
-                            // Calculate proportional fees for Tier 5
-                            const tier5Proportion = tier5Amount / outstandingBalance;
-                            const tier5ProportionalAdmin = adminFee * tier5Proportion;
-                            const tier5ProportionalInitiation = monthlyInitiationFee * tier5Proportion;
-                            
-                            // Tier 5 interest = 30% charge - proportional fees
-                            tier5Interest = tier5TotalCharge - tier5ProportionalAdmin - tier5ProportionalInitiation;
+                            // Subtract FULL loan-level fees (not proportional!)
+                            // Tier 5 interest = 30% charge - admin - initiation
+                            tier5Interest = tier5TotalCharge - adminFee - monthlyInitiationFee;
                             totalTieredInterest += tier5Interest;
                             
                             console.log(`  Tier 5 Income Table:`);
                             console.log(`    Amount: R${tier5Amount.toFixed(2)}`);
                             console.log(`    30% Total Charge: R${tier5TotalCharge.toFixed(2)}`);
-                            console.log(`    - Proportional Admin (${(tier5Proportion * 100).toFixed(1)}%): R${tier5ProportionalAdmin.toFixed(2)}`);
-                            console.log(`    - Proportional Initiation (${(tier5Proportion * 100).toFixed(1)}%): R${tier5ProportionalInitiation.toFixed(2)}`);
+                            console.log(`    - Admin Fee: R${adminFee.toFixed(2)}`);
+                            console.log(`    - Initiation Fee: R${monthlyInitiationFee.toFixed(2)}`);
                             console.log(`    = Interest: R${tier5Interest.toFixed(2)}`);
                         }
                         
