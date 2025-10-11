@@ -1529,7 +1529,7 @@
 
     <script>
         // App Version
-        const APP_VERSION = '1.6.0'; // Enhanced Reports & Analytics - Advanced Charts, Cash Flow Projections, ROCD Trends, Multi-Sheet Excel, Comprehensive PDF
+        const APP_VERSION = '1.7.0'; // Separate Stockvel Member System - Independent Registry, Bonus Decoupling, Full-Term Interest, Membership Validation
         
         // App State Management
         const AppState = {
@@ -4065,8 +4065,8 @@
         // STOCKVEL MANAGEMENT FUNCTIONS
         // ============================================
         
-        // Initialize stockvel receipts storage
-        let stockvelReceipts = JSON.parse(localStorage.getItem('stockvelReceipts') || '[]');
+        // Stockvel receipts now managed in AppState.stockvelReceipts
+        // OLD: let stockvelReceipts = JSON.parse(localStorage.getItem('stockvelReceipts') || '[]');
         
         // Load member info when selected for receipt
         function loadMemberReceiptInfo() {
@@ -4076,7 +4076,7 @@
                 return;
             }
             
-            const client = appState.clients.find(c => c.accountNumber === accountNumber);
+            const client = AppState.clients.find(c => c.accountNumber === accountNumber);
             if (client && client.isStockvelMember) {
                 document.getElementById('memberCurrentContribs').textContent = `R${(client.totalContributions || 0).toFixed(2)}`;
                 document.getElementById('memberCurrentBonus').textContent = `R${(client.accumulatedBonus || 0).toFixed(2)}`;
@@ -4179,11 +4179,11 @@
         // Display contribution history
         function displayContributionHistory() {
             const tbody = document.getElementById('contributionHistoryBody');
-            const filterAccount = document.getElementById('historyMemberSelect').value;
+            const filterMember = document.getElementById('historyMemberSelect').value;
             
-            let filtered = stockvelReceipts;
-            if (filterAccount) {
-                filtered = stockvelReceipts.filter(r => r.accountNumber === filterAccount);
+            let filtered = AppState.stockvelReceipts;
+            if (filterMember) {
+                filtered = AppState.stockvelReceipts.filter(r => r.memberNumber == filterMember);
             }
             
             if (filtered.length === 0) {
@@ -4234,7 +4234,7 @@
         // Export contribution history
         function exportContributionHistory() {
             const headers = ['Date', 'Member', 'Type', 'Amount', 'New Total', 'Bonus Added', 'Notes'];
-            const data = stockvelReceipts.map(r => [
+            const data = AppState.stockvelReceipts.map(r => [
                 new Date(r.date).toLocaleDateString('en-ZA'),
                 r.memberName,
                 formatReceiptType(r.type),
@@ -4259,7 +4259,7 @@
             const today = new Date();
             const thirtyDaysFromNow = new Date(today.getTime() + (30 * 24 * 60 * 60 * 1000));
             
-            const stockvelMembers = appState.clients.filter(c => c.isStockvelMember && c.membershipEndDate);
+            const stockvelMembers = AppState.stockvelMembers.filter(m => m.membershipEndDate);
             
             const needsRenewal = stockvelMembers.filter(member => {
                 const endDate = new Date(member.membershipEndDate);
@@ -4281,8 +4281,8 @@
                     <div style="padding: 15px; margin-bottom: 10px; border-radius: 8px; border-left: 4px solid ${urgency === 'expired' ? '#e74c3c' : urgency === 'urgent' ? '#f39c12' : '#f1c40f'}; background: ${urgency === 'expired' ? '#fee' : urgency === 'urgent' ? '#fff3cd' : '#fffbf0'};">
                         <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
                             <div>
-                                <strong style="font-size: 16px;">${member.firstName} ${member.lastName}</strong>
-                                <span style="margin-left: 10px; color: #7f8c8d;">(${member.accountNumber})</span>
+                                <strong style="font-size: 16px;">${member.name}</strong>
+                                <span style="margin-left: 10px; color: #7f8c8d;">(Member #${member.memberNumber})</span>
                                 <br>
                                 <span style="color: ${urgency === 'expired' ? '#e74c3c' : urgency === 'urgent' ? '#f39c12' : '#f1c40f'}; font-weight: 600;">
                                     ${isExpired ? `⚠️ EXPIRED ${Math.abs(daysLeft)} days ago` : `⏰ ${daysLeft} days left`}
@@ -4290,8 +4290,8 @@
                                 <span style="margin-left: 10px; color: #7f8c8d;">Expires: ${endDate.toLocaleDateString('en-ZA')}</span>
                             </div>
                             <div style="display: flex; gap: 8px;">
-                                <button onclick="generateMemberDisbursementPDF('${member.accountNumber}')" class="export-btn" style="padding: 8px 16px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);">📄 Generate Statement</button>
-                                <button onclick="renewMembership('${member.accountNumber}')" class="calculate-btn" style="padding: 8px 16px;">🔄 Renew Membership</button>
+                                <button onclick="viewMemberDetails(${member.memberNumber})" class="export-btn" style="padding: 8px 16px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);">👁️ View Details</button>
+                                <button onclick="renewMembershipByNumber(${member.memberNumber})" class="calculate-btn" style="padding: 8px 16px;">🔄 Renew Membership</button>
                             </div>
                         </div>
                     </div>
@@ -4299,9 +4299,9 @@
             }).join('');
         }
         
-        // Renew membership
+        // Renew membership (OLD - kept for backward compatibility with old clients)
         function renewMembership(accountNumber) {
-            const client = appState.clients.find(c => c.accountNumber === accountNumber);
+            const client = AppState.clients.find(c => c.accountNumber === accountNumber);
             if (!client) return;
             
             const currentEndDate = client.membershipEndDate ? new Date(client.membershipEndDate) : new Date();
@@ -4314,7 +4314,7 @@
                 client.membershipStartDate = new Date().toISOString().split('T')[0];
             }
             
-            localStorage.setItem('clients', JSON.stringify(appState.clients));
+            AppState.save();
             
             alert(`✅ Membership renewed for ${client.firstName} ${client.lastName}!\\nNew expiry date: ${newEndDate.toLocaleDateString('en-ZA')}`);
             
@@ -4325,7 +4325,7 @@
         // Generate bonus report
         function generateBonusReport() {
             const tbody = document.getElementById('bonusReportBody');
-            const stockvelMembers = appState.clients.filter(c => c.isStockvelMember);
+            const stockvelMembers = AppState.stockvelMembers;
             
             if (stockvelMembers.length === 0) {
                 tbody.innerHTML = '<tr><td colspan="6" style="text-align: center; color: #7f8c8d; padding: 40px;">No stockvel members found</td></tr>';
@@ -4333,7 +4333,7 @@
             }
             
             tbody.innerHTML = stockvelMembers.map(member => {
-                const memberReceipts = stockvelReceipts.filter(r => r.accountNumber === member.accountNumber);
+                const memberReceipts = AppState.stockvelReceipts.filter(r => r.accountNumber === member.accountNumber);
                 const totalBonusesEarned = memberReceipts.filter(r => r.type === 'loan_payment').reduce((sum, r) => sum + (r.bonusAdded || 0), 0);
                 const bonusesPaidOut = Math.abs(memberReceipts.filter(r => r.type === 'bonus_payout').reduce((sum, r) => sum + r.amount, 0));
                 const pendingBonuses = member.accumulatedBonus || 0;
@@ -4359,7 +4359,7 @@
         
         // Payout bonus
         function payoutBonus(accountNumber) {
-            const client = appState.clients.find(c => c.accountNumber === accountNumber);
+            const client = AppState.clients.find(c => c.accountNumber === accountNumber);
             if (!client || !client.accumulatedBonus || client.accumulatedBonus <= 0) {
                 alert('No bonus to payout');
                 return;
@@ -4388,9 +4388,9 @@
             
             client.accumulatedBonus -= amount;
             
-            stockvelReceipts.push(receipt);
-            localStorage.setItem('stockvelReceipts', JSON.stringify(stockvelReceipts));
-            localStorage.setItem('clients', JSON.stringify(appState.clients));
+            AppState.stockvelReceipts.push(receipt);
+            // localStorage now handled by AppState.save()
+            localStorage.setItem('clients', JSON.stringify(AppState.clients));
             
             alert(`✅ Bonus of R${amount.toFixed(2)} paid out to ${client.firstName} ${client.lastName}`);
             
@@ -4400,11 +4400,11 @@
         
         // Export bonus report
         function exportBonusReport() {
-            const stockvelMembers = appState.clients.filter(c => c.isStockvelMember);
+            const stockvelMembers = AppState.clients.filter(c => c.isStockvelMember);
             
             const headers = ['Member Name', 'Account Number', 'Total Bonuses Earned', 'Bonuses Paid Out', 'Pending Bonuses', 'Last Bonus Date'];
             const data = stockvelMembers.map(member => {
-                const memberReceipts = stockvelReceipts.filter(r => r.accountNumber === member.accountNumber);
+                const memberReceipts = AppState.stockvelReceipts.filter(r => r.accountNumber === member.accountNumber);
                 const totalBonusesEarned = memberReceipts.filter(r => r.type === 'loan_payment').reduce((sum, r) => sum + (r.bonusAdded || 0), 0);
                 const bonusesPaidOut = Math.abs(memberReceipts.filter(r => r.type === 'bonus_payout').reduce((sum, r) => sum + r.amount, 0));
                 const lastBonusReceipt = memberReceipts.filter(r => r.type === 'loan_payment' && r.bonusAdded > 0).sort((a, b) => new Date(b.date) - new Date(a.date))[0];
@@ -4430,7 +4430,7 @@
         
         // Generate Member Disbursement PDF
         function generateMemberDisbursementPDF(accountNumber) {
-            const client = appState.clients.find(c => c.accountNumber === accountNumber);
+            const client = AppState.clients.find(c => c.accountNumber === accountNumber);
             if (!client || !client.isStockvelMember) {
                 alert('Member not found');
                 return;
@@ -4446,7 +4446,7 @@
             const doc = new jsPDF();
             
             // Get member receipts
-            const memberReceipts = stockvelReceipts.filter(r => r.accountNumber === accountNumber);
+            const memberReceipts = AppState.stockvelReceipts.filter(r => r.accountNumber === accountNumber);
             
             // Calculate totals for current month
             const today = new Date();
@@ -5153,6 +5153,9 @@
                     loans: AppState.loans,
                     transactionHistory: AppState.transactionHistory,
                     nextAccountNumber: AppState.nextAccountNumber,
+                    stockvelMembers: AppState.stockvelMembers,
+                    stockvelReceipts: AppState.stockvelReceipts,
+                    nextMemberNumber: AppState.nextMemberNumber,
                     timestamp: new Date().toISOString()
                 };
                 
