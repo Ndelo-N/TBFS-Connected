@@ -1,4 +1,4 @@
-const CACHE_NAME = 'tbfs-loan-manager-v25'; // Increment when updating
+const CACHE_NAME = 'tbfs-loan-manager-v27'; // v1.7.0 - Separate Stockvel Member System
 const urlsToCache = [
   './',
   './index.html',
