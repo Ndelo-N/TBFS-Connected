@@ -688,6 +688,11 @@
                             <input type="text" id="accountNumber" name="accountNumber" required>
                         </div>
                         <div class="form-group">
+                            <label for="memberNumber">Member # (Optional):</label>
+                            <input type="number" id="memberNumber" name="memberNumber" placeholder="e.g. 1001 - auto-fills stockvel data">
+                            <small style="color: #7f8c8d; font-size: 11px;">💡 Enter Member # to auto-populate stockvel fields</small>
+                        </div>
+                        <div class="form-group">
                             <label for="principal">Loan Amount (R):</label>
                             <input type="number" id="principal" name="principal" min="100" step="100" required>
                         </div>
@@ -2455,6 +2460,61 @@
                 console.error('Form not found');
             }
 
+            // Auto-detect stockvel member when Member Number entered
+            function checkForStockvelMember() {
+                const memberNumberInput = document.getElementById('memberNumber').value.trim();
+                
+                if (!memberNumberInput) return; // Need member number
+                
+                const memberNum = parseInt(memberNumberInput);
+                if (isNaN(memberNum)) return;
+                
+                // Search for member by MEMBER NUMBER (guaranteed unique!)
+                const member = AppState.stockvelMembers.find(m => m.memberNumber === memberNum);
+                
+                if (member) {
+                    // Member found! Auto-populate ALL fields
+                    
+                    // Fill name fields
+                    const nameParts = member.name.split(' ');
+                    const firstName = nameParts[0] || '';
+                    const lastName = nameParts.slice(1).join(' ') || '';
+                    
+                    document.getElementById('firstName').value = firstName;
+                    document.getElementById('lastName').value = lastName;
+                    
+                    // Fill account number if available
+                    if (member.account_number) {
+                        document.getElementById('accountNumber').value = member.account_number;
+                    }
+                    
+                    // Check stockvel member checkbox
+                    document.getElementById('stockvelMember').checked = true;
+                    document.getElementById('stockvelFields').style.display = 'block';
+                    
+                    // Populate member data
+                    document.getElementById('totalContributions').value = member.totalContributions || 0;
+                    document.getElementById('monthlyContribution').value = member.monthlyContribution || 0;
+                    document.getElementById('membershipStartDate').value = member.membershipStartDate || '';
+                    document.getElementById('membershipEndDate').value = member.membershipEndDate || '';
+                    document.getElementById('accumulatedBonus').value = member.accumulatedBonus || 0;
+                    
+                    // Set required
+                    document.getElementById('totalContributions').required = true;
+                    document.getElementById('monthlyContribution').required = true;
+                    document.getElementById('membershipStartDate').required = true;
+                    
+                    // Show success message
+                    alert(`✅ Stockvel Member Detected!\n\nMember #: ${member.memberNumber}\nAccount #: ${member.account_number || 'N/A'}\nName: ${member.name}\nContributions: R${member.totalContributions.toFixed(2)}\nBonus Balance: R${member.accumulatedBonus.toFixed(2)}\n\nAll fields auto-filled!`);
+                } else {
+                    alert(`❌ Member #${memberNum} not found!\n\nPlease check the Member # or register this member in the Stockvel tab first.`);
+                }
+            }
+            
+            // Attach auto-detection to Member Number field
+            const memberNumberField = document.getElementById('memberNumber');
+            if (memberNumberField) memberNumberField.addEventListener('blur', checkForStockvelMember);
+            
             // Handle Stockvel Member checkbox
             const stockvelCheckbox = document.getElementById('stockvelMember');
             const stockvelFields = document.getElementById('stockvelFields');
@@ -2497,7 +2557,9 @@
 
         // Loan calculation functions
         function calculateTieredStockvelInterest(loanAmount, savingsAmount) {
-            let totalInterest = 0;
+            let tiers1to4Interest = 0;
+            let tier5Amount = 0;
+            let tier1to4Amount = 0;
             
             console.log(`\nTiered calculation for R${loanAmount.toFixed(2)} loan with R${savingsAmount.toFixed(2)} contributions`);
             
@@ -2507,7 +2569,7 @@
                 tier2_max: savingsAmount * 0.75,  // Up to 75% of contributions @ 8%
                 tier3_max: savingsAmount * 1.05,  // Up to 105% of contributions @ 15%
                 tier4_max: savingsAmount * 1.10,  // Up to 110% of contributions @ 25%
-                // Above 110% @ 30%
+                // Above 110% @ 30% (Income Table)
             };
             
             console.log(`Tier boundaries:`);
@@ -2515,7 +2577,7 @@
             console.log(`  Tier 2 (8%): R${boundaries.tier1_max.toFixed(2)} - R${boundaries.tier2_max.toFixed(2)}`);
             console.log(`  Tier 3 (15%): R${boundaries.tier2_max.toFixed(2)} - R${boundaries.tier3_max.toFixed(2)}`);
             console.log(`  Tier 4 (25%): R${boundaries.tier3_max.toFixed(2)} - R${boundaries.tier4_max.toFixed(2)}`);
-            console.log(`  Tier 5 (30%): Above R${boundaries.tier4_max.toFixed(2)}`);
+            console.log(`  Tier 5 (30% Income Table): Above R${boundaries.tier4_max.toFixed(2)}`);
             
             let remainingLoan = loanAmount;
             
@@ -2523,7 +2585,8 @@
             if (remainingLoan > 0) {
                 const tierAmount = Math.min(remainingLoan, boundaries.tier1_max);
                 const tierInterest = tierAmount * 0.03;
-                totalInterest += tierInterest;
+                tiers1to4Interest += tierInterest;
+                tier1to4Amount += tierAmount;
                 console.log(`Tier 1 (0-30%): R${tierAmount.toFixed(2)} × 3% = R${tierInterest.toFixed(2)}`);
                 remainingLoan -= tierAmount;
             }
@@ -2532,7 +2595,8 @@
             if (remainingLoan > 0) {
                 const tierAmount = Math.min(remainingLoan, boundaries.tier2_max - boundaries.tier1_max);
                 const tierInterest = tierAmount * 0.08;
-                totalInterest += tierInterest;
+                tiers1to4Interest += tierInterest;
+                tier1to4Amount += tierAmount;
                 console.log(`Tier 2 (30-75%): R${tierAmount.toFixed(2)} × 8% = R${tierInterest.toFixed(2)}`);
                 remainingLoan -= tierAmount;
             }
@@ -2541,7 +2605,8 @@
             if (remainingLoan > 0) {
                 const tierAmount = Math.min(remainingLoan, boundaries.tier3_max - boundaries.tier2_max);
                 const tierInterest = tierAmount * 0.15;
-                totalInterest += tierInterest;
+                tiers1to4Interest += tierInterest;
+                tier1to4Amount += tierAmount;
                 console.log(`Tier 3 (75-105%): R${tierAmount.toFixed(2)} × 15% = R${tierInterest.toFixed(2)}`);
                 remainingLoan -= tierAmount;
             }
@@ -2550,21 +2615,31 @@
             if (remainingLoan > 0) {
                 const tierAmount = Math.min(remainingLoan, boundaries.tier4_max - boundaries.tier3_max);
                 const tierInterest = tierAmount * 0.25;
-                totalInterest += tierInterest;
+                tiers1to4Interest += tierInterest;
+                tier1to4Amount += tierAmount;
                 console.log(`Tier 4 (105-110%): R${tierAmount.toFixed(2)} × 25% = R${tierInterest.toFixed(2)}`);
                 remainingLoan -= tierAmount;
             }
             
-            // Tier 5: Above 110% of contributions @ 30%
+            // Tier 5: Above 110% of contributions
+            // This will be calculated using Income Table method in the main function
             if (remainingLoan > 0) {
-                const tierAmount = remainingLoan;
-                const tierInterest = tierAmount * 0.30;
-                totalInterest += tierInterest;
-                console.log(`Tier 5 (>110%): R${tierAmount.toFixed(2)} × 30% = R${tierInterest.toFixed(2)}`);
+                tier5Amount = remainingLoan;
+                console.log(`Tier 5 (>110%): R${tier5Amount.toFixed(2)} [Income Table method]`);
             }
             
-            console.log(`Total tiered interest: R${totalInterest.toFixed(2)}`);
-            return totalInterest;
+            console.log(`Tiers 1-4 interest: R${tiers1to4Interest.toFixed(2)}`);
+            console.log(`Tiers 1-4 amount: R${tier1to4Amount.toFixed(2)}`);
+            if (tier5Amount > 0) {
+                console.log(`Tier 5 amount: R${tier5Amount.toFixed(2)} (to be calculated with Income Table)`);
+            }
+            
+            return { 
+                tiers1to4Interest, 
+                tier1to4Amount, 
+                tier5Amount,
+                tier4Boundary: boundaries.tier4_max
+            };
         }
 
         function calculateStockvelInterest(principal, term, totalContributions, monthlyContribution) {
@@ -2600,7 +2675,8 @@
                 // Only calculate interest if there's an outstanding balance
                 if (outstandingBalance > 0) {
                     // Use the new tiered calculation
-                    let monthlyInterest = calculateTieredStockvelInterest(outstandingBalance, currentSavings);
+                    const tieredResult = calculateTieredStockvelInterest(outstandingBalance, currentSavings);
+                    const monthlyInterest = tieredResult.tiers1to4Interest; // Legacy function uses tiers 1-4 only
                     
                     // No minimum interest rule for Stockvel members - use tiered calculation only
                     console.log(`Tiered interest: R${monthlyInterest.toFixed(2)}`);
@@ -2744,7 +2820,7 @@
                 // Calculate loan components
                 const basePrincipalPayment = principal / term;
                 
-                // NEW CALCULATION LOGIC
+                // CALCULATION LOGIC (aligned with Income Table for standard clients)
                 let initiationFee;
                 let totalInterest = 0;
                 let totalAdminFees = 0;
@@ -2783,45 +2859,90 @@
                             currentSavings += monthlyContribution;
                         }
                         
-                        // Calculate tiered interest on outstanding balance
-                        const tieredInterest = calculateTieredStockvelInterest(outstandingBalance, currentSavings);
-                        const tieredRate = outstandingBalance > 0 ? (tieredInterest / outstandingBalance) : 0;
+                        // Calculate tiered interest using NEW LOGIC:
+                        // - Tiers 1-4 interest calculated normally
+                        // - If Tier 5 exists, use Income Table method
+                        // - Admin fee based on Tiers 1-4 rate only
+                        const tieredResult = calculateTieredStockvelInterest(outstandingBalance, currentSavings);
+                        const tiers1to4Interest = tieredResult.tiers1to4Interest;
+                        const tier1to4Amount = tieredResult.tier1to4Amount;
+                        const tier5Amount = tieredResult.tier5Amount;
                         
-                        // Apply 10% minimum
+                        let totalTieredInterest = tiers1to4Interest;
+                        let adminFee = 0;
+                        
+                        // Calculate admin fee based on Tiers 1-4 effective rate
+                        if (tier1to4Amount > 0) {
+                            const tiers1to4Rate = tiers1to4Interest / tier1to4Amount;
+                            adminFee = 60 * (1 - tiers1to4Rate);
+                            console.log(`  Tiers 1-4 effective rate: ${(tiers1to4Rate * 100).toFixed(2)}%`);
+                            console.log(`  Admin fee (based on Tiers 1-4): R${adminFee.toFixed(2)}`);
+                        } else {
+                            // No tiers 1-4, use full R60
+                            adminFee = 60;
+                        }
+                        
+                        // If Tier 5 exists, apply Income Table method
+                        let tier5Interest = 0;
+                        if (tier5Amount > 0) {
+                            // Income Table: 30% of Tier 5 = TOTAL TBFS income from this portion
+                            const tier5TotalCharge = tier5Amount * 0.30;
+                            
+                            // Subtract FULL loan-level fees (not proportional!)
+                            // Tier 5 interest = 30% charge - admin - initiation
+                            tier5Interest = tier5TotalCharge - adminFee - monthlyInitiationFee;
+                            totalTieredInterest += tier5Interest;
+                            
+                            console.log(`  Tier 5 Income Table:`);
+                            console.log(`    Amount: R${tier5Amount.toFixed(2)}`);
+                            console.log(`    30% Total Charge: R${tier5TotalCharge.toFixed(2)}`);
+                            console.log(`    - Admin Fee: R${adminFee.toFixed(2)}`);
+                            console.log(`    - Initiation Fee: R${monthlyInitiationFee.toFixed(2)}`);
+                            console.log(`    = Interest: R${tier5Interest.toFixed(2)}`);
+                        }
+                        
+                        const tieredRate = outstandingBalance > 0 ? (totalTieredInterest / outstandingBalance) : 0;
+                        
+                        // Apply 10% minimum check
+                        let actualInterest, monthlyBonus = 0;
                         const minimumInterest = outstandingBalance * 0.10;
-                        const actualInterest = Math.max(tieredInterest, minimumInterest);
-                        
-                        // Calculate admin fee based on actual rate
-                        const actualRate = outstandingBalance > 0 ? (actualInterest / outstandingBalance) : 0;
-                        const adminFee = 60 * (1 - actualRate);
+                        actualInterest = Math.max(totalTieredInterest, minimumInterest);
                         
                         // If we used the minimum, calculate bonus
-                        let monthlyBonus = 0;
-                        if (actualInterest > tieredInterest) {
+                        if (actualInterest > totalTieredInterest) {
                             // Bonus = difference between minimum charge and what we actually charged
                             const actualCharge = actualInterest + adminFee + monthlyInitiationFee;
                             const minimumCharge = minimumInterest + 60 + monthlyInitiationFee;
                             monthlyBonus = minimumCharge - actualCharge;
                         }
                         
+                        const actualRate = outstandingBalance > 0 ? (actualInterest / outstandingBalance) : 0;
+                        
                         totalBonus += monthlyBonus;
                         totalInterest += actualInterest;
                         totalAdminFees += adminFee;
                         
                         monthlyDetails.push({
-                            tieredInterest,
+                            tieredInterest: totalTieredInterest,
                             tieredRate,
                             actualInterest,
                             actualRate,
                             adminFee,
                             monthlyBonus,
-                            outstandingBalance
+                            outstandingBalance,
+                            tiers1to4Interest,
+                            tier5Interest,
+                            tier5Amount
                         });
                         
                         console.log(`\nMonth ${month}:`);
                         console.log(`  Outstanding: R${outstandingBalance.toFixed(2)}`);
                         console.log(`  Savings: R${currentSavings.toFixed(2)}`);
-                        console.log(`  Tiered Interest: R${tieredInterest.toFixed(2)} (${(tieredRate * 100).toFixed(1)}%)`);
+                        console.log(`  Tiers 1-4 Interest: R${tiers1to4Interest.toFixed(2)}`);
+                        if (tier5Amount > 0) {
+                            console.log(`  Tier 5 Interest: R${tier5Interest.toFixed(2)}`);
+                        }
+                        console.log(`  Total Tiered Interest: R${totalTieredInterest.toFixed(2)} (${(tieredRate * 100).toFixed(1)}%)`);
                         console.log(`  Actual Interest: R${actualInterest.toFixed(2)} (${(actualRate * 100).toFixed(1)}%)`);
                         console.log(`  Admin Fee: R${adminFee.toFixed(2)}`);
                         console.log(`  Initiation: R${monthlyInitiationFee.toFixed(2)}`);
@@ -2863,74 +2984,61 @@
                     
                 } else {
                     // ===== STANDARD LOAN CALCULATION =====
-                    // Interest period: Full term for loans ≤ 3 months, otherwise Math.ceil(term/2) with min 3
+                    // ALIGNED WITH INCOME TABLE METHOD:
+                    // Monthly TBFS Income = 30% of outstanding balance
+                    // This 30% = Interest + Initiation portion + Admin fee
                     // Total initiation fee = 12% of principal (distributed over term)
                     // Admin fee = R60 per month
-                    // Interest = calculated on declining balance for interest period
+                    // Interest = 30% of balance - initiation portion - R60
                     
-                    interestRate = '30% on declining balance';
+                    interestRate = '30% monthly charge (Income Table method)';
                     initiationFee = principal * 0.12;
                     const monthlyInitiationFee = initiationFee / term;
-                    const adminFee = 60;
-                    
-                    // Determine interest calculation period
-                    let interestMonths;
-                    if (term <= 3) {
-                        // For loans <= 3 months, calculate interest for full term
-                        interestMonths = term;
-                    } else {
-                        // For loans > 3 months, use Math.ceil(term/2) with minimum of 3
-                        interestMonths = Math.max(Math.ceil(term / 2), 3);
-                    }
+                    const adminFeePerMonth = 60;
                     
                     let outstandingBalance = principal;
                     
-                    console.log(`\n=== STANDARD LOAN CALCULATION ===`);
+                    console.log(`\n=== STANDARD LOAN CALCULATION (Income Table Rules) ===`);
                     console.log(`Principal: R${principal.toFixed(2)}`);
                     console.log(`Term: ${term} months`);
-                    console.log(`Interest Period: ${interestMonths} months`);
                     console.log(`Total Initiation Fee (12%): R${initiationFee.toFixed(2)}`);
                     console.log(`Monthly Initiation: R${monthlyInitiationFee.toFixed(2)}`);
-                    console.log(`Monthly Admin Fee: R${adminFee.toFixed(2)}`);
+                    console.log(`Monthly Admin Fee: R${adminFeePerMonth.toFixed(2)}`);
                     
-                    // Calculate interest on declining balance for interest period only
-                    for (let month = 1; month <= interestMonths; month++) {
-                        const monthlyInterest = outstandingBalance * 0.30;
-                        totalInterest += monthlyInterest;
-                        
-                        console.log(`\nMonth ${month} (interest calculation):`);
-                        console.log(`  Outstanding: R${outstandingBalance.toFixed(2)}`);
-                        console.log(`  Interest (30%): R${monthlyInterest.toFixed(2)}`);
-                        
-                        outstandingBalance -= basePrincipalPayment;
-                    }
-                    
-                    // Spread interest evenly across all months
-                    const equalMonthlyInterest = totalInterest / term;
-                    totalAdminFees = adminFee * term;
-                    
-                    // Reset for breakdown
-                    outstandingBalance = principal;
-                    
-                    console.log(`\nTotal Interest (${interestMonths} months): R${totalInterest.toFixed(2)}`);
-                    console.log(`Interest per month (spread over ${term} months): R${equalMonthlyInterest.toFixed(2)}`);
-                    console.log(`Total Admin Fees: R${totalAdminFees.toFixed(2)}`);
-                    console.log(`Total Initiation Fee: R${initiationFee.toFixed(2)}`);
-                    
-                    // Build breakdown with equal monthly payments
+                    // Calculate for each month on declining balance
                     for (let month = 1; month <= term; month++) {
+                        // Calculate TBFS income as 30% of outstanding balance
+                        const tbfsIncome = outstandingBalance * 0.30;
+                        
+                        // Break down TBFS income into components
+                        const monthlyInterest = tbfsIncome - monthlyInitiationFee - adminFeePerMonth;
+                        
+                        totalInterest += monthlyInterest;
+                        totalAdminFees += adminFeePerMonth;
+                        
+                        console.log(`\nMonth ${month}:`);
+                        console.log(`  Outstanding: R${outstandingBalance.toFixed(2)}`);
+                        console.log(`  TBFS Income (30%): R${tbfsIncome.toFixed(2)}`);
+                        console.log(`  - Initiation Portion: R${monthlyInitiationFee.toFixed(2)}`);
+                        console.log(`  - Admin Fee: R${adminFeePerMonth.toFixed(2)}`);
+                        console.log(`  = Interest: R${monthlyInterest.toFixed(2)}`);
+                        
                         breakdown.push({
                             month: month,
                             principalPayment: basePrincipalPayment,
-                            interest: equalMonthlyInterest,
-                            adminFee: adminFee,
+                            interest: monthlyInterest,
+                            adminFee: adminFeePerMonth,
                             initiationFee: monthlyInitiationFee,
-                            totalPayment: basePrincipalPayment + equalMonthlyInterest + adminFee + monthlyInitiationFee,
+                            totalPayment: basePrincipalPayment + tbfsIncome,
                             outstandingBalance: Math.max(0, outstandingBalance - basePrincipalPayment)
                         });
                         
                         outstandingBalance -= basePrincipalPayment;
                     }
+                    
+                    console.log(`\nTotal Interest: R${totalInterest.toFixed(2)}`);
+                    console.log(`Total Admin Fees: R${totalAdminFees.toFixed(2)}`);
+                    console.log(`Total Initiation Fee: R${initiationFee.toFixed(2)}`);
                 }
                 
                 // Calculate totals
@@ -3550,8 +3658,10 @@
                 
                 // Calculate tiered rate for bonus calculation later
                 if (loanData.totalContributions > 0) {
-                    const tieredInterest = calculateTieredStockvelInterest(loanData.principal, loanData.totalContributions);
-                    tieredRate = tieredInterest / loanData.principal;
+                    const tieredResult = calculateTieredStockvelInterest(loanData.principal, loanData.totalContributions);
+                    // Use tiers 1-4 interest only for bonus calculation
+                    const tieredInterest = tieredResult.tiers1to4Interest;
+                    tieredRate = loanData.totalContributions > 0 ? (tieredInterest / loanData.totalContributions) : 0;
                 }
             }
             
@@ -4778,7 +4888,7 @@
             const receipts = AppState.stockvelReceipts.filter(r => r.memberNumber === memberNumber);
             const receiptCount = receipts.length;
             
-            alert(`👤 Member Details\n\nMember #: ${member.memberNumber}\nName: ${member.name}\nPhone: ${member.phone}\nEmail: ${member.email || 'Not provided'}\n\n💰 Financial Summary:\nTotal Contributions: R${member.totalContributions.toFixed(2)}\nAccumulated Bonus: R${member.accumulatedBonus.toFixed(2)}\nMonthly Contribution: R${member.monthlyContribution.toFixed(2)}\n\n📅 Membership:\nStart Date: ${new Date(member.membershipStartDate).toLocaleDateString()}\nEnd Date: ${new Date(member.membershipEndDate).toLocaleDateString()}\nStatus: ${member.status}\n\n📊 Activity:\nTotal Receipts: ${receiptCount}`);
+            alert(`👤 Member Details\n\nMember #: ${member.memberNumber}\nAccount #: ${member.account_number || 'Not provided'}\nName: ${member.name}\nPhone: ${member.phone || 'Not provided'}\nEmail: ${member.email || 'Not provided'}\n\n💰 Financial Summary:\nTotal Contributions: R${member.totalContributions.toFixed(2)}\nAccumulated Bonus: R${member.accumulatedBonus.toFixed(2)}\nMonthly Contribution: R${member.monthlyContribution.toFixed(2)}\n\n📅 Membership:\nStart Date: ${new Date(member.membershipStartDate).toLocaleDateString()}\nEnd Date: ${new Date(member.membershipEndDate).toLocaleDateString()}\nStatus: ${member.status}\n\n📊 Activity:\nTotal Receipts: ${receiptCount}`);
         }
 
         // RENEW MEMBERSHIP BY MEMBER NUMBER
@@ -5269,8 +5379,12 @@
                     
                     // Restore data
                     localStorage.setItem('tbfsAppState', JSON.stringify(data));
-                    AppState.init();
-                    alert('✅ Data restored from cloud successfully!');
+                    alert('✅ Data restored from cloud successfully!\n\nReloading app to display restored data...');
+                    
+                    // Reload page to refresh all views
+                    setTimeout(() => {
+                        location.reload();
+                    }, 500);
                 } catch (error) {
                     // Only show error for actual errors (not 404 which we handled above)
                     alert('❌ Failed to restore from cloud: ' + error.message);
