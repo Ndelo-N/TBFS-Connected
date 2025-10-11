@@ -4076,7 +4076,7 @@
                 return;
             }
             
-            const client = appState.clients.find(c => c.accountNumber === accountNumber);
+            const client = AppState.clients.find(c => c.accountNumber === accountNumber);
             if (client && client.isStockvelMember) {
                 document.getElementById('memberCurrentContribs').textContent = `R${(client.totalContributions || 0).toFixed(2)}`;
                 document.getElementById('memberCurrentBonus').textContent = `R${(client.accumulatedBonus || 0).toFixed(2)}`;
@@ -4359,7 +4359,7 @@
         
         // Payout bonus
         function payoutBonus(accountNumber) {
-            const client = appState.clients.find(c => c.accountNumber === accountNumber);
+            const client = AppState.clients.find(c => c.accountNumber === accountNumber);
             if (!client || !client.accumulatedBonus || client.accumulatedBonus <= 0) {
                 alert('No bonus to payout');
                 return;
@@ -4400,7 +4400,7 @@
         
         // Export bonus report
         function exportBonusReport() {
-            const stockvelMembers = appState.clients.filter(c => c.isStockvelMember);
+            const stockvelMembers = AppState.clients.filter(c => c.isStockvelMember);
             
             const headers = ['Member Name', 'Account Number', 'Total Bonuses Earned', 'Bonuses Paid Out', 'Pending Bonuses', 'Last Bonus Date'];
             const data = stockvelMembers.map(member => {
@@ -4430,7 +4430,7 @@
         
         // Generate Member Disbursement PDF
         function generateMemberDisbursementPDF(accountNumber) {
-            const client = appState.clients.find(c => c.accountNumber === accountNumber);
+            const client = AppState.clients.find(c => c.accountNumber === accountNumber);
             if (!client || !client.isStockvelMember) {
                 alert('Member not found');
                 return;
