@@ -4065,8 +4065,8 @@
         // STOCKVEL MANAGEMENT FUNCTIONS
         // ============================================
         
-        // Initialize stockvel receipts storage
-        let stockvelReceipts = JSON.parse(localStorage.getItem('stockvelReceipts') || '[]');
+        // Stockvel receipts now managed in AppState.stockvelReceipts
+        // OLD: let stockvelReceipts = JSON.parse(localStorage.getItem('stockvelReceipts') || '[]');
         
         // Load member info when selected for receipt
         function loadMemberReceiptInfo() {
@@ -4179,11 +4179,11 @@
         // Display contribution history
         function displayContributionHistory() {
             const tbody = document.getElementById('contributionHistoryBody');
-            const filterAccount = document.getElementById('historyMemberSelect').value;
+            const filterMember = document.getElementById('historyMemberSelect').value;
             
-            let filtered = stockvelReceipts;
-            if (filterAccount) {
-                filtered = stockvelReceipts.filter(r => r.accountNumber === filterAccount);
+            let filtered = AppState.stockvelReceipts;
+            if (filterMember) {
+                filtered = AppState.stockvelReceipts.filter(r => r.memberNumber == filterMember);
             }
             
             if (filtered.length === 0) {
@@ -4234,7 +4234,7 @@
         // Export contribution history
         function exportContributionHistory() {
             const headers = ['Date', 'Member', 'Type', 'Amount', 'New Total', 'Bonus Added', 'Notes'];
-            const data = stockvelReceipts.map(r => [
+            const data = AppState.stockvelReceipts.map(r => [
                 new Date(r.date).toLocaleDateString('en-ZA'),
                 r.memberName,
                 formatReceiptType(r.type),
@@ -4333,7 +4333,7 @@
             }
             
             tbody.innerHTML = stockvelMembers.map(member => {
-                const memberReceipts = stockvelReceipts.filter(r => r.accountNumber === member.accountNumber);
+                const memberReceipts = AppState.stockvelReceipts.filter(r => r.accountNumber === member.accountNumber);
                 const totalBonusesEarned = memberReceipts.filter(r => r.type === 'loan_payment').reduce((sum, r) => sum + (r.bonusAdded || 0), 0);
                 const bonusesPaidOut = Math.abs(memberReceipts.filter(r => r.type === 'bonus_payout').reduce((sum, r) => sum + r.amount, 0));
                 const pendingBonuses = member.accumulatedBonus || 0;
@@ -4388,8 +4388,8 @@
             
             client.accumulatedBonus -= amount;
             
-            stockvelReceipts.push(receipt);
-            localStorage.setItem('stockvelReceipts', JSON.stringify(stockvelReceipts));
+            AppState.stockvelReceipts.push(receipt);
+            // localStorage now handled by AppState.save()
             localStorage.setItem('clients', JSON.stringify(AppState.clients));
             
             alert(`✅ Bonus of R${amount.toFixed(2)} paid out to ${client.firstName} ${client.lastName}`);
@@ -4404,7 +4404,7 @@
             
             const headers = ['Member Name', 'Account Number', 'Total Bonuses Earned', 'Bonuses Paid Out', 'Pending Bonuses', 'Last Bonus Date'];
             const data = stockvelMembers.map(member => {
-                const memberReceipts = stockvelReceipts.filter(r => r.accountNumber === member.accountNumber);
+                const memberReceipts = AppState.stockvelReceipts.filter(r => r.accountNumber === member.accountNumber);
                 const totalBonusesEarned = memberReceipts.filter(r => r.type === 'loan_payment').reduce((sum, r) => sum + (r.bonusAdded || 0), 0);
                 const bonusesPaidOut = Math.abs(memberReceipts.filter(r => r.type === 'bonus_payout').reduce((sum, r) => sum + r.amount, 0));
                 const lastBonusReceipt = memberReceipts.filter(r => r.type === 'loan_payment' && r.bonusAdded > 0).sort((a, b) => new Date(b.date) - new Date(a.date))[0];
@@ -4446,7 +4446,7 @@
             const doc = new jsPDF();
             
             // Get member receipts
-            const memberReceipts = stockvelReceipts.filter(r => r.accountNumber === accountNumber);
+            const memberReceipts = AppState.stockvelReceipts.filter(r => r.accountNumber === accountNumber);
             
             // Calculate totals for current month
             const today = new Date();
