@@ -727,11 +727,21 @@
                                 <h4>Stockvel Member Benefits</h4>
                                 <ul>
                                     <li><strong>Initiation Fee:</strong> 3% on loan amount up to your contributions + 9% on any amount above</li>
-                                    <li><strong>Interest Rates:</strong> Tiered calculation based on loan-to-savings ratio (no minimum interest applies)</li>
-                                    <li><strong>Admin Fee:</strong> R60 × (100% - initial month's interest rate)</li>
+                                    <li><strong>Interest Rates:</strong> Tiered calculation with 10% minimum - bonuses added to contributions!</li>
+                                    <li><strong>Admin Fee:</strong> R60 × (1 - interest rate)</li>
+                                    <li><strong>Membership Bonus:</strong> Difference between tiered rate and 10% minimum added to contributions after payment</li>
                                 </ul>
                             </div>
                             <div class="form-grid">
+                                <div class="form-group">
+                                    <label for="membershipStartDate">Membership Start Date:</label>
+                                    <input type="date" id="membershipStartDate" name="membershipStartDate" placeholder="Select start date" onchange="calculateMembershipEndDate()">
+                                </div>
+                                <div class="form-group">
+                                    <label for="membershipEndDate">Membership End Date:</label>
+                                    <input type="date" id="membershipEndDate" name="membershipEndDate" readonly style="background: #f0f0f0; cursor: not-allowed;" title="Auto-calculated as start date + 12 months">
+                                    <small style="color: #666; font-size: 11px;">Automatically calculated (12 months from start)</small>
+                                </div>
                                 <div class="form-group">
                                     <label for="totalContributions">Total Contributions to Date (R):</label>
                                     <input type="number" id="totalContributions" name="totalContributions" min="0" step="100" placeholder="Enter total amount contributed to date">
@@ -739,6 +749,11 @@
                                 <div class="form-group">
                                     <label for="monthlyContribution">Monthly Contribution (R):</label>
                                     <input type="number" id="monthlyContribution" name="monthlyContribution" min="0" step="50" placeholder="Enter monthly contribution amount">
+                                </div>
+                                <div class="form-group">
+                                    <label for="accumulatedBonus">Accumulated Bonus (R):</label>
+                                    <input type="number" id="accumulatedBonus" name="accumulatedBonus" min="0" step="0.01" value="0" placeholder="Bonus from previous loans">
+                                    <small style="color: #666; font-size: 11px;">Total bonus accumulated from all loans</small>
                                 </div>
                             </div>
                         </div>
@@ -783,8 +798,10 @@
                                 <th>Monthly Payment</th>
                                 <th>Principal Payment</th>
                                 <th>Interest</th>
+                                <th>Initiation Fee</th>
                                 <th>Admin Fee</th>
                                 <th>Outstanding Balance</th>
+                                <th class="stockvel-only" style="display: none;">Bonus</th>
                             </tr>
                         </thead>
                         <tbody id="breakdownBody">
@@ -2206,12 +2223,17 @@
                         stockvelFields.style.display = 'block';
                         document.getElementById('totalContributions').required = true;
                         document.getElementById('monthlyContribution').required = true;
+                        document.getElementById('membershipStartDate').required = true;
                     } else {
                         stockvelFields.style.display = 'none';
                         document.getElementById('totalContributions').required = false;
                         document.getElementById('monthlyContribution').required = false;
+                        document.getElementById('membershipStartDate').required = false;
                         document.getElementById('totalContributions').value = '';
                         document.getElementById('monthlyContribution').value = '';
+                        document.getElementById('membershipStartDate').value = '';
+                        document.getElementById('membershipEndDate').value = '';
+                        document.getElementById('accumulatedBonus').value = '0';
                     }
                 });
             }
@@ -2356,6 +2378,25 @@
             ];
             return months[(startIndex + offset) % 12];
         }
+        
+        function calculateMembershipEndDate() {
+            const startDateInput = document.getElementById('membershipStartDate');
+            const endDateInput = document.getElementById('membershipEndDate');
+            
+            if (startDateInput && endDateInput && startDateInput.value) {
+                const startDate = new Date(startDateInput.value);
+                // Add 12 months to the start date
+                const endDate = new Date(startDate);
+                endDate.setMonth(endDate.getMonth() + 12);
+                
+                // Format the date as YYYY-MM-DD for the input field
+                const year = endDate.getFullYear();
+                const month = String(endDate.getMonth() + 1).padStart(2, '0');
+                const day = String(endDate.getDate()).padStart(2, '0');
+                
+                endDateInput.value = `${year}-${month}-${day}`;
+            }
+        }
 
         function calculateLoan() {
             console.log('calculateLoan function called');
@@ -2374,10 +2415,14 @@
                 const isStockvelMember = document.getElementById('stockvelMember').checked;
                 const totalContributions = isStockvelMember ? parseFloat(document.getElementById('totalContributions').value) : 0;
                 const monthlyContribution = isStockvelMember ? parseFloat(document.getElementById('monthlyContribution').value) : 0;
+                const membershipStartDate = isStockvelMember ? document.getElementById('membershipStartDate').value : '';
+                const membershipEndDate = isStockvelMember ? document.getElementById('membershipEndDate').value : '';
+                const accumulatedBonus = isStockvelMember ? parseFloat(document.getElementById('accumulatedBonus').value) || 0 : 0;
 
                 console.log('Form values:', { 
                     firstName, lastName, accountNumber, principal, term, startMonthIndex,
-                    isStockvelMember, totalContributions, monthlyContribution 
+                    isStockvelMember, totalContributions, monthlyContribution,
+                    membershipStartDate, membershipEndDate, accumulatedBonus
                 });
 
                 // Validate inputs
@@ -2387,6 +2432,10 @@
                 }
 
                 if (isStockvelMember) {
+                    if (!membershipStartDate) {
+                        alert('Please enter the membership start date');
+                        return;
+                    }
                     if (isNaN(totalContributions) || totalContributions < 0) {
                         alert('Please enter a valid total contribution amount');
                         return;
@@ -2426,101 +2475,168 @@
                 // Calculate loan components
                 const basePrincipalPayment = principal / term;
                 
-                // INITIATION FEE RULES for Stockvel Members
+                // NEW CALCULATION LOGIC
                 let initiationFee;
-                if (isStockvelMember) {
-                    // Calculate initiation fee: 3% for amount <= contribution, 9% for amount above
-                    if (principal <= totalContributions) {
-                        initiationFee = principal * 0.03; // 3% on the loan amount
-                    } else {
-                        // 3% on contribution amount + 9% on the excess
-                        initiationFee = (totalContributions * 0.03) + ((principal - totalContributions) * 0.09);
-                    }
-                } else {
-                    initiationFee = principal * 0.09; // Standard 9% for non-Stockvel members
-                }
-                
-                // ADMIN FEE RULES for Stockvel Members
-                let adminFee;
-                if (isStockvelMember) {
-                    // Calculate admin fee: 60 * (1 - initial month's interest rate)
-                    const tieredInterest = calculateTieredStockvelInterest(principal, totalContributions);
-                    const effectiveInterestRate = tieredInterest / principal;
-                    adminFee = 60 * (1 - effectiveInterestRate);
-                } else {
-                    adminFee = 60; // Standard admin fee for non-Stockvel members
-                }
-                
-                let totalInterest;
+                let totalInterest = 0;
+                let totalAdminFees = 0;
+                let breakdown = [];
                 let interestRate;
                 
                 if (isStockvelMember) {
-                    // Use Stockvel interest calculation
-                    totalInterest = calculateStockvelInterest(principal, term, totalContributions, monthlyContribution);
-                    interestRate = 'Variable (Stockvel)';
-                    console.log('Stockvel interest calculation:', totalInterest);
-                } else {
-                    // Use standard interest calculation
-                    interestRate = 0.15; // 15% per month
+                    // ===== STOCKVEL LOAN CALCULATION =====
+                    // Calculate with tiered interest but apply 10% minimum
                     
-                    // Interest calculation period: minimum 3 months, or Math.ceil(term/2) if >= 3
-                    // BUT cannot exceed the actual loan term (for 1-2 month loans)
-                    const calculatedMonths = Math.ceil(term / 2) >= 3 ? Math.ceil(term / 2) : 3;
-                    const interestMonths = Math.min(calculatedMonths, term);
+                    interestRate = 'Variable (Stockvel) - Min 10%';
+                    let outstandingBalance = principal;
+                    let currentSavings = totalContributions;
+                    let totalBonus = 0; // Track accumulated bonus
                     
-                    console.log(`\n=== STANDARD INTEREST CALCULATION ===`);
+                    console.log(`\n=== STOCKVEL LOAN CALCULATION ===`);
                     console.log(`Principal: R${principal.toFixed(2)}`);
                     console.log(`Term: ${term} months`);
-                    console.log(`Interest Period: ${interestMonths} months`);
+                    console.log(`Initial Savings: R${currentSavings.toFixed(2)}`);
+                    console.log(`Monthly Contribution: R${monthlyContribution.toFixed(2)}`);
                     
-                    // Calculate interest on declining balance (outstanding amount)
-                    let outstandingBalance = principal;
-                    let cumulativeInterest = 0;
-                    const monthlyPrincipalPayment = principal / term;
+                    // Calculate initiation fee: 3% for amount <= contribution, 9% for amount above
+                    if (principal <= totalContributions) {
+                        initiationFee = principal * 0.03;
+                    } else {
+                        initiationFee = (totalContributions * 0.03) + ((principal - totalContributions) * 0.09);
+                    }
+                    const monthlyInitiationFee = initiationFee / term;
                     
-                    // Calculate interest ONLY for the interest period (not full term)
-                    for (let month = 1; month <= interestMonths; month++) {
-                        if (outstandingBalance > 0) {
-                            // Interest calculated on current outstanding balance
-                            const monthlyInterest = outstandingBalance * interestRate;
-                            cumulativeInterest += monthlyInterest;
-                            
-                            console.log(`Month ${month}: Outstanding: R${outstandingBalance.toFixed(2)}, Interest: R${monthlyInterest.toFixed(2)}`);
-                            
-                            // Reduce outstanding balance by principal payment
-                            outstandingBalance -= monthlyPrincipalPayment;
+                    for (let month = 1; month <= term; month++) {
+                        // Update savings (add contribution after first month)
+                        if (month > 1 && term > 1) {
+                            currentSavings += monthlyContribution;
                         }
+                        
+                        // Calculate tiered interest on outstanding balance
+                        const tieredInterest = calculateTieredStockvelInterest(outstandingBalance, currentSavings);
+                        const tieredRate = outstandingBalance > 0 ? (tieredInterest / outstandingBalance) : 0;
+                        
+                        // Apply 10% minimum
+                        const minimumInterest = outstandingBalance * 0.10;
+                        const actualInterest = Math.max(tieredInterest, minimumInterest);
+                        
+                        // Calculate admin fee based on actual rate
+                        const actualRate = outstandingBalance > 0 ? (actualInterest / outstandingBalance) : 0;
+                        const adminFee = 60 * (1 - actualRate);
+                        
+                        // Calculate TBFS income for this month
+                        const tbfsIncome = actualInterest + adminFee;
+                        
+                        // If we used the minimum, calculate bonus
+                        let monthlyBonus = 0;
+                        if (actualInterest > tieredInterest) {
+                            // Bonus = difference between minimum charge and what we actually charged
+                            const actualCharge = actualInterest + adminFee + monthlyInitiationFee;
+                            const minimumCharge = minimumInterest + 60 + monthlyInitiationFee;
+                            monthlyBonus = minimumCharge - actualCharge;
+                        }
+                        
+                        totalBonus += monthlyBonus;
+                        totalInterest += actualInterest;
+                        totalAdminFees += adminFee;
+                        
+                        console.log(`\nMonth ${month}:`);
+                        console.log(`  Outstanding: R${outstandingBalance.toFixed(2)}`);
+                        console.log(`  Savings: R${currentSavings.toFixed(2)}`);
+                        console.log(`  Tiered Interest: R${tieredInterest.toFixed(2)} (${(tieredRate * 100).toFixed(1)}%)`);
+                        console.log(`  Actual Interest: R${actualInterest.toFixed(2)} (${(actualRate * 100).toFixed(1)}%)`);
+                        console.log(`  Admin Fee: R${adminFee.toFixed(2)}`);
+                        console.log(`  Initiation: R${monthlyInitiationFee.toFixed(2)}`);
+                        console.log(`  Bonus: R${monthlyBonus.toFixed(2)}`);
+                        
+                        breakdown.push({
+                            month: month,
+                            principalPayment: basePrincipalPayment,
+                            interest: actualInterest,
+                            adminFee: adminFee,
+                            initiationFee: monthlyInitiationFee,
+                            bonus: monthlyBonus,
+                            totalPayment: basePrincipalPayment + actualInterest + adminFee + monthlyInitiationFee,
+                            outstandingBalance: Math.max(0, outstandingBalance - basePrincipalPayment)
+                        });
+                        
+                        outstandingBalance -= basePrincipalPayment;
                     }
                     
-                    totalInterest = cumulativeInterest;
-                    console.log(`Total Interest (${interestMonths} months): R${totalInterest.toFixed(2)}`);
-                    console.log('Declining balance interest calculation:', totalInterest);
+                    console.log(`\nTotal Bonus: R${totalBonus.toFixed(2)}`);
+                    console.log(`Total Interest: R${totalInterest.toFixed(2)}`);
+                    console.log(`Total Admin Fees: R${totalAdminFees.toFixed(2)}`);
+                    console.log(`Total Initiation Fee: R${initiationFee.toFixed(2)}`);
+                    
+                } else {
+                    // ===== STANDARD LOAN CALCULATION =====
+                    // New formula: Monthly TBFS income = 30% of outstanding balance
+                    // Total initiation fee = 12% of principal (distributed over term)
+                    // Admin fee = R60 per month
+                    // Interest = TBFS income - initiation portion - admin fee
+                    
+                    interestRate = '30% of outstanding (12% init + R60 admin + interest)';
+                    initiationFee = principal * 0.12;
+                    const monthlyInitiationFee = initiationFee / term;
+                    const adminFee = 60;
+                    
+                    let outstandingBalance = principal;
+                    
+                    console.log(`\n=== STANDARD LOAN CALCULATION ===`);
+                    console.log(`Principal: R${principal.toFixed(2)}`);
+                    console.log(`Term: ${term} months`);
+                    console.log(`Total Initiation Fee (12%): R${initiationFee.toFixed(2)}`);
+                    console.log(`Monthly Initiation: R${monthlyInitiationFee.toFixed(2)}`);
+                    console.log(`Monthly Admin Fee: R${adminFee.toFixed(2)}`);
+                    
+                    for (let month = 1; month <= term; month++) {
+                        // Calculate TBFS income as 30% of outstanding balance
+                        const tbfsIncome = outstandingBalance * 0.30;
+                        
+                        // Break down TBFS income
+                        const monthlyInterest = tbfsIncome - monthlyInitiationFee - adminFee;
+                        
+                        totalInterest += monthlyInterest;
+                        totalAdminFees += adminFee;
+                        
+                        console.log(`\nMonth ${month}:`);
+                        console.log(`  Outstanding: R${outstandingBalance.toFixed(2)}`);
+                        console.log(`  TBFS Income (30%): R${tbfsIncome.toFixed(2)}`);
+                        console.log(`  Initiation: R${monthlyInitiationFee.toFixed(2)}`);
+                        console.log(`  Admin: R${adminFee.toFixed(2)}`);
+                        console.log(`  Interest: R${monthlyInterest.toFixed(2)}`);
+                        console.log(`  Principal Payment: R${basePrincipalPayment.toFixed(2)}`);
+                        console.log(`  Total Payment: R${(basePrincipalPayment + tbfsIncome).toFixed(2)}`);
+                        
+                        breakdown.push({
+                            month: month,
+                            principalPayment: basePrincipalPayment,
+                            interest: monthlyInterest,
+                            adminFee: adminFee,
+                            initiationFee: monthlyInitiationFee,
+                            totalPayment: basePrincipalPayment + tbfsIncome,
+                            outstandingBalance: Math.max(0, outstandingBalance - basePrincipalPayment)
+                        });
+                        
+                        outstandingBalance -= basePrincipalPayment;
+                    }
+                    
+                    console.log(`\nTotal Interest: R${totalInterest.toFixed(2)}`);
+                    console.log(`Total Admin Fees: R${totalAdminFees.toFixed(2)}`);
+                    console.log(`Total Initiation Fee: R${initiationFee.toFixed(2)}`);
                 }
-
-                // Spread interest evenly across all months
-                const equalMonthlyInterest = totalInterest / term;
-
+                
                 // Calculate totals
-                const totalCost = principal + totalInterest + initiationFee + (adminFee * term);
+                const totalCost = principal + totalInterest + initiationFee + totalAdminFees;
                 const monthlyPayment = totalCost / term;
 
-                console.log('Final calculations:', { totalCost, monthlyPayment, totalInterest, equalMonthlyInterest });
+                console.log('\n=== FINAL SUMMARY ===');
+                console.log('Total Cost:', totalCost);
+                console.log('Average Monthly Payment:', monthlyPayment);
 
-                // Calculate monthly breakdown
-                const breakdown = [];
-                let outstandingBalance = principal;
-                for (let month = 1; month <= term; month++) {
-                    breakdown.push({
-                        month: month,
-                        principalPayment: basePrincipalPayment,
-                        interest: equalMonthlyInterest,
-                        adminFee: adminFee,
-                        totalPayment: basePrincipalPayment + equalMonthlyInterest + adminFee,
-                        outstandingBalance: Math.max(0, outstandingBalance - basePrincipalPayment)
-                    });
-                    outstandingBalance -= basePrincipalPayment;
-                }
-
+                // Calculate total bonus for stockvel members
+                const totalBonus = isStockvelMember ? 
+                    breakdown.reduce((sum, month) => sum + (month.bonus || 0), 0) : 0;
+                
                 // Store data for PDF generation
                 loanData = {
                     firstName,
@@ -2533,13 +2649,17 @@
                     totalCost,
                     totalInterest,
                     initiationFee,
-                    adminFee,
+                    totalAdminFees,
                     breakdown,
                     startMonthIndex,
                     isStockvelMember,
                     totalContributions,
                     monthlyContribution,
-                    interestRate
+                    interestRate,
+                    totalBonus, // For stockvel members
+                    membershipStartDate, // Membership tracking
+                    membershipEndDate,
+                    accumulatedBonus
                 };
 
                 console.log('Loan data stored, calling displayResults');
@@ -2579,25 +2699,52 @@
                             <p><strong>Start Month:</strong> ${getMonthName(loanData.startMonthIndex, 0)}</p>`;
                     
                     if (loanData.isStockvelMember) {
+                        // Format membership dates
+                        const startDate = loanData.membershipStartDate ? new Date(loanData.membershipStartDate).toLocaleDateString('en-ZA') : 'Not set';
+                        const endDate = loanData.membershipEndDate ? new Date(loanData.membershipEndDate).toLocaleDateString('en-ZA') : 'Not set';
+                        
                         clientInfoHTML += `
                             <p><strong>Stockvel Member:</strong> Yes</p>
+                            <p><strong>Membership Period:</strong> ${startDate} to ${endDate}<br>
+                               <span style="font-size: 11px; color: #666;">(12-month membership)</span></p>
                             <p><strong>Total Contributions:</strong> R ${loanData.totalContributions.toFixed(2)}</p>
                             <p><strong>Monthly Contribution:</strong> R ${loanData.monthlyContribution.toFixed(2)}</p>
-                            <p><strong>Interest Rate:</strong> Variable (Based on loan-to-savings ratio)</p>
+                            <p><strong>Accumulated Bonus:</strong> R ${loanData.accumulatedBonus.toFixed(2)}<br>
+                               <span style="font-size: 11px; color: #666;">(Previous bonuses earned)</span></p>
+                            <p><strong>Interest Rate:</strong> Variable (Tiered, with 10% minimum)</p>
                             <p><strong>Initiation Fee:</strong> R ${loanData.initiationFee.toFixed(2)}<br>
                                <span style="font-size: 11px; color: #666;">(3% up to contributions + 9% on excess)</span></p>
+                            <p><strong>Total Admin Fees:</strong> R ${loanData.totalAdminFees.toFixed(2)}<br>
+                               <span style="font-size: 11px; color: #666;">(R60 × (1 - interest rate), varies by month)</span></p>`;
+                        if (loanData.totalBonus > 0) {
+                            clientInfoHTML += `
+                            <div style="background: #fff3cd; padding: 10px; border-radius: 8px; margin-top: 10px; border: 2px solid #ffc107;">
+                                <strong style="color: #856404;">🎁 Member Bonus:</strong> R ${loanData.totalBonus.toFixed(2)}<br>
+                                <span style="font-size: 11px; color: #856404;">This bonus will be added to your contributions after each payment is received!</span>
+                            </div>`;
+                        }
+                        clientInfoHTML += `
                             <div style="background: #e8f5e8; padding: 10px; border-radius: 8px; margin-top: 10px; font-size: 12px;">
-                                <strong>Interest Rate Breakdown (Tiered Calculation):</strong><br>
+                                <strong>Tiered Interest Rates:</strong><br>
                                 • >110% of savings: 15% | 105-110%: 12.5% | 75-105%: 10%<br>
                                 • 50-75%: 7.5% | 25-50%: 4% | 5-25%: 1.5%<br>
-                                • Each portion of loan is charged at its applicable rate<br>
-                                • <strong>Admin Fee:</strong> R60 × (100% - initial rate) = R${loanData.adminFee.toFixed(2)}
+                                • <strong>10% Minimum Applied</strong> with bonus for difference<br>
+                                • Admin Fee varies: R60 × (1 - interest rate)
                             </div>`;
                     } else {
-                        const interestPeriod = Math.ceil(loanData.term / 2) >= 3 ? Math.ceil(loanData.term / 2) : 3;
                         clientInfoHTML += `
-                            <p><strong>Interest Rate:</strong> 15% per month (calculated for ${interestPeriod} months, spread across ${loanData.term} months)</p>
-                            <p><strong>Initiation Fee:</strong> R ${loanData.initiationFee.toFixed(2)} (9% of loan amount)</p>`;
+                            <p><strong>Calculation Method:</strong> 30% of outstanding balance each month</p>
+                            <p><strong>Initiation Fee:</strong> R ${loanData.initiationFee.toFixed(2)} (12% of loan, distributed over ${loanData.term} months)</p>
+                            <p><strong>Admin Fee:</strong> R 60.00 per month</p>
+                            <p><strong>Interest:</strong> Remainder after initiation fee and admin fee</p>
+                            <div style="background: #e3f2fd; padding: 10px; border-radius: 8px; margin-top: 10px; font-size: 12px;">
+                                <strong>Example for Month 1:</strong><br>
+                                • Outstanding Balance: R ${loanData.principal.toFixed(2)}<br>
+                                • TBFS Income (30%): R ${(loanData.principal * 0.30).toFixed(2)}<br>
+                                • Initiation: R ${(loanData.initiationFee / loanData.term).toFixed(2)}<br>
+                                • Admin: R 60.00<br>
+                                • Interest: R ${(loanData.principal * 0.30 - (loanData.initiationFee / loanData.term) - 60).toFixed(2)}
+                            </div>`;
                     }
                     
                     clientInfoHTML += `
@@ -2649,17 +2796,30 @@
                 const tbody = document.getElementById('breakdownBody');
                 if (tbody) {
                     tbody.innerHTML = '';
+                    
+                    // Show/hide bonus column for stockvel members
+                    const bonusHeaders = document.querySelectorAll('.stockvel-only');
+                    bonusHeaders.forEach(header => {
+                        header.style.display = loanData.isStockvelMember ? 'table-cell' : 'none';
+                    });
 
                     loanData.breakdown.forEach((row, index) => {
                         const tr = document.createElement('tr');
-                        tr.innerHTML = `
+                        let rowHTML = `
                             <td>${getMonthName(loanData.startMonthIndex, index)}</td>
-                            <td>R ${loanData.monthlyPayment.toFixed(2)}</td>
+                            <td>R ${row.totalPayment.toFixed(2)}</td>
                             <td>R ${row.principalPayment.toFixed(2)}</td>
                             <td>R ${row.interest.toFixed(2)}</td>
+                            <td>R ${row.initiationFee.toFixed(2)}</td>
                             <td>R ${row.adminFee.toFixed(2)}</td>
                             <td>R ${row.outstandingBalance.toFixed(2)}</td>
                         `;
+                        
+                        if (loanData.isStockvelMember) {
+                            rowHTML += `<td class="stockvel-only" style="color: #28a745; font-weight: 600;">R ${(row.bonus || 0).toFixed(2)}</td>`;
+                        }
+                        
+                        tr.innerHTML = rowHTML;
                         tbody.appendChild(tr);
                     });
 
