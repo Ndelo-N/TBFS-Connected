@@ -5269,8 +5269,12 @@
                     
                     // Restore data
                     localStorage.setItem('tbfsAppState', JSON.stringify(data));
-                    AppState.init();
-                    alert('✅ Data restored from cloud successfully!');
+                    alert('✅ Data restored from cloud successfully!\n\nReloading app to display restored data...');
+                    
+                    // Reload page to refresh all views
+                    setTimeout(() => {
+                        location.reload();
+                    }, 500);
                 } catch (error) {
                     // Only show error for actual errors (not 404 which we handled above)
                     alert('❌ Failed to restore from cloud: ' + error.message);
