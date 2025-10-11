@@ -2616,31 +2616,13 @@
                 remainingLoan -= tierAmount;
             }
             
-            // Tier 5: Above 110% of contributions @ 30% (INCOME TABLE METHOD)
-            // For consistency with standard loans: 30% = TOTAL charge (not just interest)
+            // Tier 5: Above 110% of contributions @ 30%
             if (remainingLoan > 0) {
                 const tierAmount = remainingLoan;
                 tier5Amount = tierAmount;
-                
-                // Calculate proportional fees for this tier portion
-                // Note: monthlyInitiationFee is ALREADY calculated with zone awareness at loan start
-                // (principal - totalContributions) × 12% / term
-                // So we just allocate proportionally by tier size
-                const tierProportion = tierAmount / loanAmount;
-                const proportionalInitiation = monthlyInitiationFee * tierProportion;
-                const proportionalAdmin = 60 * tierProportion;
-                
-                // Income Table method: 30% of tier = TOTAL charge (interest + fees)
-                const tier5TotalCharge = tierAmount * 0.30;
-                const tier5Interest = tier5TotalCharge - proportionalInitiation - proportionalAdmin;
-                
-                totalInterest += tier5Interest;
-                console.log(`Tier 5 (>110%) - INCOME TABLE METHOD:`);
-                console.log(`  Amount: R${tierAmount.toFixed(2)}`);
-                console.log(`  30% Total Charge: R${tier5TotalCharge.toFixed(2)}`);
-                console.log(`  - Proportional Initiation (${(tierProportion * 100).toFixed(1)}%): R${proportionalInitiation.toFixed(2)}`);
-                console.log(`  - Proportional Admin (${(tierProportion * 100).toFixed(1)}%): R${proportionalAdmin.toFixed(2)}`);
-                console.log(`  = Interest: R${tier5Interest.toFixed(2)}`);
+                const tierInterest = tierAmount * 0.30;
+                totalInterest += tierInterest;
+                console.log(`Tier 5 (>110%): R${tierAmount.toFixed(2)} × 30% = R${tierInterest.toFixed(2)}`);
             }
             
             console.log(`Total tiered interest: R${totalInterest.toFixed(2)}`);
