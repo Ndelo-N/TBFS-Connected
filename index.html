@@ -2460,24 +2460,35 @@
                 console.error('Form not found');
             }
 
-            // Auto-detect stockvel member when name/account entered
+            // Auto-detect stockvel member when Member Number entered
             function checkForStockvelMember() {
-                const firstName = document.getElementById('firstName').value.trim();
-                const lastName = document.getElementById('lastName').value.trim();
-                const accountNumber = document.getElementById('accountNumber').value.trim();
+                const memberNumberInput = document.getElementById('memberNumber').value.trim();
                 
-                if (!firstName || !lastName) return; // Need both names
+                if (!memberNumberInput) return; // Need member number
                 
-                const fullName = `${firstName} ${lastName}`;
+                const memberNum = parseInt(memberNumberInput);
+                if (isNaN(memberNum)) return;
                 
-                // Search for member by name or phone
-                const member = AppState.stockvelMembers.find(m => 
-                    m.name.toLowerCase() === fullName.toLowerCase() ||
-                    m.phone === accountNumber
-                );
+                // Search for member by MEMBER NUMBER (guaranteed unique!)
+                const member = AppState.stockvelMembers.find(m => m.memberNumber === memberNum);
                 
                 if (member) {
-                    // Member found! Auto-populate fields
+                    // Member found! Auto-populate ALL fields
+                    
+                    // Fill name fields
+                    const nameParts = member.name.split(' ');
+                    const firstName = nameParts[0] || '';
+                    const lastName = nameParts.slice(1).join(' ') || '';
+                    
+                    document.getElementById('firstName').value = firstName;
+                    document.getElementById('lastName').value = lastName;
+                    
+                    // Fill account number if available
+                    if (member.account_number) {
+                        document.getElementById('accountNumber').value = member.account_number;
+                    }
+                    
+                    // Check stockvel member checkbox
                     document.getElementById('stockvelMember').checked = true;
                     document.getElementById('stockvelFields').style.display = 'block';
                     
@@ -2494,13 +2505,15 @@
                     document.getElementById('membershipStartDate').required = true;
                     
                     // Show success message
-                    console.log(`✅ Stockvel Member detected: ${member.name} (Member #${member.memberNumber})`);
+                    alert(`✅ Stockvel Member Detected!\n\nMember #: ${member.memberNumber}\nAccount #: ${member.account_number || 'N/A'}\nName: ${member.name}\nContributions: R${member.totalContributions.toFixed(2)}\nBonus Balance: R${member.accumulatedBonus.toFixed(2)}\n\nAll fields auto-filled!`);
+                } else {
+                    alert(`❌ Member #${memberNum} not found!\n\nPlease check the Member # or register this member in the Stockvel tab first.`);
                 }
             }
             
-            // Attach auto-detection to account number field ONLY (unique identifier!)
-            const accountNumberField = document.getElementById('accountNumber');
-            if (accountNumberField) accountNumberField.addEventListener('blur', checkForStockvelMember);
+            // Attach auto-detection to Member Number field
+            const memberNumberField = document.getElementById('memberNumber');
+            if (memberNumberField) memberNumberField.addEventListener('blur', checkForStockvelMember);
             
             // Handle Stockvel Member checkbox
             const stockvelCheckbox = document.getElementById('stockvelMember');
