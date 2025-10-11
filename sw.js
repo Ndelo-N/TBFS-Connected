@@ -78,7 +78,7 @@ self.addEventListener('fetch', function(event) {
 
 // Activate event - clean up old caches
 self.addEventListener('activate', function(event) {
-  console.log('Service Worker: Activate event');
+  console.log('Service Worker: Activate event - new service worker taking control');
   
   event.waitUntil(
     caches.keys().then(function(cacheNames) {
@@ -92,7 +92,10 @@ self.addEventListener('activate', function(event) {
       );
     }).then(() => {
       // Claim all clients immediately
+      console.log('Service Worker: Claiming all clients');
       return self.clients.claim();
+    }).then(() => {
+      console.log('Service Worker: Activation complete - all clients claimed');
     })
   );
 });
@@ -102,8 +105,12 @@ self.addEventListener('message', function(event) {
   console.log('Service Worker: Message received', event.data);
   
   if (event.data && event.data.type === 'SKIP_WAITING') {
-    console.log('Service Worker: Skip waiting');
-    self.skipWaiting();
+    console.log('Service Worker: Skip waiting - activating new service worker immediately');
+    self.skipWaiting().then(() => {
+      console.log('Service Worker: Skip waiting completed successfully');
+    }).catch((error) => {
+      console.error('Service Worker: Skip waiting failed', error);
+    });
   }
 });
 
