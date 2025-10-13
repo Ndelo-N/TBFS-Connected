@@ -2432,6 +2432,11 @@
             // Initialize app state
             AppState.init();
             
+            // Initialize stockvel dashboard (must be called after AppState.init to load saved data)
+            if (typeof loadStockvelDashboard === 'function') {
+                loadStockvelDashboard();
+            }
+            
             // Set today's date as default for loan date
             const today = new Date().toISOString().split('T')[0];
             const loanDateField = document.getElementById('loanDate');
