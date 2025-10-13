@@ -2278,17 +2278,18 @@
             const newTab = document.querySelector(`[data-tab="${tabId}"]`);
             const newContent = document.getElementById(tabId);
 
-            if (!newContent || currentContent === newContent) return;
+            // Check if both newTab and newContent exist, and if we're not switching to the same tab
+            if (!newTab || !newContent || currentContent === newContent) return;
 
             // Remove active states from BOTH tabs AND content
             tabs.forEach(t => t.classList.remove('active'));
             contents.forEach(c => c.classList.remove('active'));
             
-            // Add animation based on swipe direction
-            if (direction === 'left') {
+            // Add animation based on swipe direction (only if currentContent exists)
+            if (currentContent && direction === 'left') {
                 currentContent.classList.add('swipe-left');
                 newContent.classList.add('slide-in-right');
-            } else if (direction === 'right') {
+            } else if (currentContent && direction === 'right') {
                 currentContent.classList.add('swipe-right');
                 newContent.classList.add('slide-in-left');
             }
