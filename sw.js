@@ -1,4 +1,4 @@
-const CACHE_NAME = 'tbfs-loan-manager-v28'; // v1.7.1 - Fix: Load stockvel data on app initialization
+const CACHE_NAME = 'tbfs-loan-manager-v29'; // v1.7.2 - Fix: Tab switching and swipe navigation null reference errors
 const urlsToCache = [
   './',
   './index.html',
