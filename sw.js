@@ -1,4 +1,4 @@
-const CACHE_NAME = 'tbfs-loan-manager-v29'; // v1.7.2 - Fix: Tab switching and swipe navigation null reference errors
+const CACHE_NAME = 'tbfs-loan-manager-v30'; // v1.7.3 - Fix: displayContributionHistory undefined field errors
 const urlsToCache = [
   './',
   './index.html',

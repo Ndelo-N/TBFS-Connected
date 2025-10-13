@@ -4310,17 +4310,24 @@
             // Sort by date descending
             filtered.sort((a, b) => new Date(b.date) - new Date(a.date));
             
-            tbody.innerHTML = filtered.map(r => `
+            tbody.innerHTML = filtered.map(r => {
+                // Safely extract values with defaults (handle missing/undefined fields)
+                const amount = (r.amount || 0);
+                const newTotal = (r.newTotal || 0);
+                const bonusAmount = (r.bonusAmount || r.bonusAdded || 0); // Support both field names
+                
+                return `
                 <tr>
                     <td>${new Date(r.date).toLocaleDateString('en-ZA')}</td>
-                    <td>${r.memberName}</td>
+                    <td>${r.memberName || 'Unknown'}</td>
                     <td><span style="display: inline-block; padding: 4px 8px; border-radius: 4px; font-size: 12px; background: ${getReceiptTypeColor(r.type)}; color: white;">${formatReceiptType(r.type)}</span></td>
-                    <td>R${r.amount.toFixed(2)}</td>
-                    <td>R${r.newTotal.toFixed(2)}</td>
-                    <td style="color: ${r.bonusAdded > 0 ? '#27ae60' : r.bonusAdded < 0 ? '#e74c3c' : '#7f8c8d'}; font-weight: 600;">R${r.bonusAdded.toFixed(2)}</td>
+                    <td>R${amount.toFixed(2)}</td>
+                    <td>R${newTotal.toFixed(2)}</td>
+                    <td style="color: ${bonusAmount > 0 ? '#27ae60' : bonusAmount < 0 ? '#e74c3c' : '#7f8c8d'}; font-weight: 600;">R${bonusAmount.toFixed(2)}</td>
                     <td>${r.notes || '-'}</td>
                 </tr>
-            `).join('');
+                `;
+            }).join('');
         }
         
         function getReceiptTypeColor(type) {
@@ -4352,11 +4359,11 @@
             const headers = ['Date', 'Member', 'Type', 'Amount', 'New Total', 'Bonus Added', 'Notes'];
             const data = AppState.stockvelReceipts.map(r => [
                 new Date(r.date).toLocaleDateString('en-ZA'),
-                r.memberName,
+                r.memberName || 'Unknown',
                 formatReceiptType(r.type),
-                r.amount.toFixed(2),
-                r.newTotal.toFixed(2),
-                r.bonusAdded.toFixed(2),
+                (r.amount || 0).toFixed(2),
+                (r.newTotal || 0).toFixed(2),
+                (r.bonusAmount || r.bonusAdded || 0).toFixed(2),
                 r.notes || ''
             ]);
             
@@ -4450,11 +4457,11 @@
             
             tbody.innerHTML = stockvelMembers.map(member => {
                 const memberReceipts = AppState.stockvelReceipts.filter(r => r.accountNumber === member.accountNumber);
-                const totalBonusesEarned = memberReceipts.filter(r => r.type === 'loan_payment').reduce((sum, r) => sum + (r.bonusAdded || 0), 0);
-                const bonusesPaidOut = Math.abs(memberReceipts.filter(r => r.type === 'bonus_payout').reduce((sum, r) => sum + r.amount, 0));
+                const totalBonusesEarned = memberReceipts.filter(r => r.type === 'loan_payment').reduce((sum, r) => sum + (r.bonusAmount || r.bonusAdded || 0), 0);
+                const bonusesPaidOut = Math.abs(memberReceipts.filter(r => r.type === 'bonus_payout').reduce((sum, r) => sum + (r.amount || 0), 0));
                 const pendingBonuses = member.accumulatedBonus || 0;
                 
-                const lastBonusReceipt = memberReceipts.filter(r => r.type === 'loan_payment' && r.bonusAdded > 0).sort((a, b) => new Date(b.date) - new Date(a.date))[0];
+                const lastBonusReceipt = memberReceipts.filter(r => r.type === 'loan_payment' && (r.bonusAmount || r.bonusAdded || 0) > 0).sort((a, b) => new Date(b.date) - new Date(a.date))[0];
                 const lastBonusDate = lastBonusReceipt ? new Date(lastBonusReceipt.date).toLocaleDateString('en-ZA') : 'Never';
                 
                 return `
@@ -4844,11 +4851,11 @@
                 return `
                     <tr>
                         <td><strong>${member.memberNumber}</strong></td>
-                        <td>${member.name}</td>
-                        <td>${member.phone}</td>
-                        <td style="color: #27ae60; font-weight: 600;">R${member.totalContributions.toFixed(2)}</td>
-                        <td style="color: #f39c12; font-weight: 600;">R${member.accumulatedBonus.toFixed(2)}</td>
-                        <td>R${member.monthlyContribution.toFixed(2)}</td>
+                        <td>${member.name || 'Unknown'}</td>
+                        <td>${member.phone || 'N/A'}</td>
+                        <td style="color: #27ae60; font-weight: 600;">R${(member.totalContributions || 0).toFixed(2)}</td>
+                        <td style="color: #f39c12; font-weight: 600;">R${(member.accumulatedBonus || 0).toFixed(2)}</td>
+                        <td>R${(member.monthlyContribution || 0).toFixed(2)}</td>
                         <td>${statusBadge}</td>
                         <td>${endDate.toLocaleDateString()}</td>
                         <td>

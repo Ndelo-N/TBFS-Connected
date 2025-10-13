@@ -2,16 +2,19 @@
 
 ## 🔍 Issue Summary
 
-**Problem:** PWA tabs not working and swipe effect not functioning on both PWA and webpage versions.
+**Primary Problem:** PWA tabs not working and swipe effect not functioning on both PWA and webpage versions.
+
+**Secondary Problem:** After fixing tabs, stockvel dashboard crashed with "Cannot read properties of undefined (reading 'toFixed')" error.
 
 **Symptoms:**
 - Clicking tab buttons had no effect
 - Swipe gestures didn't change tabs
-- Both features completely non-functional
+- Console error: `TypeError: Cannot read property 'classList' of null`
+- After tab fix: Console error: `TypeError: Cannot read properties of undefined (reading 'toFixed')` in displayContributionHistory
 
 ## 🎯 Root Cause Analysis
 
-### The Critical Bug
+### Bug #1: Tab Switching Null Reference
 
 **Location:** `index.html` line 2281 (switchTab function)
 
@@ -29,24 +32,39 @@ newTab.classList.add('active'); // ❌ Throws error if newTab is null
 2. Prevented any subsequent JavaScript from executing
 3. Disabled both click-to-switch AND swipe navigation
 
-### Secondary Issue
+**Also Missing:** `currentContent` check before adding animation classes.
 
-**Missing currentContent check:** The animation code attempted to add classes to `currentContent` without verifying it exists, which could cause errors on first load or edge cases.
+### Bug #2: Undefined Field Access in Stockvel Functions
 
-## 🔧 The Fix
+**Location:** Multiple functions (displayContributionHistory, exportContributionHistory, generateBonusReport, refreshMemberRegistry)
+
+**Issue:** Multiple problems with stockvel receipt data:
+1. Field name inconsistency: `bonusAmount` vs `bonusAdded`
+2. Missing null checks before calling `.toFixed()`
+3. Old/incomplete receipt objects in localStorage
+
+**Affected Functions:**
+- `displayContributionHistory()` - Line 4318-4320: Accessing undefined `r.amount`, `r.newTotal`, `r.bonusAdded`
+- `exportContributionHistory()` - Line 4364-4366: Same undefined field access
+- `generateBonusReport()` - Line 4460-4464: Using wrong field name `bonusAdded` instead of `bonusAmount`
+- `refreshMemberRegistry()` - Line 4856-4858: No defaults for member fields
+
+**Result:** After fixing the tab bug, `loadStockvelDashboard()` was called on page load (as intended), but it triggered the undefined field errors, causing the page to crash before tabs could even render.
+
+## 🔧 The Fixes
 
 ### Changes Made
 
-#### 1. **index.html** - Enhanced null checking
+#### 1. **index.html** - Tab switching null checks (Bug #1)
 
-**Line 2281-2282 (Previously line 2281):**
+**Line 2281-2282:**
 ```javascript
 // AFTER (Fixed):
 // Check if both newTab and newContent exist, and if we're not switching to the same tab
 if (!newTab || !newContent || currentContent === newContent) return;
 ```
 
-**Lines 2288-2295 (Previously lines 2287-2294):**
+**Lines 2288-2295:**
 ```javascript
 // AFTER (Fixed):
 // Add animation based on swipe direction (only if currentContent exists)
@@ -59,11 +77,57 @@ if (currentContent && direction === 'left') {
 }
 ```
 
-#### 2. **sw.js** - Updated cache version
+#### 2. **index.html** - Stockvel functions safe defaults (Bug #2)
+
+**displayContributionHistory() - Lines 4313-4330:**
+```javascript
+// AFTER (Fixed):
+tbody.innerHTML = filtered.map(r => {
+    // Safely extract values with defaults (handle missing/undefined fields)
+    const amount = (r.amount || 0);
+    const newTotal = (r.newTotal || 0);
+    const bonusAmount = (r.bonusAmount || r.bonusAdded || 0); // Support both field names
+    
+    return `...${amount.toFixed(2)}...${newTotal.toFixed(2)}...${bonusAmount.toFixed(2)}...`;
+}).join('');
+```
+
+**exportContributionHistory() - Lines 4360-4368:**
+```javascript
+// AFTER (Fixed):
+const data = AppState.stockvelReceipts.map(r => [
+    new Date(r.date).toLocaleDateString('en-ZA'),
+    r.memberName || 'Unknown',
+    formatReceiptType(r.type),
+    (r.amount || 0).toFixed(2),
+    (r.newTotal || 0).toFixed(2),
+    (r.bonusAmount || r.bonusAdded || 0).toFixed(2),  // Support both field names
+    r.notes || ''
+]);
+```
+
+**generateBonusReport() - Lines 4460-4465:**
+```javascript
+// AFTER (Fixed):
+const totalBonusesEarned = memberReceipts.filter(r => r.type === 'loan_payment')
+    .reduce((sum, r) => sum + (r.bonusAmount || r.bonusAdded || 0), 0);  // Fixed field name
+const bonusesPaidOut = Math.abs(memberReceipts.filter(r => r.type === 'bonus_payout')
+    .reduce((sum, r) => sum + (r.amount || 0), 0));  // Added default
+```
+
+**refreshMemberRegistry() - Lines 4856-4858:**
+```javascript
+// AFTER (Fixed):
+<td style="color: #27ae60; font-weight: 600;">R${(member.totalContributions || 0).toFixed(2)}</td>
+<td style="color: #f39c12; font-weight: 600;">R${(member.accumulatedBonus || 0).toFixed(2)}</td>
+<td>R${(member.monthlyContribution || 0).toFixed(2)}</td>
+```
+
+#### 3. **sw.js** - Updated cache version
 
 **Line 1:**
 ```javascript
-const CACHE_NAME = 'tbfs-loan-manager-v29'; // v1.7.2 - Fix: Tab switching and swipe navigation null reference errors
+const CACHE_NAME = 'tbfs-loan-manager-v30'; // v1.7.3 - Fix: displayContributionHistory undefined field errors
 ```
 
 ## ✅ What Now Works
@@ -145,14 +209,13 @@ const CACHE_NAME = 'tbfs-loan-manager-v29'; // v1.7.2 - Fix: Tab switching and s
 ## 📊 Technical Details
 
 ### Files Modified
-- `index.html` - Fixed switchTab function (3 lines changed)
-- `sw.js` - Updated cache version to v29 (1 line changed)
+- `index.html` - Fixed switchTab function + 4 stockvel functions (26 insertions, 19 deletions)
+- `sw.js` - Updated cache version to v30 (1 line changed)
 
 ### Total Changes
-- **4 lines modified**
-- **0 lines added**
-- **0 lines removed**
+- **45 lines modified** (26 insertions, 19 deletions)
 - **2 files affected**
+- **5 functions fixed**
 
 ### Code Quality Improvements
 - ✅ **Defensive programming:** Added comprehensive null checks
@@ -186,15 +249,23 @@ const CACHE_NAME = 'tbfs-loan-manager-v29'; // v1.7.2 - Fix: Tab switching and s
 - Added stockvel features
 - Introduced swipe navigation
 - ❌ Tab switching broken due to missing null check
+- ❌ Stockvel functions had undefined field issues
 
 **v1.7.1** - Stockvel Data Loading Fix
-- Fixed stockvel dashboard loading
+- Fixed stockvel dashboard loading on init
 - ❌ Tab switching still broken
+- ❌ Revealed hidden stockvel undefined field errors
 
-**v1.7.2** - This Fix (Current)
-- ✅ Fixed tab switching with null checks
+**v1.7.2** - Tab Switching Fix (Partial)
+- ✅ Fixed tab switching null checks
 - ✅ Fixed swipe navigation
-- ✅ Enhanced error handling
+- ❌ Exposed stockvel function errors on page load
+
+**v1.7.3** - Complete Fix (Current)
+- ✅ All tab navigation working
+- ✅ All stockvel functions safe from undefined errors
+- ✅ Field name inconsistencies resolved
+- ✅ Backward compatibility with old receipt formats
 - ✅ Complete functionality restored
 
 ## 🔗 Related Files
