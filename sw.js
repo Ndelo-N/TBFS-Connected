@@ -1,4 +1,4 @@
-const CACHE_NAME = 'tbfs-loan-manager-v27'; // v1.7.0 - Separate Stockvel Member System
+const CACHE_NAME = 'tbfs-loan-manager-v28'; // v1.7.1 - Fix: Load stockvel data on app initialization
 const urlsToCache = [
   './',
   './index.html',
