@@ -1,4 +1,4 @@
-const CACHE_NAME = 'tbfs-loan-manager-v28'; // v1.7.1 - Fix: Load stockvel data on app initialization
+const CACHE_NAME = 'tbfs-loan-manager-v30'; // v1.7.3 - Fix: displayContributionHistory undefined field errors
 const urlsToCache = [
   './',
   './index.html',
