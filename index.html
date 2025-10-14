@@ -2343,15 +2343,18 @@
             const activateThreshold = 100; // Distance to "ready" state
 
             container.addEventListener('touchstart', (e) => {
-                // Don't interfere with form inputs or scrollable elements
+                // Don't interfere with form inputs, buttons, or scrollable elements
                 if (e.target.tagName === 'INPUT' || 
                     e.target.tagName === 'TEXTAREA' || 
                     e.target.tagName === 'SELECT' ||
+                    e.target.tagName === 'BUTTON' ||
+                    e.target.closest('button') ||
                     e.target.closest('iframe')) {
                     return;
                 }
 
                 touchStartX = e.touches[0].clientX;
+                touchCurrentX = touchStartX; // Initialize to prevent false swipes
                 isSwiping = true;
             }, { passive: true });
 
