@@ -93,6 +93,11 @@
             -webkit-overflow-scrolling: touch;
             scrollbar-width: none;
             -ms-overflow-style: none;
+            /* Persistent menu bar for PWA */
+            position: sticky;
+            top: 0;
+            z-index: 1000;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
         }
         
         .tabs::-webkit-scrollbar {
@@ -2338,15 +2343,18 @@
             const activateThreshold = 100; // Distance to "ready" state
 
             container.addEventListener('touchstart', (e) => {
-                // Don't interfere with form inputs or scrollable elements
+                // Don't interfere with form inputs, buttons, or scrollable elements
                 if (e.target.tagName === 'INPUT' || 
                     e.target.tagName === 'TEXTAREA' || 
                     e.target.tagName === 'SELECT' ||
+                    e.target.tagName === 'BUTTON' ||
+                    e.target.closest('button') ||
                     e.target.closest('iframe')) {
                     return;
                 }
 
                 touchStartX = e.touches[0].clientX;
+                touchCurrentX = touchStartX; // Initialize to prevent false swipes
                 isSwiping = true;
             }, { passive: true });
 
