@@ -2252,6 +2252,7 @@
                                 <div style="display: flex; gap: 5px; flex-wrap: wrap;">
                                     ${loan.status === 'active' ? `
                                         <button class="btn" style="padding: 5px 10px; font-size: 12px;" onclick="makePayment(${loan.loan_id})">💰 Make Payment</button>
+                                        <button class="btn" style="padding: 5px 10px; font-size: 12px; background: #3498db;" onclick="adjustActiveLoan(${loan.loan_id})">📝 Adjust Loan</button>
                                         <button class="btn" style="padding: 5px 10px; font-size: 12px;" onclick="updateLoanStatus(${loan.loan_id}, 'completed')">✅ Mark Paid</button>
                                         <button class="btn btn-warning" style="padding: 5px 10px; font-size: 12px;" onclick="AppState.reviseLoan(${loan.loan_id})">🔧 Revise Loan</button>
                                         <button class="btn btn-danger" style="padding: 5px 10px; font-size: 12px;" onclick="updateLoanStatus(${loan.loan_id}, 'defaulted')">❌ Mark Default</button>
@@ -4171,6 +4172,275 @@
             };
 
             alert(statusMessages[newStatus] || 'Status updated');
+        }
+
+        // Adjust Active Loan Details (Add Interest or Increase Principal)
+        function adjustActiveLoan(loanId) {
+            const loan = AppState.loans.find(l => l.loan_id === loanId);
+            if (!loan) {
+                alert('Loan not found');
+                return;
+            }
+
+            if (loan.status !== 'active') {
+                alert('⚠️ Can only adjust active loans. This loan status is: ' + loan.status);
+                return;
+            }
+
+            // Show adjustment options
+            const adjustmentType = prompt(
+                `📝 Adjust Loan #${loanId} - ${loan.client_name}\n\n` +
+                `Current Details:\n` +
+                `• Principal Amount: R${loan.principal_amount.toFixed(2)}\n` +
+                `• Remaining Principal: R${loan.remaining_principal.toFixed(2)}\n` +
+                `• Current Balance: R${loan.current_balance.toFixed(2)}\n` +
+                `• Total Interest Charged: R${(loan.total_interest_charged || 0).toFixed(2)}\n` +
+                `• Max Interest Allowed: R${loan.max_interest_allowed.toFixed(2)}\n\n` +
+                `Select Adjustment Type:\n` +
+                `1 - Add Late Payment Interest\n` +
+                `2 - Increase Loan Amount (Top-up)\n` +
+                `3 - Cancel\n\n` +
+                `Enter choice (1-3):`
+            );
+
+            if (!adjustmentType || adjustmentType === '3') {
+                alert('Adjustment cancelled');
+                return;
+            }
+
+            if (adjustmentType === '1') {
+                // Add Late Payment Interest
+                addLateInterest(loan);
+            } else if (adjustmentType === '2') {
+                // Increase Loan Amount
+                increaseLoanAmount(loan);
+            } else {
+                alert('Invalid choice. Please select 1, 2, or 3.');
+            }
+        }
+
+        // Add Late Payment Interest to Loan
+        function addLateInterest(loan) {
+            // Get current interest status
+            const currentInterest = loan.total_interest_charged || 0;
+            const maxInterest = loan.max_interest_allowed;
+            const remainingInterestCap = maxInterest - currentInterest;
+
+            const interestAmount = prompt(
+                `💰 Add Late Payment Interest\n\n` +
+                `Loan #${loan.loan_id} - ${loan.client_name}\n\n` +
+                `Current Interest Charged: R${currentInterest.toFixed(2)}\n` +
+                `Max Interest Allowed: R${maxInterest.toFixed(2)}\n` +
+                `Remaining Cap: R${remainingInterestCap.toFixed(2)}\n\n` +
+                `Enter additional interest amount to add:\n` +
+                `(This will be added to the current balance)`
+            );
+
+            if (!interestAmount || isNaN(interestAmount) || parseFloat(interestAmount) <= 0) {
+                alert('Invalid amount. Adjustment cancelled.');
+                return;
+            }
+
+            const amount = parseFloat(interestAmount);
+
+            // Check if adding this interest would exceed the cap
+            if (currentInterest + amount > maxInterest) {
+                const confirm = window.confirm(
+                    `⚠️ WARNING: Adding R${amount.toFixed(2)} will exceed the interest cap!\n\n` +
+                    `Current: R${currentInterest.toFixed(2)}\n` +
+                    `After Addition: R${(currentInterest + amount).toFixed(2)}\n` +
+                    `Cap: R${maxInterest.toFixed(2)}\n` +
+                    `Excess: R${((currentInterest + amount) - maxInterest).toFixed(2)}\n\n` +
+                    `Do you want to proceed anyway?`
+                );
+                
+                if (!confirm) {
+                    alert('Adjustment cancelled');
+                    return;
+                }
+            }
+
+            // Get reason for the adjustment
+            const reason = prompt(
+                `📝 Enter reason for adding interest:\n` +
+                `(e.g., "Late payment penalty", "Missed 2 payments", etc.)`
+            );
+
+            if (!reason || reason.trim() === '') {
+                alert('Reason is required. Adjustment cancelled.');
+                return;
+            }
+
+            // Apply the interest adjustment
+            const oldInterest = loan.total_interest_charged || 0;
+            const oldBalance = loan.current_balance;
+
+            loan.total_interest_charged = (loan.total_interest_charged || 0) + amount;
+            loan.current_balance += amount;
+
+            // Round to 2 decimal places
+            loan.total_interest_charged = Math.round(loan.total_interest_charged * 100) / 100;
+            loan.current_balance = Math.round(loan.current_balance * 100) / 100;
+
+            // Log the adjustment
+            AppState.logTransaction('loan_adjustment', 
+                `Late interest added to Loan #${loan.loan_id}: R${amount.toFixed(2)} - ${reason}`, {
+                loanId: loan.loan_id,
+                clientName: loan.client_name,
+                adjustmentType: 'late_interest',
+                amount: amount,
+                reason: reason,
+                previousInterest: oldInterest,
+                newInterest: loan.total_interest_charged,
+                previousBalance: oldBalance,
+                newBalance: loan.current_balance
+            });
+
+            // Save and update
+            AppState.save();
+            AppState.updateDashboard();
+
+            alert(
+                `✅ Late Interest Added Successfully!\n\n` +
+                `Loan #${loan.loan_id} - ${loan.client_name}\n` +
+                `Interest Added: R${amount.toFixed(2)}\n` +
+                `Total Interest Now: R${loan.total_interest_charged.toFixed(2)}\n` +
+                `New Balance: R${loan.current_balance.toFixed(2)}\n` +
+                `Reason: ${reason}`
+            );
+        }
+
+        // Increase Loan Amount (Top-up)
+        function increaseLoanAmount(loan) {
+            const increaseAmount = prompt(
+                `💰 Increase Loan Amount (Top-up)\n\n` +
+                `Loan #${loan.loan_id} - ${loan.client_name}\n\n` +
+                `Current Principal: R${loan.principal_amount.toFixed(2)}\n` +
+                `Remaining Principal: R${loan.remaining_principal.toFixed(2)}\n` +
+                `Current Balance: R${loan.current_balance.toFixed(2)}\n\n` +
+                `Enter amount to add to principal:\n` +
+                `(This will increase the loan amount and adjust all related fields)`
+            );
+
+            if (!increaseAmount || isNaN(increaseAmount) || parseFloat(increaseAmount) <= 0) {
+                alert('Invalid amount. Adjustment cancelled.');
+                return;
+            }
+
+            const amount = parseFloat(increaseAmount);
+
+            // Check if business has enough capital
+            if (AppState.capital < amount) {
+                alert(
+                    `❌ Insufficient Capital!\n\n` +
+                    `Available Capital: R${AppState.capital.toFixed(2)}\n` +
+                    `Requested: R${amount.toFixed(2)}\n` +
+                    `Shortfall: R${(amount - AppState.capital).toFixed(2)}`
+                );
+                return;
+            }
+
+            // Get reason for the increase
+            const reason = prompt(
+                `📝 Enter reason for increasing loan amount:\n` +
+                `(e.g., "Emergency top-up", "Additional business capital", etc.)`
+            );
+
+            if (!reason || reason.trim() === '') {
+                alert('Reason is required. Adjustment cancelled.');
+                return;
+            }
+
+            // Show confirmation with calculations
+            const oldPrincipal = loan.principal_amount;
+            const oldRemainingPrincipal = loan.remaining_principal;
+            const oldBalance = loan.current_balance;
+            const oldMaxInterest = loan.max_interest_allowed;
+
+            const newPrincipal = oldPrincipal + amount;
+            const newRemainingPrincipal = oldRemainingPrincipal + amount;
+            const newMaxInterest = oldMaxInterest + amount; // Increase cap proportionally
+            const newBalance = oldBalance + amount;
+
+            const confirm = window.confirm(
+                `🔍 Confirm Loan Increase\n\n` +
+                `Loan #${loan.loan_id} - ${loan.client_name}\n\n` +
+                `Principal: R${oldPrincipal.toFixed(2)} → R${newPrincipal.toFixed(2)} (+R${amount.toFixed(2)})\n` +
+                `Remaining Principal: R${oldRemainingPrincipal.toFixed(2)} → R${newRemainingPrincipal.toFixed(2)}\n` +
+                `Balance: R${oldBalance.toFixed(2)} → R${newBalance.toFixed(2)}\n` +
+                `Max Interest Cap: R${oldMaxInterest.toFixed(2)} → R${newMaxInterest.toFixed(2)}\n\n` +
+                `Capital Impact: R${AppState.capital.toFixed(2)} → R${(AppState.capital - amount).toFixed(2)}\n` +
+                `Deployed: R${AppState.deployed.toFixed(2)} → R${(AppState.deployed + amount).toFixed(2)}\n\n` +
+                `Reason: ${reason}\n\n` +
+                `Proceed with this adjustment?`
+            );
+
+            if (!confirm) {
+                alert('Adjustment cancelled');
+                return;
+            }
+
+            // Apply the increase
+            loan.principal_amount = newPrincipal;
+            loan.original_principal = newPrincipal; // Update original too
+            loan.remaining_principal = newRemainingPrincipal;
+            loan.current_balance = newBalance;
+            loan.max_interest_allowed = newMaxInterest;
+
+            // Recalculate expected monthly interest
+            loan.expected_monthly_interest = loan.max_interest_allowed / loan.term_months;
+
+            // Update total cost (principal + max interest + initiation fee)
+            const initiationFeeRate = 0.09; // 9%
+            const additionalInitiationFee = amount * initiationFeeRate;
+            loan.total_initiation_fee += additionalInitiationFee;
+            loan.total_cost = loan.principal_amount + loan.max_interest_allowed + loan.total_initiation_fee;
+
+            // Round all values to 2 decimal places
+            loan.principal_amount = Math.round(loan.principal_amount * 100) / 100;
+            loan.original_principal = Math.round(loan.original_principal * 100) / 100;
+            loan.remaining_principal = Math.round(loan.remaining_principal * 100) / 100;
+            loan.current_balance = Math.round(loan.current_balance * 100) / 100;
+            loan.max_interest_allowed = Math.round(loan.max_interest_allowed * 100) / 100;
+            loan.expected_monthly_interest = Math.round(loan.expected_monthly_interest * 100) / 100;
+            loan.total_initiation_fee = Math.round(loan.total_initiation_fee * 100) / 100;
+            loan.total_cost = Math.round(loan.total_cost * 100) / 100;
+
+            // Update AppState capital and deployed
+            AppState.capital -= amount;
+            AppState.deployed += amount;
+
+            // Log the adjustment
+            AppState.logTransaction('loan_adjustment', 
+                `Loan amount increased for Loan #${loan.loan_id}: R${amount.toFixed(2)} - ${reason}`, {
+                loanId: loan.loan_id,
+                clientName: loan.client_name,
+                adjustmentType: 'increase_principal',
+                amount: amount,
+                reason: reason,
+                previousPrincipal: oldPrincipal,
+                newPrincipal: newPrincipal,
+                previousBalance: oldBalance,
+                newBalance: loan.current_balance,
+                previousMaxInterest: oldMaxInterest,
+                newMaxInterest: loan.max_interest_allowed,
+                additionalInitiationFee: additionalInitiationFee
+            });
+
+            // Save and update
+            AppState.save();
+            AppState.updateDashboard();
+
+            alert(
+                `✅ Loan Amount Increased Successfully!\n\n` +
+                `Loan #${loan.loan_id} - ${loan.client_name}\n\n` +
+                `Principal Increased: R${oldPrincipal.toFixed(2)} → R${newPrincipal.toFixed(2)}\n` +
+                `Amount Added: R${amount.toFixed(2)}\n` +
+                `New Balance: R${loan.current_balance.toFixed(2)}\n` +
+                `New Total Cost: R${loan.total_cost.toFixed(2)}\n` +
+                `Additional Initiation Fee: R${additionalInitiationFee.toFixed(2)}\n\n` +
+                `Reason: ${reason}`
+            );
         }
 
         // ===== UPDATE MANAGEMENT SYSTEM =====
