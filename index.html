@@ -57,6 +57,13 @@
             padding: 30px;
             text-align: center;
             color: white;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            z-index: 1100;
+            transform: translateY(0);
+            transition: transform 0.3s ease;
         }
 
         .logo {
@@ -95,9 +102,14 @@
             -ms-overflow-style: none;
             /* Persistent menu bar for PWA */
             position: sticky;
-            top: 0;
+            top: var(--header-offset, 0px);
             z-index: 1000;
             box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+        }
+
+        /* Hidden state for the header on scroll down */
+        .header.is-hidden {
+            transform: translateY(-100%);
         }
         
         .tabs::-webkit-scrollbar {
@@ -642,7 +654,7 @@
     </div>
 
     <div class="container">
-        <div class="header">
+        <div class="header" id="appHeader">
             <div class="logo" style="background: none; box-shadow: none;">
                 <img src="./TBFS_Logo.png" 
                      alt="TBFS Logo" 
@@ -656,7 +668,7 @@
             <div class="tagline">Your Financial Refuge</div>
         </div>
 
-        <div class="tabs">
+        <div class="tabs" id="appTabs">
             <button class="tab active" data-tab="calculator">Loan Calculator</button>
             <button class="tab" data-tab="dashboard">Dashboard</button>
             <button class="tab" data-tab="clients">Clients</button>
@@ -672,7 +684,7 @@
         <div class="swipe-indicator right" id="swipeRightIndicator">▶</div>
 
         <!-- Tabs Container for Swipe Detection -->
-        <div class="tabs-container" id="tabsContainer">
+        <div class="tabs-container" id="tabsContainer" style="--header-offset: 0px;">
 
         <!-- CALCULATOR TAB -->
         <div id="calculator" class="tab-content active">
@@ -6749,6 +6761,64 @@
             }
         });
     </script>
+<script>
+    (function() {
+        var header = document.getElementById('appHeader');
+        var tabs = document.getElementById('appTabs');
+        var tabsContainer = document.getElementById('tabsContainer');
+        if (!header || !tabs || !tabsContainer) return;
+
+        function setTabsOffset(px) {
+            // Apply as CSS var usable by sticky top
+            tabs.style.setProperty('--header-offset', px + 'px');
+            tabsContainer.style.setProperty('--header-offset', px + 'px');
+        }
+
+        function measureAndAlign() {
+            // Header is fixed; push content down equal to header height
+            var h = header.getBoundingClientRect().height;
+            document.documentElement.style.setProperty('--header-height', h + 'px');
+            document.body.style.paddingTop = h + 'px';
+            setTabsOffset(0); // Tabs sit at top of viewport under header
+        }
+
+        var lastY = window.pageYOffset || document.documentElement.scrollTop || 0;
+        var ticking = false;
+
+        function onScroll() {
+            var y = window.pageYOffset || document.documentElement.scrollTop || 0;
+            if (y > lastY + 5) {
+                // scrolling down -> hide header
+                header.classList.add('is-hidden');
+                setTabsOffset(0); // keep tabs at top
+            } else if (y < lastY - 5) {
+                // scrolling up -> show header
+                header.classList.remove('is-hidden');
+                setTabsOffset(header.getBoundingClientRect().height);
+            }
+            lastY = y;
+            ticking = false;
+        }
+
+        window.addEventListener('resize', function() {
+            measureAndAlign();
+        });
+
+        // Initial alignment after fonts/images load
+        window.addEventListener('load', function() {
+            measureAndAlign();
+            // After load, set initial tabs offset to header height so tabs appear below header
+            setTabsOffset(header.getBoundingClientRect().height);
+        });
+
+        window.addEventListener('scroll', function() {
+            if (!ticking) {
+                window.requestAnimationFrame(onScroll);
+                ticking = true;
+            }
+        }, { passive: true });
+    })();
+</script>
 </body>
 </html>
 
