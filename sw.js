@@ -1,4 +1,4 @@
-const CACHE_NAME = 'tbfs-loan-manager-v30'; // v1.7.3 - Fix: displayContributionHistory undefined field errors
+const CACHE_NAME = 'tbfs-loan-manager-v32'; // v1.7.4 - Fix: PWA cloud data update with network-first for HTML + remove redundant offline fallback
 const urlsToCache = [
   './',
   './index.html',
@@ -26,7 +26,7 @@ self.addEventListener('install', function(event) {
   );
 });
 
-// Fetch event - serve from cache when offline
+// Fetch event - network-first for HTML, cache-first for assets
 self.addEventListener('fetch', function(event) {
   // Skip caching for chrome-extension and other unsupported schemes
   const url = new URL(event.request.url);
@@ -37,6 +37,39 @@ self.addEventListener('fetch', function(event) {
   
   console.log('Service Worker: Fetch event for', event.request.url);
   
+  // For HTML documents, use network-first strategy to always get fresh code
+  if (event.request.destination === 'document' || event.request.mode === 'navigate') {
+    event.respondWith(
+      fetch(event.request)
+        .then(function(response) {
+          console.log('Service Worker: Fetched fresh HTML from network', event.request.url);
+          
+          // Cache the fresh response
+          if (response && response.status === 200) {
+            const responseToCache = response.clone();
+            caches.open(CACHE_NAME)
+              .then(function(cache) {
+                cache.put(event.request, responseToCache);
+              })
+              .catch(function(error) {
+                console.warn('Service Worker: Cache put failed', error);
+              });
+          }
+          
+          return response;
+        })
+        .catch(function() {
+          // If network fails, fall back to cache (offline mode)
+          console.log('Service Worker: Network failed, serving HTML from cache', event.request.url);
+          return caches.match(event.request).then(function(response) {
+            return response || caches.match('./index.html');
+          });
+        })
+    );
+    return;
+  }
+  
+  // For everything else (CSS, JS, images), use cache-first strategy
   event.respondWith(
     caches.match(event.request)
       .then(function(response) {
@@ -66,11 +99,11 @@ self.addEventListener('fetch', function(event) {
             });
 
           return response;
-        }).catch(function() {
-          // If both cache and network fail, show offline page
-          if (event.request.destination === 'document') {
-            return caches.match('./index.html');
-          }
+        }).catch(function(error) {
+          // Asset not in cache and network failed - no fallback available
+          console.warn('Service Worker: Asset not available offline', event.request.url, error);
+          // Return undefined - let the browser handle the failed request
+          return undefined;
         });
       })
   );
