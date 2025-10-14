@@ -2181,9 +2181,15 @@
                 }
                 
                 container.innerHTML = sortedLoans.map(loan => {
-                    // Initialize current balance if not set
+                    // Initialize missing properties for backward compatibility
                     if (!loan.current_balance) {
-                        loan.current_balance = loan.total_cost;
+                        loan.current_balance = loan.total_cost || 0;
+                    }
+                    if (!loan.principal_amount) {
+                        loan.principal_amount = 0;
+                    }
+                    if (!loan.monthly_payment) {
+                        loan.monthly_payment = 0;
                     }
                     
                     // Calculate loan start date and next payment due date
@@ -4187,15 +4193,15 @@
                 return;
             }
 
-            // Show adjustment options
+            // Show adjustment options (with safe property access)
             const adjustmentType = prompt(
                 `📝 Adjust Loan #${loanId} - ${loan.client_name}\n\n` +
                 `Current Details:\n` +
-                `• Principal Amount: R${loan.principal_amount.toFixed(2)}\n` +
-                `• Remaining Principal: R${loan.remaining_principal.toFixed(2)}\n` +
-                `• Current Balance: R${loan.current_balance.toFixed(2)}\n` +
+                `• Principal Amount: R${(loan.principal_amount || 0).toFixed(2)}\n` +
+                `• Remaining Principal: R${(loan.remaining_principal || loan.principal_amount || 0).toFixed(2)}\n` +
+                `• Current Balance: R${(loan.current_balance || loan.total_cost || 0).toFixed(2)}\n` +
                 `• Total Interest Charged: R${(loan.total_interest_charged || 0).toFixed(2)}\n` +
-                `• Max Interest Allowed: R${loan.max_interest_allowed.toFixed(2)}\n\n` +
+                `• Max Interest Allowed: R${(loan.max_interest_allowed || loan.principal_amount || 0).toFixed(2)}\n\n` +
                 `Select Adjustment Type:\n` +
                 `1 - Add Late Payment Interest\n` +
                 `2 - Increase Loan Amount (Top-up)\n` +
@@ -4221,10 +4227,18 @@
 
         // Add Late Payment Interest to Loan
         function addLateInterest(loan) {
-            // Get current interest status
+            // Initialize undefined properties for backward compatibility with older loans
+            if (loan.total_interest_charged === undefined) loan.total_interest_charged = 0;
+            if (loan.current_balance === undefined) loan.current_balance = loan.total_cost || loan.principal_amount || 0;
+            if (loan.max_interest_allowed === undefined) {
+                // Calculate max interest if missing (100% of principal as cap)
+                loan.max_interest_allowed = loan.original_principal || loan.principal_amount || 0;
+            }
+            
+            // Get current interest status (with safe fallbacks)
             const currentInterest = loan.total_interest_charged || 0;
-            const maxInterest = loan.max_interest_allowed;
-            const remainingInterestCap = maxInterest - currentInterest;
+            const maxInterest = loan.max_interest_allowed || 0;
+            const remainingInterestCap = Math.max(0, maxInterest - currentInterest);
 
             const interestAmount = prompt(
                 `💰 Add Late Payment Interest\n\n` +
@@ -4271,12 +4285,12 @@
                 return;
             }
 
-            // Apply the interest adjustment
+            // Apply the interest adjustment (with safe defaults)
             const oldInterest = loan.total_interest_charged || 0;
-            const oldBalance = loan.current_balance;
+            const oldBalance = loan.current_balance || 0;
 
             loan.total_interest_charged = (loan.total_interest_charged || 0) + amount;
-            loan.current_balance += amount;
+            loan.current_balance = (loan.current_balance || 0) + amount;
 
             // Round to 2 decimal places
             loan.total_interest_charged = Math.round(loan.total_interest_charged * 100) / 100;
@@ -4312,12 +4326,31 @@
 
         // Increase Loan Amount (Top-up)
         function increaseLoanAmount(loan) {
+            // Initialize undefined properties for backward compatibility with older loans
+            if (loan.principal_amount === undefined) loan.principal_amount = 0;
+            if (loan.original_principal === undefined) loan.original_principal = loan.principal_amount;
+            if (loan.remaining_principal === undefined) loan.remaining_principal = loan.principal_amount;
+            if (loan.current_balance === undefined) loan.current_balance = loan.total_cost || loan.principal_amount || 0;
+            if (loan.max_interest_allowed === undefined) {
+                loan.max_interest_allowed = loan.original_principal || loan.principal_amount || 0;
+            }
+            if (loan.expected_monthly_interest === undefined) {
+                loan.expected_monthly_interest = loan.max_interest_allowed / (loan.term_months || 1);
+            }
+            if (loan.total_initiation_fee === undefined) {
+                loan.total_initiation_fee = (loan.principal_amount || 0) * 0.09;
+            }
+            if (loan.total_cost === undefined) {
+                loan.total_cost = loan.principal_amount + loan.max_interest_allowed + loan.total_initiation_fee;
+            }
+            
+            // Safe display with guaranteed numeric values
             const increaseAmount = prompt(
                 `💰 Increase Loan Amount (Top-up)\n\n` +
                 `Loan #${loan.loan_id} - ${loan.client_name}\n\n` +
-                `Current Principal: R${loan.principal_amount.toFixed(2)}\n` +
-                `Remaining Principal: R${loan.remaining_principal.toFixed(2)}\n` +
-                `Current Balance: R${loan.current_balance.toFixed(2)}\n\n` +
+                `Current Principal: R${(loan.principal_amount || 0).toFixed(2)}\n` +
+                `Remaining Principal: R${(loan.remaining_principal || 0).toFixed(2)}\n` +
+                `Current Balance: R${(loan.current_balance || 0).toFixed(2)}\n\n` +
                 `Enter amount to add to principal:\n` +
                 `(This will increase the loan amount and adjust all related fields)`
             );
@@ -4388,13 +4421,13 @@
             loan.max_interest_allowed = newMaxInterest;
 
             // Recalculate expected monthly interest
-            loan.expected_monthly_interest = loan.max_interest_allowed / loan.term_months;
+            loan.expected_monthly_interest = loan.max_interest_allowed / (loan.term_months || 1);
 
             // Update total cost (principal + max interest + initiation fee)
             const initiationFeeRate = 0.09; // 9%
             const additionalInitiationFee = amount * initiationFeeRate;
-            loan.total_initiation_fee += additionalInitiationFee;
-            loan.total_cost = loan.principal_amount + loan.max_interest_allowed + loan.total_initiation_fee;
+            loan.total_initiation_fee = (loan.total_initiation_fee || 0) + additionalInitiationFee;
+            loan.total_cost = (loan.principal_amount || 0) + (loan.max_interest_allowed || 0) + (loan.total_initiation_fee || 0);
 
             // Round all values to 2 decimal places
             loan.principal_amount = Math.round(loan.principal_amount * 100) / 100;
