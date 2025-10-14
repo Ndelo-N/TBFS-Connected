@@ -1,4 +1,4 @@
-const CACHE_NAME = 'tbfs-loan-manager-v31'; // v1.7.4 - Fix: PWA cloud data update with network-first for HTML
+const CACHE_NAME = 'tbfs-loan-manager-v32'; // v1.7.4 - Fix: PWA cloud data update with network-first for HTML + remove redundant offline fallback
 const urlsToCache = [
   './',
   './index.html',
@@ -99,9 +99,11 @@ self.addEventListener('fetch', function(event) {
             });
 
           return response;
-        }).catch(function() {
-          // If both cache and network fail, try cache
-          return caches.match(event.request);
+        }).catch(function(error) {
+          // Asset not in cache and network failed - no fallback available
+          console.warn('Service Worker: Asset not available offline', event.request.url, error);
+          // Return undefined - let the browser handle the failed request
+          return undefined;
         });
       })
   );
