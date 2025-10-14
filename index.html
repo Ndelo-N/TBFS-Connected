@@ -2181,9 +2181,15 @@
                 }
                 
                 container.innerHTML = sortedLoans.map(loan => {
-                    // Initialize current balance if not set
+                    // Initialize missing properties for backward compatibility
                     if (!loan.current_balance) {
-                        loan.current_balance = loan.total_cost;
+                        loan.current_balance = loan.total_cost || 0;
+                    }
+                    if (!loan.principal_amount) {
+                        loan.principal_amount = 0;
+                    }
+                    if (!loan.monthly_payment) {
+                        loan.monthly_payment = 0;
                     }
                     
                     // Calculate loan start date and next payment due date
