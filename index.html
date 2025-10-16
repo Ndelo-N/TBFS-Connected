@@ -4403,24 +4403,139 @@
             const oldRemainingPrincipal = loan.remaining_principal;
             const oldBalance = loan.current_balance;
             const oldMaxInterest = loan.max_interest_allowed;
+            const oldInitiationFee = loan.total_initiation_fee;
 
             const newPrincipal = oldPrincipal + amount;
             const newRemainingPrincipal = oldRemainingPrincipal + amount;
-            const newMaxInterest = oldMaxInterest + amount; // Increase cap proportionally
-            const newBalance = oldBalance + amount;
+            
+            let newMaxInterest, newBalance, additionalInitiationFee, confirmMessage;
+            
+            // STOCKVEL LOAN: Recalculate with proper tiers based on NEW total loan amount
+            if (loan.isStockvelLoan) {
+                console.log(`\n=== STOCKVEL LOAN TOP-UP RECALCULATION ===`);
+                console.log(`Original Principal: R${oldPrincipal.toFixed(2)}`);
+                console.log(`Top-up Amount: R${amount.toFixed(2)}`);
+                console.log(`New Principal: R${newPrincipal.toFixed(2)}`);
+                
+                // Get client's total contributions
+                const client = AppState.clients.find(c => c.account_number === loan.account_number);
+                const totalContributions = client?.total_contributions || 0;
+                
+                console.log(`Member Contributions: R${totalContributions.toFixed(2)}`);
+                console.log(`New Loan-to-Savings Ratio: ${totalContributions > 0 ? ((newPrincipal / totalContributions) * 100).toFixed(1) + '%' : 'N/A'}`);
+                
+                // Calculate tiered interest for NEW total loan amount
+                const tieredResult = calculateTieredStockvelInterest(newPrincipal, totalContributions);
+                const tiers1to4Interest = tieredResult.tiers1to4Interest;
+                const tier1to4Amount = tieredResult.tier1to4Amount;
+                const tier5Amount = tieredResult.tier5Amount;
+                
+                // Calculate initiation fee for stockvel (waived up to contributions, 12% on excess)
+                let totalInitiationFee;
+                if (newPrincipal <= totalContributions) {
+                    totalInitiationFee = 0; // Completely waived
+                } else {
+                    totalInitiationFee = (newPrincipal - totalContributions) * 0.12;
+                }
+                const monthlyInitiationFee = totalInitiationFee / loan.term_months;
+                additionalInitiationFee = totalInitiationFee - oldInitiationFee;
+                
+                console.log(`Total Initiation Fee (recalculated): R${totalInitiationFee.toFixed(2)}`);
+                console.log(`Additional Initiation Fee: R${additionalInitiationFee.toFixed(2)}`);
+                
+                // Calculate admin fee and Tier 5 interest using algebraic solution
+                let adminFee = 0;
+                let tier5Interest = 0;
+                let totalTieredInterest = tiers1to4Interest;
+                
+                if (tier5Amount > 0) {
+                    // Algebraic solution for admin fee (no circular dependency)
+                    const numerator = 60 * (newPrincipal - tiers1to4Interest - (tier5Amount * 0.30) + monthlyInitiationFee);
+                    const denominator = newPrincipal - 60;
+                    
+                    if (Math.abs(denominator) < 0.01) {
+                        adminFee = 60;
+                    } else {
+                        adminFee = numerator / denominator;
+                    }
+                    
+                    // Calculate Tier 5 interest
+                    const tier5TotalCharge = tier5Amount * 0.30;
+                    tier5Interest = tier5TotalCharge - adminFee - monthlyInitiationFee;
+                    totalTieredInterest += tier5Interest;
+                    
+                    console.log(`Tier 5 Amount: R${tier5Amount.toFixed(2)}`);
+                    console.log(`Admin Fee (algebraic): R${adminFee.toFixed(2)}`);
+                    console.log(`Tier 5 Interest: R${tier5Interest.toFixed(2)}`);
+                } else if (tier1to4Amount > 0) {
+                    const tiers1to4Rate = tiers1to4Interest / tier1to4Amount;
+                    adminFee = 60 * (1 - tiers1to4Rate);
+                    console.log(`Admin Fee (Tiers 1-4): R${adminFee.toFixed(2)}`);
+                } else {
+                    adminFee = 60;
+                }
+                
+                // Apply 10% minimum check
+                const minimumInterest = newPrincipal * 0.10;
+                const actualInterest = Math.max(totalTieredInterest, minimumInterest);
+                
+                console.log(`Tiered Interest: R${totalTieredInterest.toFixed(2)}`);
+                console.log(`10% Minimum: R${minimumInterest.toFixed(2)}`);
+                console.log(`Actual Interest (per month): R${actualInterest.toFixed(2)}`);
+                
+                // Calculate NEW max interest allowed (total for loan term)
+                newMaxInterest = actualInterest * loan.term_months;
+                
+                // Calculate new balance (remaining principal + interest + fees for remaining months)
+                const paymentsAlreadyMade = loan.payments_made || 0;
+                const remainingMonths = loan.term_months - paymentsAlreadyMade;
+                const interestForRemainingMonths = actualInterest * remainingMonths;
+                const initiationForRemainingMonths = monthlyInitiationFee * remainingMonths;
+                const adminForRemainingMonths = adminFee * remainingMonths;
+                
+                newBalance = newRemainingPrincipal + interestForRemainingMonths + initiationForRemainingMonths + adminForRemainingMonths;
+                
+                console.log(`New Max Interest (total): R${newMaxInterest.toFixed(2)}`);
+                console.log(`New Balance: R${newBalance.toFixed(2)}`);
+                
+                confirmMessage = 
+                    `🔍 Confirm Stockvel Loan Top-Up\n\n` +
+                    `Loan #${loan.loan_id} - ${loan.client_name}\n\n` +
+                    `📊 RECALCULATED WITH PROPER TIERS:\n` +
+                    `Principal: R${oldPrincipal.toFixed(2)} → R${newPrincipal.toFixed(2)} (+R${amount.toFixed(2)})\n` +
+                    `New Loan-to-Savings: ${totalContributions > 0 ? ((newPrincipal / totalContributions) * 100).toFixed(1) + '%' : 'N/A'}\n\n` +
+                    `Interest (monthly): R${actualInterest.toFixed(2)}\n` +
+                    `Max Interest (total): R${oldMaxInterest.toFixed(2)} → R${newMaxInterest.toFixed(2)}\n` +
+                    `Initiation Fee: R${oldInitiationFee.toFixed(2)} → R${totalInitiationFee.toFixed(2)} (+R${additionalInitiationFee.toFixed(2)})\n` +
+                    `Balance: R${oldBalance.toFixed(2)} → R${newBalance.toFixed(2)}\n\n` +
+                    `Capital Impact: R${AppState.capital.toFixed(2)} → R${(AppState.capital - amount).toFixed(2)}\n` +
+                    `Deployed: R${AppState.deployed.toFixed(2)} → R${(AppState.deployed + amount).toFixed(2)}\n\n` +
+                    `Reason: ${reason}\n\n` +
+                    `⚠️ Note: Tiers recalculated based on new total loan amount\n\n` +
+                    `Proceed with this adjustment?`;
+                    
+            } else {
+                // STANDARD LOAN: Use simple 1:1 interest increase
+                newMaxInterest = oldMaxInterest + amount;
+                newBalance = oldBalance + amount;
+                
+                const initiationFeeRate = 0.09; // 9%
+                additionalInitiationFee = amount * initiationFeeRate;
+                
+                confirmMessage = 
+                    `🔍 Confirm Loan Increase\n\n` +
+                    `Loan #${loan.loan_id} - ${loan.client_name}\n\n` +
+                    `Principal: R${oldPrincipal.toFixed(2)} → R${newPrincipal.toFixed(2)} (+R${amount.toFixed(2)})\n` +
+                    `Remaining Principal: R${oldRemainingPrincipal.toFixed(2)} → R${newRemainingPrincipal.toFixed(2)}\n` +
+                    `Balance: R${oldBalance.toFixed(2)} → R${newBalance.toFixed(2)}\n` +
+                    `Max Interest Cap: R${oldMaxInterest.toFixed(2)} → R${newMaxInterest.toFixed(2)}\n\n` +
+                    `Capital Impact: R${AppState.capital.toFixed(2)} → R${(AppState.capital - amount).toFixed(2)}\n` +
+                    `Deployed: R${AppState.deployed.toFixed(2)} → R${(AppState.deployed + amount).toFixed(2)}\n\n` +
+                    `Reason: ${reason}\n\n` +
+                    `Proceed with this adjustment?`;
+            }
 
-            const confirm = window.confirm(
-                `🔍 Confirm Loan Increase\n\n` +
-                `Loan #${loan.loan_id} - ${loan.client_name}\n\n` +
-                `Principal: R${oldPrincipal.toFixed(2)} → R${newPrincipal.toFixed(2)} (+R${amount.toFixed(2)})\n` +
-                `Remaining Principal: R${oldRemainingPrincipal.toFixed(2)} → R${newRemainingPrincipal.toFixed(2)}\n` +
-                `Balance: R${oldBalance.toFixed(2)} → R${newBalance.toFixed(2)}\n` +
-                `Max Interest Cap: R${oldMaxInterest.toFixed(2)} → R${newMaxInterest.toFixed(2)}\n\n` +
-                `Capital Impact: R${AppState.capital.toFixed(2)} → R${(AppState.capital - amount).toFixed(2)}\n` +
-                `Deployed: R${AppState.deployed.toFixed(2)} → R${(AppState.deployed + amount).toFixed(2)}\n\n` +
-                `Reason: ${reason}\n\n` +
-                `Proceed with this adjustment?`
-            );
+            const confirm = window.confirm(confirmMessage);
 
             if (!confirm) {
                 alert('Adjustment cancelled');
@@ -4429,7 +4544,7 @@
 
             // Apply the increase
             loan.principal_amount = newPrincipal;
-            loan.original_principal = newPrincipal; // Update original too
+            loan.original_principal = newPrincipal;
             loan.remaining_principal = newRemainingPrincipal;
             loan.current_balance = newBalance;
             loan.max_interest_allowed = newMaxInterest;
@@ -4437,10 +4552,16 @@
             // Recalculate expected monthly interest
             loan.expected_monthly_interest = loan.max_interest_allowed / loan.term_months;
 
-            // Update total cost (principal + max interest + initiation fee)
-            const initiationFeeRate = 0.09; // 9%
-            const additionalInitiationFee = amount * initiationFeeRate;
-            loan.total_initiation_fee += additionalInitiationFee;
+            // Update initiation fee
+            if (loan.isStockvelLoan) {
+                // For stockvel, we recalculated the total initiation fee above
+                loan.total_initiation_fee = oldInitiationFee + additionalInitiationFee;
+            } else {
+                // For standard, add 9% of top-up amount
+                loan.total_initiation_fee += additionalInitiationFee;
+            }
+            
+            // Update total cost
             loan.total_cost = loan.principal_amount + loan.max_interest_allowed + loan.total_initiation_fee;
 
             // Round all values to 2 decimal places
@@ -4459,10 +4580,12 @@
 
             // Log the adjustment
             AppState.logTransaction('loan_adjustment', 
-                `Loan amount increased for Loan #${loan.loan_id}: R${amount.toFixed(2)} - ${reason}`, {
+                `Loan amount increased for Loan #${loan.loan_id}: R${amount.toFixed(2)} - ${reason}${loan.isStockvelLoan ? ' (Tiers recalculated)' : ''}`, {
                 loanId: loan.loan_id,
                 clientName: loan.client_name,
                 adjustmentType: 'increase_principal',
+                isStockvelLoan: loan.isStockvelLoan || false,
+                tiersRecalculated: loan.isStockvelLoan || false,
                 amount: amount,
                 reason: reason,
                 previousPrincipal: oldPrincipal,
@@ -4471,6 +4594,8 @@
                 newBalance: loan.current_balance,
                 previousMaxInterest: oldMaxInterest,
                 newMaxInterest: loan.max_interest_allowed,
+                previousInitiationFee: oldInitiationFee,
+                newInitiationFee: loan.total_initiation_fee,
                 additionalInitiationFee: additionalInitiationFee
             });
 
@@ -4478,16 +4603,33 @@
             AppState.save();
             AppState.updateDashboard();
 
-            alert(
-                `✅ Loan Amount Increased Successfully!\n\n` +
-                `Loan #${loan.loan_id} - ${loan.client_name}\n\n` +
-                `Principal Increased: R${oldPrincipal.toFixed(2)} → R${newPrincipal.toFixed(2)}\n` +
-                `Amount Added: R${amount.toFixed(2)}\n` +
-                `New Balance: R${loan.current_balance.toFixed(2)}\n` +
-                `New Total Cost: R${loan.total_cost.toFixed(2)}\n` +
-                `Additional Initiation Fee: R${additionalInitiationFee.toFixed(2)}\n\n` +
-                `Reason: ${reason}`
-            );
+            // Show appropriate success message
+            if (loan.isStockvelLoan) {
+                alert(
+                    `✅ Stockvel Loan Top-Up Successful!\n\n` +
+                    `Loan #${loan.loan_id} - ${loan.client_name}\n\n` +
+                    `Principal: R${oldPrincipal.toFixed(2)} → R${newPrincipal.toFixed(2)}\n` +
+                    `Top-up Amount: R${amount.toFixed(2)}\n\n` +
+                    `📊 RECALCULATED WITH TIERS:\n` +
+                    `Max Interest: R${oldMaxInterest.toFixed(2)} → R${loan.max_interest_allowed.toFixed(2)}\n` +
+                    `Initiation Fee: R${oldInitiationFee.toFixed(2)} → R${loan.total_initiation_fee.toFixed(2)}\n` +
+                    `New Balance: R${loan.current_balance.toFixed(2)}\n` +
+                    `New Total Cost: R${loan.total_cost.toFixed(2)}\n\n` +
+                    `✅ Tier rates applied based on new total loan amount\n\n` +
+                    `Reason: ${reason}`
+                );
+            } else {
+                alert(
+                    `✅ Loan Amount Increased Successfully!\n\n` +
+                    `Loan #${loan.loan_id} - ${loan.client_name}\n\n` +
+                    `Principal Increased: R${oldPrincipal.toFixed(2)} → R${newPrincipal.toFixed(2)}\n` +
+                    `Amount Added: R${amount.toFixed(2)}\n` +
+                    `New Balance: R${loan.current_balance.toFixed(2)}\n` +
+                    `New Total Cost: R${loan.total_cost.toFixed(2)}\n` +
+                    `Additional Initiation Fee: R${additionalInitiationFee.toFixed(2)}\n\n` +
+                    `Reason: ${reason}`
+                );
+            }
         }
 
         // ===== UPDATE MANAGEMENT SYSTEM =====
