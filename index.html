@@ -2944,15 +2944,18 @@
                             console.log(`    Verification: R${tier5Interest.toFixed(2)} + R${adminFee.toFixed(2)} + R${monthlyInitiationFee.toFixed(2)} = R${verification.toFixed(2)} (should be R${tier5TotalCharge.toFixed(2)})`);
                             
                         } else if (tier1to4Amount > 0) {
-                            // No Tier 5: Calculate admin fee based on Tiers 1-4 effective rate
+                            // No Tier 5: NO admin fee charged
+                            // Tiered rates (3%, 8%, 15%, 25%) are the only charges
+                            // Admin fee only applies when Tier 5 exists (Income Table method)
+                            adminFee = 0;
                             const tiers1to4Rate = tiers1to4Interest / tier1to4Amount;
-                            adminFee = 60 * (1 - tiers1to4Rate);
+                            console.log(`  Tiers 1-4 only (no Tier 5)`);
                             console.log(`  Tiers 1-4 effective rate: ${(tiers1to4Rate * 100).toFixed(2)}%`);
-                            console.log(`  Admin fee (based on Tiers 1-4): R${adminFee.toFixed(2)}`);
+                            console.log(`  Admin fee: R0.00 (only charged with Tier 5)`);
                         } else {
                             // No tiers at all (shouldn't happen, but safety check)
-                            adminFee = 60;
-                            console.log(`  No tiers calculated - using full admin fee: R${adminFee.toFixed(2)}`);
+                            adminFee = 0;
+                            console.log(`  No tiers calculated - admin fee: R0.00`);
                         }
                         
                         const tieredRate = outstandingBalance > 0 ? (totalTieredInterest / outstandingBalance) : 0;
@@ -4468,11 +4471,15 @@
                     console.log(`Admin Fee (algebraic): R${adminFee.toFixed(2)}`);
                     console.log(`Tier 5 Interest: R${tier5Interest.toFixed(2)}`);
                 } else if (tier1to4Amount > 0) {
+                    // No Tier 5: NO admin fee charged
+                    // Admin fee only applies when Tier 5 exists (Income Table method)
+                    adminFee = 0;
                     const tiers1to4Rate = tiers1to4Interest / tier1to4Amount;
-                    adminFee = 60 * (1 - tiers1to4Rate);
-                    console.log(`Admin Fee (Tiers 1-4): R${adminFee.toFixed(2)}`);
+                    console.log(`Tiers 1-4 only (no Tier 5) - effective rate: ${(tiers1to4Rate * 100).toFixed(2)}%`);
+                    console.log(`Admin Fee: R0.00 (only charged with Tier 5)`);
                 } else {
-                    adminFee = 60;
+                    adminFee = 0;
+                    console.log(`No tiers - Admin Fee: R0.00`);
                 }
                 
                 // Apply 10% minimum check
