@@ -2935,7 +2935,7 @@
                             console.log(`  Tier 5 Income Table (Algebraic Solution):`);
                             console.log(`    Tier 5 Amount: R${tier5Amount.toFixed(2)}`);
                             console.log(`    30% Total Charge: R${tier5TotalCharge.toFixed(2)}`);
-                            console.log(`    Admin Fee (calculated algebraically): R${adminFee.toFixed(2)}`);
+                            console.log(`    Admin Fee (algebraic): R${adminFee.toFixed(2)}`);
                             console.log(`    Initiation Fee: R${monthlyInitiationFee.toFixed(2)}`);
                             console.log(`    Tier 5 Interest: R${tier5Interest.toFixed(2)}`);
                             
@@ -2943,19 +2943,21 @@
                             const verification = tier5Interest + adminFee + monthlyInitiationFee;
                             console.log(`    Verification: R${tier5Interest.toFixed(2)} + R${adminFee.toFixed(2)} + R${monthlyInitiationFee.toFixed(2)} = R${verification.toFixed(2)} (should be R${tier5TotalCharge.toFixed(2)})`);
                             
+                            // Verify admin fee formula: adminFee should = 60 × (1 - effectiveRate)
+                            const tier5EffectiveRate = totalTieredInterest / outstandingBalance;
+                            const expectedAdminFee = 60 * (1 - tier5EffectiveRate);
+                            console.log(`    Admin Fee Formula Check: 60 × (1 - ${(tier5EffectiveRate * 100).toFixed(2)}%) = R${expectedAdminFee.toFixed(2)} (actual: R${adminFee.toFixed(2)})`);
+                            
                         } else if (tier1to4Amount > 0) {
-                            // No Tier 5: NO admin fee charged
-                            // Tiered rates (3%, 8%, 15%, 25%) are the only charges
-                            // Admin fee only applies when Tier 5 exists (Income Table method)
-                            adminFee = 0;
+                            // No Tier 5: Calculate admin fee based on Tiers 1-4 effective rate
                             const tiers1to4Rate = tiers1to4Interest / tier1to4Amount;
-                            console.log(`  Tiers 1-4 only (no Tier 5)`);
+                            adminFee = 60 * (1 - tiers1to4Rate);
                             console.log(`  Tiers 1-4 effective rate: ${(tiers1to4Rate * 100).toFixed(2)}%`);
-                            console.log(`  Admin fee: R0.00 (only charged with Tier 5)`);
+                            console.log(`  Admin fee (based on Tiers 1-4): R${adminFee.toFixed(2)}`);
                         } else {
                             // No tiers at all (shouldn't happen, but safety check)
-                            adminFee = 0;
-                            console.log(`  No tiers calculated - admin fee: R0.00`);
+                            adminFee = 60;
+                            console.log(`  No tiers calculated - using full admin fee: R${adminFee.toFixed(2)}`);
                         }
                         
                         const tieredRate = outstandingBalance > 0 ? (totalTieredInterest / outstandingBalance) : 0;
@@ -2965,22 +2967,30 @@
                         const minimumInterest = outstandingBalance * 0.10;
                         actualInterest = Math.max(totalTieredInterest, minimumInterest);
                         
+                        // Calculate effective rate
+                        const actualRate = outstandingBalance > 0 ? (actualInterest / outstandingBalance) : 0;
+                        
+                        // Admin Fee = 60 × (1 - Effective Interest Rate)
+                        // Use the TIERED effective rate for admin fee calculation
+                        const effectiveRateForAdmin = outstandingBalance > 0 ? (totalTieredInterest / outstandingBalance) : 0;
+                        adminFee = 60 * (1 - effectiveRateForAdmin);
+                        
+                        console.log(`  Tiered Effective Rate: ${(effectiveRateForAdmin * 100).toFixed(2)}%`);
+                        console.log(`  Admin Fee = 60 × (1 - ${(effectiveRateForAdmin * 100).toFixed(2)}%) = R${adminFee.toFixed(2)}`);
+                        console.log(`  Actual Interest (after 10% min): R${actualInterest.toFixed(2)} (${(actualRate * 100).toFixed(2)}%)`);
+                        
                         // If we used the minimum, calculate bonus
                         if (actualInterest > totalTieredInterest) {
                             // Bonus = difference between minimum charge and what we actually charged
                             const actualCharge = actualInterest + adminFee + monthlyInitiationFee;
-                            // Minimum charge includes R60 admin fee ONLY if Tier 5 exists
-                            const minimumAdminFee = tier5Amount > 0 ? 60 : 0;
-                            const minimumCharge = minimumInterest + minimumAdminFee + monthlyInitiationFee;
+                            const minimumCharge = minimumInterest + 60 + monthlyInitiationFee;
                             monthlyBonus = minimumCharge - actualCharge;
                             
                             console.log(`  Bonus Calculation:`);
                             console.log(`    Actual Charge: R${actualCharge.toFixed(2)} (interest: R${actualInterest.toFixed(2)} + admin: R${adminFee.toFixed(2)} + init: R${monthlyInitiationFee.toFixed(2)})`);
-                            console.log(`    Minimum Charge: R${minimumCharge.toFixed(2)} (interest: R${minimumInterest.toFixed(2)} + admin: R${minimumAdminFee.toFixed(2)} + init: R${monthlyInitiationFee.toFixed(2)})`);
+                            console.log(`    Minimum Charge: R${minimumCharge.toFixed(2)} (interest: R${minimumInterest.toFixed(2)} + admin: R60 + init: R${monthlyInitiationFee.toFixed(2)})`);
                             console.log(`    Bonus: R${monthlyBonus.toFixed(2)}`);
                         }
-                        
-                        const actualRate = outstandingBalance > 0 ? (actualInterest / outstandingBalance) : 0;
                         
                         totalBonus += monthlyBonus;
                         totalInterest += actualInterest;
@@ -4478,20 +4488,22 @@
                     console.log(`Admin Fee (algebraic): R${adminFee.toFixed(2)}`);
                     console.log(`Tier 5 Interest: R${tier5Interest.toFixed(2)}`);
                 } else if (tier1to4Amount > 0) {
-                    // No Tier 5: NO admin fee charged
-                    // Admin fee only applies when Tier 5 exists (Income Table method)
-                    adminFee = 0;
                     const tiers1to4Rate = tiers1to4Interest / tier1to4Amount;
-                    console.log(`Tiers 1-4 only (no Tier 5) - effective rate: ${(tiers1to4Rate * 100).toFixed(2)}%`);
-                    console.log(`Admin Fee: R0.00 (only charged with Tier 5)`);
+                    adminFee = 60 * (1 - tiers1to4Rate);
+                    console.log(`Admin Fee (Tiers 1-4): R${adminFee.toFixed(2)}`);
                 } else {
-                    adminFee = 0;
-                    console.log(`No tiers - Admin Fee: R0.00`);
+                    adminFee = 60;
                 }
                 
                 // Apply 10% minimum check
                 const minimumInterest = newPrincipal * 0.10;
                 const actualInterest = Math.max(totalTieredInterest, minimumInterest);
+                
+                // Admin Fee = 60 × (1 - Effective Rate) based on TIERED rate
+                const tieredEffectiveRate = totalTieredInterest / newPrincipal;
+                adminFee = 60 * (1 - tieredEffectiveRate);
+                
+                console.log(`Admin Fee = 60 × (1 - ${(tieredEffectiveRate * 100).toFixed(2)}%) = R${adminFee.toFixed(2)}`);
                 
                 console.log(`Tiered Interest: R${totalTieredInterest.toFixed(2)}`);
                 console.log(`10% Minimum: R${minimumInterest.toFixed(2)}`);
