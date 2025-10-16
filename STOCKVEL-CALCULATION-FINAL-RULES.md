@@ -69,8 +69,11 @@ Bonus: R200 - R118.20 = R81.80
 
 ### **Step 6: Total Cost**
 ```
-Total Cost = Principal + Interest Paid
-Total Cost = R2,000 + R200 = R2,200 ✓
+Total Cost = Principal + What Member Pays
+Total Cost = R2,000 + R200 (10% minimum payment) = R2,200 ✓
+
+Note: Interest DISPLAYED = R60 (tiered)
+      Member PAYS = R200 (10% minimum)
 ```
 
 ---

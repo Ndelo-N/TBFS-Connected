@@ -2860,6 +2860,8 @@
                 let totalAdminFees = 0;
                 let breakdown = [];
                 let interestRate;
+                let totalCostStockvel; // Declare here for scope
+                let equalMonthlyPayment; // Declare here for scope
                 
                 if (isStockvelMember) {
                     // ===== STOCKVEL LOAN CALCULATION =====
@@ -2999,13 +3001,13 @@
                         }
                         
                         totalBonus += monthlyBonus;
-                        totalInterest += actualInterest;
+                        totalInterest += totalTieredInterest; // Accumulate TIERED interest for display
                         totalAdminFees += adminFee;
                         
                         monthlyDetails.push({
                             tieredInterest: totalTieredInterest,
                             tieredRate,
-                            actualInterest,
+                            actualInterest, // What member actually pays (after 10% min check)
                             actualRate,
                             adminFee,
                             monthlyBonus,
@@ -3032,14 +3034,17 @@
                     }
                     
                     console.log(`\nTotal Bonus: R${totalBonus.toFixed(2)}`);
-                    console.log(`Total Interest: R${totalInterest.toFixed(2)}`);
+                    console.log(`Total Interest (Tiered): R${totalInterest.toFixed(2)}`);
                     console.log(`Total Admin Fees: R${totalAdminFees.toFixed(2)}`);
                     console.log(`Total Initiation Fee: R${initiationFee.toFixed(2)}`);
                     
-                    // Calculate total cost based on what member ACTUALLY PAYS
-                    // When 10% minimum applies, member pays the minimum (not the actual lower fees)
-                    // Total cost = principal + total amount member pays for interest/fees
-                    const totalCostStockvel = principal + totalInterest;
+                    // Calculate what member ACTUALLY PAYS (10% minimum when it applies)
+                    const totalActualPayment = monthlyDetails.reduce((sum, month) => sum + month.actualInterest, 0);
+                    
+                    console.log(`Total Payment (what member pays): R${totalActualPayment.toFixed(2)}`);
+                    
+                    // Total cost = principal + what member actually pays
+                    const totalCostStockvel = principal + totalActualPayment;
                     const equalMonthlyPayment = totalCostStockvel / term;
                     
                     console.log(`\nTotal Cost: R${totalCostStockvel.toFixed(2)}`);
@@ -3053,7 +3058,7 @@
                         breakdown.push({
                             month: month,
                             principalPayment: basePrincipalPayment,
-                            interest: details.actualInterest,
+                            interest: details.tieredInterest, // Show TIERED interest, not actual payment
                             adminFee: details.adminFee,
                             initiationFee: monthlyInitiationFee,
                             bonus: details.monthlyBonus,
@@ -3123,9 +3128,18 @@
                     console.log(`Total Initiation Fee: R${initiationFee.toFixed(2)}`);
                 }
                 
-                // Calculate totals
-                const totalCost = principal + totalInterest + initiationFee + totalAdminFees;
-                const monthlyPayment = totalCost / term;
+                // Calculate totals (different for stockvel vs standard)
+                let totalCost, monthlyPayment;
+                
+                if (isStockvelMember) {
+                    // For stockvel: totalCostStockvel already calculated correctly
+                    totalCost = totalCostStockvel;
+                    monthlyPayment = equalMonthlyPayment;
+                } else {
+                    // For standard: sum all components
+                    totalCost = principal + totalInterest + initiationFee + totalAdminFees;
+                    monthlyPayment = totalCost / term;
+                }
 
                 console.log('\n=== FINAL SUMMARY ===');
                 console.log('Total Cost:', totalCost);
