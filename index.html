@@ -2969,8 +2969,15 @@
                         if (actualInterest > totalTieredInterest) {
                             // Bonus = difference between minimum charge and what we actually charged
                             const actualCharge = actualInterest + adminFee + monthlyInitiationFee;
-                            const minimumCharge = minimumInterest + 60 + monthlyInitiationFee;
+                            // Minimum charge includes R60 admin fee ONLY if Tier 5 exists
+                            const minimumAdminFee = tier5Amount > 0 ? 60 : 0;
+                            const minimumCharge = minimumInterest + minimumAdminFee + monthlyInitiationFee;
                             monthlyBonus = minimumCharge - actualCharge;
+                            
+                            console.log(`  Bonus Calculation:`);
+                            console.log(`    Actual Charge: R${actualCharge.toFixed(2)} (interest: R${actualInterest.toFixed(2)} + admin: R${adminFee.toFixed(2)} + init: R${monthlyInitiationFee.toFixed(2)})`);
+                            console.log(`    Minimum Charge: R${minimumCharge.toFixed(2)} (interest: R${minimumInterest.toFixed(2)} + admin: R${minimumAdminFee.toFixed(2)} + init: R${monthlyInitiationFee.toFixed(2)})`);
+                            console.log(`    Bonus: R${monthlyBonus.toFixed(2)}`);
                         }
                         
                         const actualRate = outstandingBalance > 0 ? (actualInterest / outstandingBalance) : 0;
