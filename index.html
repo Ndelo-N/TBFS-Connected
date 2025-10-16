@@ -2904,35 +2904,55 @@
                         
                         let totalTieredInterest = tiers1to4Interest;
                         let adminFee = 0;
+                        let tier5Interest = 0;
                         
-                        // Calculate admin fee based on Tiers 1-4 effective rate
-                        if (tier1to4Amount > 0) {
+                        // ALGEBRAIC SOLUTION: Calculate admin fee without circular dependency
+                        if (tier5Amount > 0) {
+                            // When Tier 5 exists, use algebraic formula to solve for admin fee
+                            // Formula derived from: adminFee = 60 × (1 - effectiveRate)
+                            // where effectiveRate = totalInterest / balance
+                            // and tier5Interest = (tier5Amount × 0.30) - adminFee - initiationFee
+                            
+                            // Algebraic solution:
+                            // adminFee = 60 × [balance - tiers1to4Interest - (tier5Amount × 0.30) + initiationFee] / (balance - 60)
+                            
+                            const numerator = 60 * (outstandingBalance - tiers1to4Interest - (tier5Amount * 0.30) + monthlyInitiationFee);
+                            const denominator = outstandingBalance - 60;
+                            
+                            // Handle edge case where balance = 60 (very rare)
+                            if (Math.abs(denominator) < 0.01) {
+                                adminFee = 60; // Default to full admin fee
+                            } else {
+                                adminFee = numerator / denominator;
+                            }
+                            
+                            // Calculate Tier 5 interest using Income Table method
+                            // 30% of Tier 5 = TOTAL TBFS income from this portion
+                            const tier5TotalCharge = tier5Amount * 0.30;
+                            tier5Interest = tier5TotalCharge - adminFee - monthlyInitiationFee;
+                            totalTieredInterest += tier5Interest;
+                            
+                            console.log(`  Tier 5 Income Table (Algebraic Solution):`);
+                            console.log(`    Tier 5 Amount: R${tier5Amount.toFixed(2)}`);
+                            console.log(`    30% Total Charge: R${tier5TotalCharge.toFixed(2)}`);
+                            console.log(`    Admin Fee (calculated algebraically): R${adminFee.toFixed(2)}`);
+                            console.log(`    Initiation Fee: R${monthlyInitiationFee.toFixed(2)}`);
+                            console.log(`    Tier 5 Interest: R${tier5Interest.toFixed(2)}`);
+                            
+                            // Verification: Total should equal 30% charge
+                            const verification = tier5Interest + adminFee + monthlyInitiationFee;
+                            console.log(`    Verification: R${tier5Interest.toFixed(2)} + R${adminFee.toFixed(2)} + R${monthlyInitiationFee.toFixed(2)} = R${verification.toFixed(2)} (should be R${tier5TotalCharge.toFixed(2)})`);
+                            
+                        } else if (tier1to4Amount > 0) {
+                            // No Tier 5: Calculate admin fee based on Tiers 1-4 effective rate
                             const tiers1to4Rate = tiers1to4Interest / tier1to4Amount;
                             adminFee = 60 * (1 - tiers1to4Rate);
                             console.log(`  Tiers 1-4 effective rate: ${(tiers1to4Rate * 100).toFixed(2)}%`);
                             console.log(`  Admin fee (based on Tiers 1-4): R${adminFee.toFixed(2)}`);
                         } else {
-                            // No tiers 1-4, use full R60
+                            // No tiers at all (shouldn't happen, but safety check)
                             adminFee = 60;
-                        }
-                        
-                        // If Tier 5 exists, apply Income Table method
-                        let tier5Interest = 0;
-                        if (tier5Amount > 0) {
-                            // Income Table: 30% of Tier 5 = TOTAL TBFS income from this portion
-                            const tier5TotalCharge = tier5Amount * 0.30;
-                            
-                            // Subtract FULL loan-level fees (not proportional!)
-                            // Tier 5 interest = 30% charge - admin - initiation
-                            tier5Interest = tier5TotalCharge - adminFee - monthlyInitiationFee;
-                            totalTieredInterest += tier5Interest;
-                            
-                            console.log(`  Tier 5 Income Table:`);
-                            console.log(`    Amount: R${tier5Amount.toFixed(2)}`);
-                            console.log(`    30% Total Charge: R${tier5TotalCharge.toFixed(2)}`);
-                            console.log(`    - Admin Fee: R${adminFee.toFixed(2)}`);
-                            console.log(`    - Initiation Fee: R${monthlyInitiationFee.toFixed(2)}`);
-                            console.log(`    = Interest: R${tier5Interest.toFixed(2)}`);
+                            console.log(`  No tiers calculated - using full admin fee: R${adminFee.toFixed(2)}`);
                         }
                         
                         const tieredRate = outstandingBalance > 0 ? (totalTieredInterest / outstandingBalance) : 0;
