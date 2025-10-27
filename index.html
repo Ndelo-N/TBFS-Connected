@@ -3389,10 +3389,10 @@
                             doc.text(`Membership: ${startDate} to ${endDate}`, 20, 136);
                         }
                         
-                        // Accumulated bonus
-                        if (loanData.accumulatedBonus && loanData.accumulatedBonus > 0) {
-                            doc.text(`Accumulated Bonus: R ${loanData.accumulatedBonus.toFixed(2)}`, 20, 143);
-                        }
+                        // Accumulated bonus - hidden from member PDFs (surprise feature)
+                        // if (loanData.accumulatedBonus && loanData.accumulatedBonus > 0) {
+                        //     doc.text(`Accumulated Bonus: R ${loanData.accumulatedBonus.toFixed(2)}`, 20, 143);
+                        // }
                         
                         // Initiation fee
                         const initiationFeeText = loanData.initiationFee === 0 ? 
@@ -3403,13 +3403,13 @@
                         // Total admin fees (varies by month for stockvel)
                         doc.text(`Total Admin Fees: R ${(loanData.totalAdminFees || 0).toFixed(2)}`, 20, 157);
                         
-                        // Tier information
-                        doc.setFontSize(8);
-                        doc.setTextColor(100, 100, 100);
-                        doc.text(`Your Tier Boundaries:`, 20, 165);
-                        doc.text(`0-30%: R0-R${(loanData.totalContributions * 0.30).toFixed(0)} @3%`, 20, 170);
-                        doc.text(`30-75%: R${(loanData.totalContributions * 0.30).toFixed(0)}-R${(loanData.totalContributions * 0.75).toFixed(0)} @8%`, 20, 175);
-                        doc.text(`75-105%: R${(loanData.totalContributions * 0.75).toFixed(0)}-R${(loanData.totalContributions * 1.05).toFixed(0)} @15%`, 20, 180);
+                        // Tier information - hidden from member PDFs (surprise feature)
+                        // doc.setFontSize(8);
+                        // doc.setTextColor(100, 100, 100);
+                        // doc.text(`Your Tier Boundaries:`, 20, 165);
+                        // doc.text(`0-30%: R0-R${(loanData.totalContributions * 0.30).toFixed(0)} @3%`, 20, 170);
+                        // doc.text(`30-75%: R${(loanData.totalContributions * 0.30).toFixed(0)}-R${(loanData.totalContributions * 0.75).toFixed(0)} @8%`, 20, 175);
+                        // doc.text(`75-105%: R${(loanData.totalContributions * 0.75).toFixed(0)}-R${(loanData.totalContributions * 1.05).toFixed(0)} @15%`, 20, 180);
                         
                         // Bonus information hidden from member PDFs (surprise feature)
                         // if (loanData.totalBonus && loanData.totalBonus > 0) {
@@ -3435,7 +3435,7 @@
                     // Banking Details
                     doc.setFontSize(12);
                     doc.setTextColor(44, 62, 80);
-                    const bankingDetailsY = loanData.isStockvelMember ? 152 : 125;
+                    const bankingDetailsY = loanData.isStockvelMember ? 170 : 125;
                     doc.text('Banking Details', 20, bankingDetailsY);
 
                     doc.setFontSize(10);
