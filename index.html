@@ -2860,6 +2860,8 @@
                 let totalAdminFees = 0;
                 let breakdown = [];
                 let interestRate;
+                let totalCostStockvel; // Declare here for scope
+                let equalMonthlyPayment; // Declare here for scope
                 
                 if (isStockvelMember) {
                     // ===== STOCKVEL LOAN CALCULATION =====
@@ -2904,35 +2906,60 @@
                         
                         let totalTieredInterest = tiers1to4Interest;
                         let adminFee = 0;
+                        let tier5Interest = 0;
                         
-                        // Calculate admin fee based on Tiers 1-4 effective rate
-                        if (tier1to4Amount > 0) {
+                        // ALGEBRAIC SOLUTION: Calculate admin fee without circular dependency
+                        if (tier5Amount > 0) {
+                            // When Tier 5 exists, use algebraic formula to solve for admin fee
+                            // Formula derived from: adminFee = 60 × (1 - effectiveRate)
+                            // where effectiveRate = totalInterest / balance
+                            // and tier5Interest = (tier5Amount × 0.30) - adminFee - initiationFee
+                            
+                            // Algebraic solution:
+                            // adminFee = 60 × [balance - tiers1to4Interest - (tier5Amount × 0.30) + initiationFee] / (balance - 60)
+                            
+                            const numerator = 60 * (outstandingBalance - tiers1to4Interest - (tier5Amount * 0.30) + monthlyInitiationFee);
+                            const denominator = outstandingBalance - 60;
+                            
+                            // Handle edge case where balance = 60 (very rare)
+                            if (Math.abs(denominator) < 0.01) {
+                                adminFee = 60; // Default to full admin fee
+                            } else {
+                                adminFee = numerator / denominator;
+                            }
+                            
+                            // Calculate Tier 5 interest using Income Table method
+                            // 30% of Tier 5 = TOTAL TBFS income from this portion
+                            const tier5TotalCharge = tier5Amount * 0.30;
+                            tier5Interest = tier5TotalCharge - adminFee - monthlyInitiationFee;
+                            totalTieredInterest += tier5Interest;
+                            
+                            console.log(`  Tier 5 Income Table (Algebraic Solution):`);
+                            console.log(`    Tier 5 Amount: R${tier5Amount.toFixed(2)}`);
+                            console.log(`    30% Total Charge: R${tier5TotalCharge.toFixed(2)}`);
+                            console.log(`    Admin Fee (algebraic): R${adminFee.toFixed(2)}`);
+                            console.log(`    Initiation Fee: R${monthlyInitiationFee.toFixed(2)}`);
+                            console.log(`    Tier 5 Interest: R${tier5Interest.toFixed(2)}`);
+                            
+                            // Verification: Total should equal 30% charge
+                            const verification = tier5Interest + adminFee + monthlyInitiationFee;
+                            console.log(`    Verification: R${tier5Interest.toFixed(2)} + R${adminFee.toFixed(2)} + R${monthlyInitiationFee.toFixed(2)} = R${verification.toFixed(2)} (should be R${tier5TotalCharge.toFixed(2)})`);
+                            
+                            // Verify admin fee formula: adminFee should = 60 × (1 - effectiveRate)
+                            const tier5EffectiveRate = totalTieredInterest / outstandingBalance;
+                            const expectedAdminFee = 60 * (1 - tier5EffectiveRate);
+                            console.log(`    Admin Fee Formula Check: 60 × (1 - ${(tier5EffectiveRate * 100).toFixed(2)}%) = R${expectedAdminFee.toFixed(2)} (actual: R${adminFee.toFixed(2)})`);
+                            
+                        } else if (tier1to4Amount > 0) {
+                            // No Tier 5: Calculate admin fee based on Tiers 1-4 effective rate
                             const tiers1to4Rate = tiers1to4Interest / tier1to4Amount;
                             adminFee = 60 * (1 - tiers1to4Rate);
                             console.log(`  Tiers 1-4 effective rate: ${(tiers1to4Rate * 100).toFixed(2)}%`);
                             console.log(`  Admin fee (based on Tiers 1-4): R${adminFee.toFixed(2)}`);
                         } else {
-                            // No tiers 1-4, use full R60
+                            // No tiers at all (shouldn't happen, but safety check)
                             adminFee = 60;
-                        }
-                        
-                        // If Tier 5 exists, apply Income Table method
-                        let tier5Interest = 0;
-                        if (tier5Amount > 0) {
-                            // Income Table: 30% of Tier 5 = TOTAL TBFS income from this portion
-                            const tier5TotalCharge = tier5Amount * 0.30;
-                            
-                            // Subtract FULL loan-level fees (not proportional!)
-                            // Tier 5 interest = 30% charge - admin - initiation
-                            tier5Interest = tier5TotalCharge - adminFee - monthlyInitiationFee;
-                            totalTieredInterest += tier5Interest;
-                            
-                            console.log(`  Tier 5 Income Table:`);
-                            console.log(`    Amount: R${tier5Amount.toFixed(2)}`);
-                            console.log(`    30% Total Charge: R${tier5TotalCharge.toFixed(2)}`);
-                            console.log(`    - Admin Fee: R${adminFee.toFixed(2)}`);
-                            console.log(`    - Initiation Fee: R${monthlyInitiationFee.toFixed(2)}`);
-                            console.log(`    = Interest: R${tier5Interest.toFixed(2)}`);
+                            console.log(`  No tiers calculated - using full admin fee: R${adminFee.toFixed(2)}`);
                         }
                         
                         const tieredRate = outstandingBalance > 0 ? (totalTieredInterest / outstandingBalance) : 0;
@@ -2942,24 +2969,45 @@
                         const minimumInterest = outstandingBalance * 0.10;
                         actualInterest = Math.max(totalTieredInterest, minimumInterest);
                         
-                        // If we used the minimum, calculate bonus
-                        if (actualInterest > totalTieredInterest) {
-                            // Bonus = difference between minimum charge and what we actually charged
-                            const actualCharge = actualInterest + adminFee + monthlyInitiationFee;
-                            const minimumCharge = minimumInterest + 60 + monthlyInitiationFee;
-                            monthlyBonus = minimumCharge - actualCharge;
-                        }
-                        
+                        // Calculate effective rate
                         const actualRate = outstandingBalance > 0 ? (actualInterest / outstandingBalance) : 0;
                         
+                        // Admin Fee = 60 × (1 - Effective Interest Rate)
+                        // Use the TIERED effective rate for admin fee calculation
+                        const effectiveRateForAdmin = outstandingBalance > 0 ? (totalTieredInterest / outstandingBalance) : 0;
+                        adminFee = 60 * (1 - effectiveRateForAdmin);
+                        
+                        console.log(`  Tiered Effective Rate: ${(effectiveRateForAdmin * 100).toFixed(2)}%`);
+                        console.log(`  Admin Fee = 60 × (1 - ${(effectiveRateForAdmin * 100).toFixed(2)}%) = R${adminFee.toFixed(2)}`);
+                        console.log(`  Actual Interest (after 10% min): R${actualInterest.toFixed(2)} (${(actualRate * 100).toFixed(2)}%)`);
+                        
+                        // Bonus calculation: ONLY if loan <= contributions
+                        if (actualInterest > totalTieredInterest && outstandingBalance <= currentSavings) {
+                            // Member pays 10% minimum
+                            // Actual fees = tiered interest + admin fee + initiation
+                            const actualFees = totalTieredInterest + adminFee + monthlyInitiationFee;
+                            const minimumPayment = minimumInterest;
+                            
+                            // Bonus = 10% minimum - actual fees
+                            monthlyBonus = minimumPayment - actualFees;
+                            
+                            console.log(`  Bonus Calculation (loan ≤ contributions):`);
+                            console.log(`    Member Pays (10% min): R${minimumPayment.toFixed(2)}`);
+                            console.log(`    Actual Fees: R${actualFees.toFixed(2)} (interest: R${totalTieredInterest.toFixed(2)} + admin: R${adminFee.toFixed(2)} + init: R${monthlyInitiationFee.toFixed(2)})`);
+                            console.log(`    Bonus: R${monthlyBonus.toFixed(2)}`);
+                        } else if (actualInterest > totalTieredInterest && outstandingBalance > currentSavings) {
+                            console.log(`  No Bonus: Loan amount (R${outstandingBalance.toFixed(2)}) > Contributions (R${currentSavings.toFixed(2)})`);
+                            monthlyBonus = 0;
+                        }
+                        
                         totalBonus += monthlyBonus;
-                        totalInterest += actualInterest;
+                        totalInterest += totalTieredInterest; // Accumulate TIERED interest for display
                         totalAdminFees += adminFee;
                         
                         monthlyDetails.push({
                             tieredInterest: totalTieredInterest,
                             tieredRate,
-                            actualInterest,
+                            actualInterest, // What member actually pays (after 10% min check)
                             actualRate,
                             adminFee,
                             monthlyBonus,
@@ -2986,12 +3034,17 @@
                     }
                     
                     console.log(`\nTotal Bonus: R${totalBonus.toFixed(2)}`);
-                    console.log(`Total Interest: R${totalInterest.toFixed(2)}`);
+                    console.log(`Total Interest (Tiered): R${totalInterest.toFixed(2)}`);
                     console.log(`Total Admin Fees: R${totalAdminFees.toFixed(2)}`);
                     console.log(`Total Initiation Fee: R${initiationFee.toFixed(2)}`);
                     
-                    // Calculate total cost and equal monthly payment
-                    const totalCostStockvel = principal + totalInterest + initiationFee + totalAdminFees;
+                    // Calculate what member ACTUALLY PAYS (10% minimum when it applies)
+                    const totalActualPayment = monthlyDetails.reduce((sum, month) => sum + month.actualInterest, 0);
+                    
+                    console.log(`Total Payment (what member pays): R${totalActualPayment.toFixed(2)}`);
+                    
+                    // Total cost = principal + what member actually pays
+                    const totalCostStockvel = principal + totalActualPayment;
                     const equalMonthlyPayment = totalCostStockvel / term;
                     
                     console.log(`\nTotal Cost: R${totalCostStockvel.toFixed(2)}`);
@@ -3005,7 +3058,7 @@
                         breakdown.push({
                             month: month,
                             principalPayment: basePrincipalPayment,
-                            interest: details.actualInterest,
+                            interest: details.tieredInterest, // Show TIERED interest, not actual payment
                             adminFee: details.adminFee,
                             initiationFee: monthlyInitiationFee,
                             bonus: details.monthlyBonus,
@@ -3075,9 +3128,18 @@
                     console.log(`Total Initiation Fee: R${initiationFee.toFixed(2)}`);
                 }
                 
-                // Calculate totals
-                const totalCost = principal + totalInterest + initiationFee + totalAdminFees;
-                const monthlyPayment = totalCost / term;
+                // Calculate totals (different for stockvel vs standard)
+                let totalCost, monthlyPayment;
+                
+                if (isStockvelMember) {
+                    // For stockvel: totalCostStockvel already calculated correctly
+                    totalCost = totalCostStockvel;
+                    monthlyPayment = equalMonthlyPayment;
+                } else {
+                    // For standard: sum all components
+                    totalCost = principal + totalInterest + initiationFee + totalAdminFees;
+                    monthlyPayment = totalCost / term;
+                }
 
                 console.log('\n=== FINAL SUMMARY ===');
                 console.log('Total Cost:', totalCost);
@@ -4383,24 +4445,145 @@
             const oldRemainingPrincipal = loan.remaining_principal;
             const oldBalance = loan.current_balance;
             const oldMaxInterest = loan.max_interest_allowed;
+            const oldInitiationFee = loan.total_initiation_fee;
 
             const newPrincipal = oldPrincipal + amount;
             const newRemainingPrincipal = oldRemainingPrincipal + amount;
-            const newMaxInterest = oldMaxInterest + amount; // Increase cap proportionally
-            const newBalance = oldBalance + amount;
+            
+            let newMaxInterest, newBalance, additionalInitiationFee, confirmMessage;
+            
+            // STOCKVEL LOAN: Recalculate with proper tiers based on NEW total loan amount
+            if (loan.isStockvelLoan) {
+                console.log(`\n=== STOCKVEL LOAN TOP-UP RECALCULATION ===`);
+                console.log(`Original Principal: R${oldPrincipal.toFixed(2)}`);
+                console.log(`Top-up Amount: R${amount.toFixed(2)}`);
+                console.log(`New Principal: R${newPrincipal.toFixed(2)}`);
+                
+                // Get client's total contributions
+                const client = AppState.clients.find(c => c.account_number === loan.account_number);
+                const totalContributions = client?.total_contributions || 0;
+                
+                console.log(`Member Contributions: R${totalContributions.toFixed(2)}`);
+                console.log(`New Loan-to-Savings Ratio: ${totalContributions > 0 ? ((newPrincipal / totalContributions) * 100).toFixed(1) + '%' : 'N/A'}`);
+                
+                // Calculate tiered interest for NEW total loan amount
+                const tieredResult = calculateTieredStockvelInterest(newPrincipal, totalContributions);
+                const tiers1to4Interest = tieredResult.tiers1to4Interest;
+                const tier1to4Amount = tieredResult.tier1to4Amount;
+                const tier5Amount = tieredResult.tier5Amount;
+                
+                // Calculate initiation fee for stockvel (waived up to contributions, 12% on excess)
+                let totalInitiationFee;
+                if (newPrincipal <= totalContributions) {
+                    totalInitiationFee = 0; // Completely waived
+                } else {
+                    totalInitiationFee = (newPrincipal - totalContributions) * 0.12;
+                }
+                const monthlyInitiationFee = totalInitiationFee / loan.term_months;
+                additionalInitiationFee = totalInitiationFee - oldInitiationFee;
+                
+                console.log(`Total Initiation Fee (recalculated): R${totalInitiationFee.toFixed(2)}`);
+                console.log(`Additional Initiation Fee: R${additionalInitiationFee.toFixed(2)}`);
+                
+                // Calculate admin fee and Tier 5 interest using algebraic solution
+                let adminFee = 0;
+                let tier5Interest = 0;
+                let totalTieredInterest = tiers1to4Interest;
+                
+                if (tier5Amount > 0) {
+                    // Algebraic solution for admin fee (no circular dependency)
+                    const numerator = 60 * (newPrincipal - tiers1to4Interest - (tier5Amount * 0.30) + monthlyInitiationFee);
+                    const denominator = newPrincipal - 60;
+                    
+                    if (Math.abs(denominator) < 0.01) {
+                        adminFee = 60;
+                    } else {
+                        adminFee = numerator / denominator;
+                    }
+                    
+                    // Calculate Tier 5 interest
+                    const tier5TotalCharge = tier5Amount * 0.30;
+                    tier5Interest = tier5TotalCharge - adminFee - monthlyInitiationFee;
+                    totalTieredInterest += tier5Interest;
+                    
+                    console.log(`Tier 5 Amount: R${tier5Amount.toFixed(2)}`);
+                    console.log(`Admin Fee (algebraic): R${adminFee.toFixed(2)}`);
+                    console.log(`Tier 5 Interest: R${tier5Interest.toFixed(2)}`);
+                } else if (tier1to4Amount > 0) {
+                    const tiers1to4Rate = tiers1to4Interest / tier1to4Amount;
+                    adminFee = 60 * (1 - tiers1to4Rate);
+                    console.log(`Admin Fee (Tiers 1-4): R${adminFee.toFixed(2)}`);
+                } else {
+                    adminFee = 60;
+                }
+                
+                // Apply 10% minimum check
+                const minimumInterest = newPrincipal * 0.10;
+                const actualInterest = Math.max(totalTieredInterest, minimumInterest);
+                
+                // Admin Fee = 60 × (1 - Effective Rate) based on TIERED rate
+                const tieredEffectiveRate = totalTieredInterest / newPrincipal;
+                adminFee = 60 * (1 - tieredEffectiveRate);
+                
+                console.log(`Admin Fee = 60 × (1 - ${(tieredEffectiveRate * 100).toFixed(2)}%) = R${adminFee.toFixed(2)}`);
+                
+                console.log(`Tiered Interest: R${totalTieredInterest.toFixed(2)}`);
+                console.log(`10% Minimum: R${minimumInterest.toFixed(2)}`);
+                console.log(`Actual Interest (per month): R${actualInterest.toFixed(2)}`);
+                
+                // Calculate NEW max interest allowed (total for loan term)
+                newMaxInterest = actualInterest * loan.term_months;
+                
+                // Calculate new balance (remaining principal + interest + fees for remaining months)
+                const paymentsAlreadyMade = loan.payments_made || 0;
+                const remainingMonths = loan.term_months - paymentsAlreadyMade;
+                const interestForRemainingMonths = actualInterest * remainingMonths;
+                const initiationForRemainingMonths = monthlyInitiationFee * remainingMonths;
+                const adminForRemainingMonths = adminFee * remainingMonths;
+                
+                newBalance = newRemainingPrincipal + interestForRemainingMonths + initiationForRemainingMonths + adminForRemainingMonths;
+                
+                console.log(`New Max Interest (total): R${newMaxInterest.toFixed(2)}`);
+                console.log(`New Balance: R${newBalance.toFixed(2)}`);
+                
+                confirmMessage = 
+                    `🔍 Confirm Stockvel Loan Top-Up\n\n` +
+                    `Loan #${loan.loan_id} - ${loan.client_name}\n\n` +
+                    `📊 RECALCULATED WITH PROPER TIERS:\n` +
+                    `Principal: R${oldPrincipal.toFixed(2)} → R${newPrincipal.toFixed(2)} (+R${amount.toFixed(2)})\n` +
+                    `New Loan-to-Savings: ${totalContributions > 0 ? ((newPrincipal / totalContributions) * 100).toFixed(1) + '%' : 'N/A'}\n\n` +
+                    `Interest (monthly): R${actualInterest.toFixed(2)}\n` +
+                    `Max Interest (total): R${oldMaxInterest.toFixed(2)} → R${newMaxInterest.toFixed(2)}\n` +
+                    `Initiation Fee: R${oldInitiationFee.toFixed(2)} → R${totalInitiationFee.toFixed(2)} (+R${additionalInitiationFee.toFixed(2)})\n` +
+                    `Balance: R${oldBalance.toFixed(2)} → R${newBalance.toFixed(2)}\n\n` +
+                    `Capital Impact: R${AppState.capital.toFixed(2)} → R${(AppState.capital - amount).toFixed(2)}\n` +
+                    `Deployed: R${AppState.deployed.toFixed(2)} → R${(AppState.deployed + amount).toFixed(2)}\n\n` +
+                    `Reason: ${reason}\n\n` +
+                    `⚠️ Note: Tiers recalculated based on new total loan amount\n\n` +
+                    `Proceed with this adjustment?`;
+                    
+            } else {
+                // STANDARD LOAN: Use simple 1:1 interest increase
+                newMaxInterest = oldMaxInterest + amount;
+                newBalance = oldBalance + amount;
+                
+                const initiationFeeRate = 0.09; // 9%
+                additionalInitiationFee = amount * initiationFeeRate;
+                
+                confirmMessage = 
+                    `🔍 Confirm Loan Increase\n\n` +
+                    `Loan #${loan.loan_id} - ${loan.client_name}\n\n` +
+                    `Principal: R${oldPrincipal.toFixed(2)} → R${newPrincipal.toFixed(2)} (+R${amount.toFixed(2)})\n` +
+                    `Remaining Principal: R${oldRemainingPrincipal.toFixed(2)} → R${newRemainingPrincipal.toFixed(2)}\n` +
+                    `Balance: R${oldBalance.toFixed(2)} → R${newBalance.toFixed(2)}\n` +
+                    `Max Interest Cap: R${oldMaxInterest.toFixed(2)} → R${newMaxInterest.toFixed(2)}\n\n` +
+                    `Capital Impact: R${AppState.capital.toFixed(2)} → R${(AppState.capital - amount).toFixed(2)}\n` +
+                    `Deployed: R${AppState.deployed.toFixed(2)} → R${(AppState.deployed + amount).toFixed(2)}\n\n` +
+                    `Reason: ${reason}\n\n` +
+                    `Proceed with this adjustment?`;
+            }
 
-            const confirm = window.confirm(
-                `🔍 Confirm Loan Increase\n\n` +
-                `Loan #${loan.loan_id} - ${loan.client_name}\n\n` +
-                `Principal: R${oldPrincipal.toFixed(2)} → R${newPrincipal.toFixed(2)} (+R${amount.toFixed(2)})\n` +
-                `Remaining Principal: R${oldRemainingPrincipal.toFixed(2)} → R${newRemainingPrincipal.toFixed(2)}\n` +
-                `Balance: R${oldBalance.toFixed(2)} → R${newBalance.toFixed(2)}\n` +
-                `Max Interest Cap: R${oldMaxInterest.toFixed(2)} → R${newMaxInterest.toFixed(2)}\n\n` +
-                `Capital Impact: R${AppState.capital.toFixed(2)} → R${(AppState.capital - amount).toFixed(2)}\n` +
-                `Deployed: R${AppState.deployed.toFixed(2)} → R${(AppState.deployed + amount).toFixed(2)}\n\n` +
-                `Reason: ${reason}\n\n` +
-                `Proceed with this adjustment?`
-            );
+            const confirm = window.confirm(confirmMessage);
 
             if (!confirm) {
                 alert('Adjustment cancelled');
@@ -4409,7 +4592,7 @@
 
             // Apply the increase
             loan.principal_amount = newPrincipal;
-            loan.original_principal = newPrincipal; // Update original too
+            loan.original_principal = newPrincipal;
             loan.remaining_principal = newRemainingPrincipal;
             loan.current_balance = newBalance;
             loan.max_interest_allowed = newMaxInterest;
@@ -4417,10 +4600,16 @@
             // Recalculate expected monthly interest
             loan.expected_monthly_interest = loan.max_interest_allowed / loan.term_months;
 
-            // Update total cost (principal + max interest + initiation fee)
-            const initiationFeeRate = 0.09; // 9%
-            const additionalInitiationFee = amount * initiationFeeRate;
-            loan.total_initiation_fee += additionalInitiationFee;
+            // Update initiation fee
+            if (loan.isStockvelLoan) {
+                // For stockvel, we recalculated the total initiation fee above
+                loan.total_initiation_fee = oldInitiationFee + additionalInitiationFee;
+            } else {
+                // For standard, add 9% of top-up amount
+                loan.total_initiation_fee += additionalInitiationFee;
+            }
+            
+            // Update total cost
             loan.total_cost = loan.principal_amount + loan.max_interest_allowed + loan.total_initiation_fee;
 
             // Round all values to 2 decimal places
@@ -4439,10 +4628,12 @@
 
             // Log the adjustment
             AppState.logTransaction('loan_adjustment', 
-                `Loan amount increased for Loan #${loan.loan_id}: R${amount.toFixed(2)} - ${reason}`, {
+                `Loan amount increased for Loan #${loan.loan_id}: R${amount.toFixed(2)} - ${reason}${loan.isStockvelLoan ? ' (Tiers recalculated)' : ''}`, {
                 loanId: loan.loan_id,
                 clientName: loan.client_name,
                 adjustmentType: 'increase_principal',
+                isStockvelLoan: loan.isStockvelLoan || false,
+                tiersRecalculated: loan.isStockvelLoan || false,
                 amount: amount,
                 reason: reason,
                 previousPrincipal: oldPrincipal,
@@ -4451,6 +4642,8 @@
                 newBalance: loan.current_balance,
                 previousMaxInterest: oldMaxInterest,
                 newMaxInterest: loan.max_interest_allowed,
+                previousInitiationFee: oldInitiationFee,
+                newInitiationFee: loan.total_initiation_fee,
                 additionalInitiationFee: additionalInitiationFee
             });
 
@@ -4458,16 +4651,33 @@
             AppState.save();
             AppState.updateDashboard();
 
-            alert(
-                `✅ Loan Amount Increased Successfully!\n\n` +
-                `Loan #${loan.loan_id} - ${loan.client_name}\n\n` +
-                `Principal Increased: R${oldPrincipal.toFixed(2)} → R${newPrincipal.toFixed(2)}\n` +
-                `Amount Added: R${amount.toFixed(2)}\n` +
-                `New Balance: R${loan.current_balance.toFixed(2)}\n` +
-                `New Total Cost: R${loan.total_cost.toFixed(2)}\n` +
-                `Additional Initiation Fee: R${additionalInitiationFee.toFixed(2)}\n\n` +
-                `Reason: ${reason}`
-            );
+            // Show appropriate success message
+            if (loan.isStockvelLoan) {
+                alert(
+                    `✅ Stockvel Loan Top-Up Successful!\n\n` +
+                    `Loan #${loan.loan_id} - ${loan.client_name}\n\n` +
+                    `Principal: R${oldPrincipal.toFixed(2)} → R${newPrincipal.toFixed(2)}\n` +
+                    `Top-up Amount: R${amount.toFixed(2)}\n\n` +
+                    `📊 RECALCULATED WITH TIERS:\n` +
+                    `Max Interest: R${oldMaxInterest.toFixed(2)} → R${loan.max_interest_allowed.toFixed(2)}\n` +
+                    `Initiation Fee: R${oldInitiationFee.toFixed(2)} → R${loan.total_initiation_fee.toFixed(2)}\n` +
+                    `New Balance: R${loan.current_balance.toFixed(2)}\n` +
+                    `New Total Cost: R${loan.total_cost.toFixed(2)}\n\n` +
+                    `✅ Tier rates applied based on new total loan amount\n\n` +
+                    `Reason: ${reason}`
+                );
+            } else {
+                alert(
+                    `✅ Loan Amount Increased Successfully!\n\n` +
+                    `Loan #${loan.loan_id} - ${loan.client_name}\n\n` +
+                    `Principal Increased: R${oldPrincipal.toFixed(2)} → R${newPrincipal.toFixed(2)}\n` +
+                    `Amount Added: R${amount.toFixed(2)}\n` +
+                    `New Balance: R${loan.current_balance.toFixed(2)}\n` +
+                    `New Total Cost: R${loan.total_cost.toFixed(2)}\n` +
+                    `Additional Initiation Fee: R${additionalInitiationFee.toFixed(2)}\n\n` +
+                    `Reason: ${reason}`
+                );
+            }
         }
 
         // ===== UPDATE MANAGEMENT SYSTEM =====
