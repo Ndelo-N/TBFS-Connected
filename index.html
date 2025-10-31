@@ -3666,13 +3666,15 @@
                     const isOverdue = loan.status === 'active' && nextDueDate < today;
                     const daysOverdue = isOverdue ? Math.floor((today - nextDueDate) / (1000 * 60 * 60 * 24)) : 0;
 
-                    // Client Information Section
+                    // Client Information and Loan Summary - Two Column Layout
                     let yPos = 80;
                     doc.setFontSize(12);
                     doc.setTextColor(44, 62, 80);
                     doc.text('Client Information', 20, yPos);
+                    doc.text('Loan Summary', 105, yPos);
                     
-                    yPos += 8;
+                    // Left Column - Client Information
+                    yPos += 10;
                     doc.setFontSize(10);
                     doc.text(`Name: ${loan.client_name}`, 20, yPos);
                     yPos += 6;
@@ -3682,23 +3684,20 @@
                     yPos += 6;
                     doc.text(`Report Date: ${todayStr}`, 20, yPos);
 
-                    // Loan Summary Section
-                    yPos += 15;
-                    doc.setFontSize(12);
-                    doc.setTextColor(44, 62, 80);
-                    doc.text('Loan Summary', 20, yPos);
+                    // Right Column - Loan Summary
+                    let rightYPos = 90;
+                    doc.text(`Original Loan Amount: R ${loan.principal_amount.toFixed(2)}`, 105, rightYPos);
+                    rightYPos += 6;
+                    doc.text(`Loan Term: ${loan.term_months} months`, 105, rightYPos);
+                    rightYPos += 6;
+                    doc.text(`Monthly Payment: R ${loan.monthly_payment.toFixed(2)}`, 105, rightYPos);
+                    rightYPos += 6;
+                    doc.text(`Loan Start Date: ${loanStartStr}`, 105, rightYPos);
+                    rightYPos += 6;
+                    doc.text(`Loan Status: ${loan.status.toUpperCase()}`, 105, rightYPos);
                     
-                    yPos += 8;
-                    doc.setFontSize(10);
-                    doc.text(`Original Loan Amount: R ${loan.principal_amount.toFixed(2)}`, 20, yPos);
-                    yPos += 6;
-                    doc.text(`Loan Term: ${loan.term_months} months`, 20, yPos);
-                    yPos += 6;
-                    doc.text(`Monthly Payment: R ${loan.monthly_payment.toFixed(2)}`, 20, yPos);
-                    yPos += 6;
-                    doc.text(`Loan Start Date: ${loanStartStr}`, 20, yPos);
-                    yPos += 6;
-                    doc.text(`Loan Status: ${loan.status.toUpperCase()}`, 20, yPos);
+                    // Use the lower of the two columns to continue
+                    yPos = Math.max(yPos, rightYPos);
 
                     // Current Status Section (Highlighted)
                     yPos += 15;
