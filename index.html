@@ -2247,7 +2247,7 @@
                             </div>
                             ${loan.status === 'active' ? `
                             <div class="info-row">
-                                <span>⏰ Next Payment Due:</span>
+                                <span>? Next Payment Due:</span>
                                 <strong style="color: ${isOverdue ? '#e74c3c' : '#27ae60'};">${nextDueStr}${isOverdue ? ` (${daysOverdue} days overdue)` : ''}</strong>
                             </div>
                             ` : ''}
@@ -2275,16 +2275,16 @@
                                 <span>Actions:</span>
                                 <div style="display: flex; gap: 5px; flex-wrap: wrap;">
                                     ${loan.status === 'active' ? `
-                                        <button class="btn" style="padding: 5px 10px; font-size: 12px;" onclick="makePayment(${loan.loan_id})">💰 Make Payment</button>
-                                        <button class="btn" style="padding: 5px 10px; font-size: 12px; background: #3498db;" onclick="adjustActiveLoan(${loan.loan_id})">✏️ Adjust Loan</button>
-                                        <button class="btn" style="padding: 5px 10px; font-size: 12px;" onclick="updateLoanStatus(${loan.loan_id}, 'completed')">✅ Mark Paid</button>
-                                        <button class="btn btn-warning" style="padding: 5px 10px; font-size: 12px;" onclick="AppState.reviseLoan(${loan.loan_id})">📝 Revise Loan</button>
-                                        <button class="btn btn-danger" style="padding: 5px 10px; font-size: 12px;" onclick="updateLoanStatus(${loan.loan_id}, 'defaulted')">⚠️ Mark Default</button>
-                                        <button class="btn" style="padding: 5px 10px; font-size: 12px; background: #8e44ad;" onclick="updateLoanStatus(${loan.loan_id}, 'blacklisted')">🚫 Blacklist</button>
-                                        <button class="btn" style="padding: 5px 10px; font-size: 12px; background: linear-gradient(135deg, #e67e22 0%, #d35400 100%); margin-top: 5px; width: 100%;" onclick="generateLoanStatusPDF(${loan.loan_id})">📄 Download Status PDF</button>
+                                        <button class="btn" style="padding: 5px 10px; font-size: 12px;" onclick="makePayment(${loan.loan_id})">?? Make Payment</button>
+                                        <button class="btn" style="padding: 5px 10px; font-size: 12px; background: #3498db;" onclick="adjustActiveLoan(${loan.loan_id})">?? Adjust Loan</button>
+                                        <button class="btn" style="padding: 5px 10px; font-size: 12px;" onclick="updateLoanStatus(${loan.loan_id}, 'completed')">? Mark Paid</button>
+                                        <button class="btn btn-warning" style="padding: 5px 10px; font-size: 12px;" onclick="AppState.reviseLoan(${loan.loan_id})">?? Revise Loan</button>
+                                        <button class="btn btn-danger" style="padding: 5px 10px; font-size: 12px;" onclick="updateLoanStatus(${loan.loan_id}, 'defaulted')">?? Mark Default</button>
+                                        <button class="btn" style="padding: 5px 10px; font-size: 12px; background: #8e44ad;" onclick="updateLoanStatus(${loan.loan_id}, 'blacklisted')">?? Blacklist</button>
+                                        <button class="btn" style="padding: 5px 10px; font-size: 12px; background: linear-gradient(135deg, #e67e22 0%, #d35400 100%); margin-top: 5px; width: 100%;" onclick="generateLoanStatusPDF(${loan.loan_id})">?? Download Status PDF</button>
                                     ` : `
-                                        <button class="btn btn-secondary" style="padding: 5px 10px; font-size: 12px;" onclick="updateLoanStatus(${loan.loan_id}, 'active')">✅ Reactivate</button>
-                                        <button class="btn" style="padding: 5px 10px; font-size: 12px; background: linear-gradient(135deg, #e67e22 0%, #d35400 100%);" onclick="generateLoanStatusPDF(${loan.loan_id})">📄 Download Status PDF</button>
+                                        <button class="btn btn-secondary" style="padding: 5px 10px; font-size: 12px;" onclick="updateLoanStatus(${loan.loan_id}, 'active')">? Reactivate</button>
+                                        <button class="btn" style="padding: 5px 10px; font-size: 12px; background: linear-gradient(135deg, #e67e22 0%, #d35400 100%);" onclick="generateLoanStatusPDF(${loan.loan_id})">?? Download Status PDF</button>
                                     `}
                                 </div>
                             </div>
@@ -3824,8 +3824,8 @@
                     // Footer
                     doc.setFontSize(8);
                     doc.setTextColor(100, 100, 100);
-                    doc.text(`Generated on: ${todayStr}`, 20, 280);
-                    doc.text('Thaba Bosiu Financial Services - Your Financial Refuge', 105, 285, { align: 'center' });
+                    doc.text(`Generated on: ${todayStr}`, 20, 285);
+                    doc.text('Thaba Bosiu Financial Services - Your Financial Refuge', 190, 285, { align: 'right' });
 
                     // Save PDF
                     const filename = `TBFS_Loan_Status_${loan.account_number}_Loan${loanId}_${today.toISOString().split('T')[0]}.pdf`;
