@@ -6488,11 +6488,12 @@
         // Export Report to PDF
         // Export Report to PDF - ENHANCED v1.6
         function exportReportPDF() {
-            if (typeof jsPDF === 'undefined') {
+            if (typeof window.jspdf === 'undefined') {
                 alert('? PDF library not loaded');
                 return;
             }
             
+            const { jsPDF } = window.jspdf;
             const pdf = new jsPDF();
             const pageWidth = pdf.internal.pageSize.getWidth();
             let yPos = 20;
