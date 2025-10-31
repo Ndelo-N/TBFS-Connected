@@ -1752,13 +1752,29 @@ document.addEventListener('keydown', (e) => {
 ```javascript
 // Uses jsPDF library
 // Exports:
-- Loan schedules
-- Member statements
-- Reports
+- Loan schedules (from calculator)
+- Loan status reports (from Active Loans tab)
+- Member statements (stockvel disbursement)
+- Business reports
 
 // Format: A4
 // Auto-download with descriptive filename
 ```
+
+**Loan Status PDF Features:**
+- Available for all loans (active and completed)
+- Shows current loan state at time of generation
+- Includes:
+  - Client information
+  - Original loan details
+  - Current payment status (payments made vs total)
+  - Current balance and remaining payments
+  - Payment breakdown (principal, interest, fees)
+  - Next payment due date (for active loans)
+  - Overdue warnings (if applicable)
+  - Banking details for payments
+- Filename format: `TBFS_Loan_Status_[AccountNumber]_Loan[LoanID]_[Date].pdf`
+- Purpose: Send to clients after payments or account changes
 
 **Excel Export:**
 ```javascript
@@ -1861,6 +1877,13 @@ document.addEventListener('keydown', (e) => {
 ## Document Control
 
 **Version History:**
+- v1.7.5+ (2025-10-31) - Added Loan Status PDF feature
+  - New PDF export type for active loan status reports
+  - Available in Active Loans tab for all loans
+  - Shows current payment status and balance
+  - Includes overdue warnings and next payment due
+  - Updated export rules documentation
+  
 - v1.7.5 (2025-10-31) - Updated for equal installments fix
   - Clarified standard loan 30% Income Table method
   - Added equal payment requirement for all loans
@@ -1886,6 +1909,12 @@ document.addEventListener('keydown', (e) => {
 - Feature documentation: /workspace/TBFS-FEATURES.md
 - Calculation guides: /workspace/*.md files
 - Changelog: /workspace/CHANGELOG-v1.7.5.md
+
+**Recent Changes (v1.7.5+):**
+1. ✅ Added Loan Status PDF export feature
+2. ✅ Status reports available for all active/completed loans
+3. ✅ Shows current balance, payments made, and next due date
+4. ✅ Updated export rules with new PDF type
 
 **Recent Changes (v1.7.5):**
 1. ✅ Standard loans now use equal monthly payments
