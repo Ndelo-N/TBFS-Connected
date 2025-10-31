@@ -1,4 +1,4 @@
-const CACHE_NAME = 'tbfs-loan-manager-v32'; // v1.7.4 - Fix: PWA cloud data update with network-first for HTML + remove redundant offline fallback
+const CACHE_NAME = 'tbfs-loan-manager-v33'; // v1.7.5 - Fix: Standard loan equal installments calculation
 const urlsToCache = [
   './',
   './index.html',
