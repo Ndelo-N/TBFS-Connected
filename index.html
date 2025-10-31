@@ -3699,7 +3699,7 @@
                     // Use the lower of the two columns to continue
                     yPos = Math.max(yPos, rightYPos);
 
-                    // Current Status Section (Highlighted)
+                    // Current Status and Payment Breakdown - Two Column Layout
                     yPos += 15;
                     doc.setFillColor(102, 126, 234);
                     doc.rect(20, yPos - 5, 170, 8, 'F');
@@ -3707,7 +3707,10 @@
                     doc.setTextColor(255, 255, 255);
                     doc.text('CURRENT STATUS', 105, yPos, { align: 'center' });
                     
-                    yPos += 12;
+                    const statusStartY = yPos + 12;
+                    yPos = statusStartY;
+                    
+                    // Left Column - Current Status
                     doc.setFontSize(11);
                     doc.setTextColor(44, 62, 80);
                     doc.text(`Payments Made: ${paymentsMade} of ${loan.term_months}`, 20, yPos);
@@ -3743,38 +3746,41 @@
                         }
                     }
 
-                    // Payment Breakdown Section
-                    yPos += 15;
+                    // Right Column - Payment Breakdown
+                    let rightYPos = statusStartY;
                     doc.setFontSize(12);
                     doc.setTextColor(44, 62, 80);
-                    doc.text('Payment Breakdown', 20, yPos);
+                    doc.text('Payment Breakdown', 105, rightYPos);
                     
-                    yPos += 8;
+                    rightYPos += 8;
                     doc.setFontSize(10);
                     
                     // Get remaining principal and interest info
                     const remainingPrincipal = loan.remaining_principal || loan.principal_amount;
                     const principalPaid = loan.principal_amount - remainingPrincipal;
                     
-                    doc.text(`Principal Paid: R ${principalPaid.toFixed(2)}`, 25, yPos);
-                    yPos += 6;
-                    doc.text(`Principal Remaining: R ${remainingPrincipal.toFixed(2)}`, 25, yPos);
-                    yPos += 6;
+                    doc.text(`Principal Paid: R ${principalPaid.toFixed(2)}`, 110, rightYPos);
+                    rightYPos += 6;
+                    doc.text(`Principal Remaining: R ${remainingPrincipal.toFixed(2)}`, 110, rightYPos);
+                    rightYPos += 6;
                     
                     if (loan.total_interest_charged) {
-                        doc.text(`Interest Paid: R ${loan.total_interest_charged.toFixed(2)}`, 25, yPos);
-                        yPos += 6;
+                        doc.text(`Interest Paid: R ${loan.total_interest_charged.toFixed(2)}`, 110, rightYPos);
+                        rightYPos += 6;
                     }
                     
                     if (loan.initiation_fee_paid) {
-                        doc.text(`Initiation Fee Paid: R ${loan.initiation_fee_paid.toFixed(2)}`, 25, yPos);
-                        yPos += 6;
+                        doc.text(`Initiation Fee Paid: R ${loan.initiation_fee_paid.toFixed(2)}`, 110, rightYPos);
+                        rightYPos += 6;
                         const remainingInitFee = (loan.total_initiation_fee || 0) - loan.initiation_fee_paid;
                         if (remainingInitFee > 0) {
-                            doc.text(`Initiation Fee Remaining: R ${remainingInitFee.toFixed(2)}`, 25, yPos);
-                            yPos += 6;
+                            doc.text(`Initiation Fee Remaining: R ${remainingInitFee.toFixed(2)}`, 110, rightYPos);
+                            rightYPos += 6;
                         }
                     }
+                    
+                    // Use the lower of the two columns to continue
+                    yPos = Math.max(yPos, rightYPos);
 
                     // Banking Details Section
                     yPos += 10;
