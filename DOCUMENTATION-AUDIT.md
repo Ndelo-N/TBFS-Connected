@@ -266,63 +266,67 @@ These could be moved to an `/archive/` or `/historical/` folder if you want to p
 
 ## 🎯 **Recommended Actions**
 
-### Immediate Actions (High Priority)
+### ✅ CHOSEN APPROACH: Archive (Preserve History)
 
-**Delete these 21 files:**
-```bash
-# Old investigations
-rm START-HERE.md
-rm PWA-ERROR-INVESTIGATION-REPORT.md
-rm INVESTIGATION-DELIVERABLES.md
-rm INVESTIGATION-COMPLETE.txt
-rm INVESTIGATION-SUMMARY.txt
-
-# Old quick fixes
-rm QUICK-FIX-GUIDE.md
-rm QUICK-FIX-REFERENCE.md
-
-# Old bug reports
-rm BUG-FIX-SUMMARY.md
-rm BUG-FIX-UNDEFINED-PROPERTIES.md
-rm BUG-TEST-REPORT.md
-rm BUG-TEST-RESULTS.md
-rm PWA-STOCKVEL-DATA-FIX.md
-
-# Old calculation docs
-rm LOAN-CALCULATION-3K-1M.md
-rm LOAN-CALCULATION-3K-1M-CORRECT.md
-rm LOAN-CALCULATION-3K-3M.md
-rm FINAL-CALCULATION-R3K-1M.md
-rm LOAN-COMPARISON-5K-10M.md
-rm INCOME-TABLE-METHOD-EXPLAINED.md
-rm INITIATION-FEE-LOGIC-EXPLAINED.md
-rm CALCULATION-UPDATE-SUMMARY.md
-
-# Old summaries
-rm IMPLEMENTATION-SUMMARY.md
-rm COMPLETE-IMPLEMENTATION-SUMMARY.md
-rm SEPARATE-MEMBER-SYSTEM-SUMMARY.md
-rm TAB-AND-SWIPE-FIX-SUMMARY.md
-rm ACTIVE-LOAN-UPDATE-GUIDE.md
-
-# Temporary files
-rm PR-MERGE-DESCRIPTION.md
-rm MERGE-COMMIT-MESSAGE.txt
-```
-
-### Optional: Create Archive (If you want history)
+**Archive these 21 files** to `/archive/` folder organized by category:
 
 ```bash
-# Create archive folder
-mkdir -p archive/investigations
-mkdir -p archive/old-calculations
-mkdir -p archive/old-summaries
+# Run the archive script
+bash archive-docs.sh
 
-# Move historical files
-mv PWA-ERROR-INVESTIGATION-REPORT.md archive/investigations/
-mv LOAN-CALCULATION-3K-1M-CORRECT.md archive/old-calculations/
-mv SEPARATE-MEMBER-SYSTEM-SUMMARY.md archive/old-summaries/
+# Or use git directly:
+# Create archive structure
+mkdir -p archive/{investigations,bug-reports,calculations,summaries,temporary}
+
+# Archive old investigations
+git mv START-HERE.md archive/investigations/
+git mv PWA-ERROR-INVESTIGATION-REPORT.md archive/investigations/
+git mv INVESTIGATION-DELIVERABLES.md archive/investigations/
+git mv INVESTIGATION-COMPLETE.txt archive/investigations/
+git mv INVESTIGATION-SUMMARY.txt archive/investigations/
+
+# Archive old bug reports
+git mv QUICK-FIX-GUIDE.md archive/bug-reports/
+git mv QUICK-FIX-REFERENCE.md archive/bug-reports/
+git mv BUG-FIX-SUMMARY.md archive/bug-reports/
+git mv BUG-FIX-UNDEFINED-PROPERTIES.md archive/bug-reports/
+git mv BUG-TEST-REPORT.md archive/bug-reports/
+git mv BUG-TEST-RESULTS.md archive/bug-reports/
+git mv PWA-STOCKVEL-DATA-FIX.md archive/bug-reports/
+
+# Archive old calculation docs
+git mv LOAN-CALCULATION-3K-1M.md archive/calculations/
+git mv LOAN-CALCULATION-3K-1M-CORRECT.md archive/calculations/
+git mv LOAN-CALCULATION-3K-3M.md archive/calculations/
+git mv FINAL-CALCULATION-R3K-1M.md archive/calculations/
+git mv LOAN-COMPARISON-5K-10M.md archive/calculations/
+git mv INCOME-TABLE-METHOD-EXPLAINED.md archive/calculations/
+git mv INITIATION-FEE-LOGIC-EXPLAINED.md archive/calculations/
+git mv CALCULATION-UPDATE-SUMMARY.md archive/calculations/
+
+# Archive old summaries
+git mv IMPLEMENTATION-SUMMARY.md archive/summaries/
+git mv COMPLETE-IMPLEMENTATION-SUMMARY.md archive/summaries/
+git mv SEPARATE-MEMBER-SYSTEM-SUMMARY.md archive/summaries/
+git mv TAB-AND-SWIPE-FIX-SUMMARY.md archive/summaries/
+git mv ACTIVE-LOAN-UPDATE-GUIDE.md archive/summaries/
+
+# Archive temporary files
+git mv PR-MERGE-DESCRIPTION.md archive/temporary/
+git mv MERGE-COMMIT-MESSAGE.txt archive/temporary/
+
+# Commit
+git add archive/
+git commit -m "docs: Archive 21 outdated files, organize into archive/ folder"
+git push
 ```
+
+**Benefits of Archiving:**
+- ✅ Preserves history
+- ✅ Clean root directory
+- ✅ Can reference if needed
+- ✅ Shows evolution of system
+- ✅ Audit trail maintained
 
 ---
 
@@ -436,20 +440,21 @@ git push
 
 ---
 
-## 🎯 **Recommendation: DELETE**
+## 🎯 **Recommendation: ARCHIVE** ✅
 
-**Recommended Action:** Delete all 21 outdated files immediately.
+**Recommended Action:** Archive all 21 outdated files to `/archive/` folder.
 
 **Reasoning:**
-1. All information is captured in current documentation
-2. Creates confusion to keep outdated docs
-3. Version control (git) preserves history if needed
-4. Clean repository = professional repository
-5. Easier maintenance going forward
+1. Preserves history for reference
+2. Clean root directory (only current docs)
+3. Can access archived files if needed
+4. Shows system evolution
+5. Maintains audit trail
+6. Easy to find current vs historical docs
 
-**Risk:** Very low - all content is superseded or obsolete
+**Risk:** Very low - files moved but preserved
 
-**Recovery:** If needed, can recover from git history
+**Benefits:** Best of both worlds - clean structure + preserved history
 
 ---
 
