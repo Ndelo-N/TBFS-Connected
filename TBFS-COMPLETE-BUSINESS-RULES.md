@@ -1,8 +1,9 @@
 # TBFS Loan Management System - Complete Business Rules Documentation
 
 **System Name:** TBFS (The Best Financial Services) - Enhanced Loan Management System  
-**Version:** 1.7.0  
+**Version:** 1.7.5  
 **Document Date:** 2025-10-31  
+**Last Updated:** 2025-10-31 (Standard Loan Equal Installments Fix)  
 **Analysis Type:** Comprehensive Business Rules Extraction  
 **Document Status:** Complete & Validated
 
@@ -49,25 +50,59 @@
 **Definition:** Regular loans for non-stockvel members
 
 **Key Parameters:**
-- **Interest Rate:** 15% per month (declining balance method)
-- **Initiation Fee:** 9% of loan principal
+- **Interest Rate:** 30% Income Table method (total TBFS income)
+- **Initiation Fee:** 12% of loan principal
 - **Admin Fee:** R60 per month (fixed)
-- **Minimum Loan:** No specified minimum
+- **Minimum Loan:** R100
 - **Maximum Loan:** No specified maximum
 - **Term Length:** 1-24+ months
+- **Payment Structure:** Equal monthly installments (v1.7.5+)
 
 **Calculation Method:**
-- Uses declining balance for interest
-- Interest period = Math.ceil(term/2), minimum 3 months
-- Interest period capped at actual loan term
-- Monthly payment = (Principal + All Fees) / Term
-- Equal monthly installments
+- Uses 30% Income Table method on declining balance
+- Calculates total TBFS income, then breaks down components
+- **EQUAL monthly installments** (all months same payment)
+- Client convenience: predictable payments
 
-**Income Table Method for 30% Loans:**
+**Income Table Method (30% Total TBFS Income):**
 ```
-Monthly TBFS Income = Balance × 0.30
-This includes: Interest + Admin Fee + Initiation Fee Portion
-Interest = (Balance × 0.30) - Admin Fee - Initiation Portion
+Step 1: Calculate TBFS income on declining balance
+  Month 1: Balance × 0.30
+  Month 2: (Balance - principal paid) × 0.30
+  Total TBFS Income = Sum of all months
+
+Step 2: Break down into components
+  Initiation Fee = Principal × 0.12
+  Admin Fees = R60 × term
+  Interest = Total TBFS Income - Initiation - Admin
+
+Step 3: Calculate equal payment
+  Total Cost = Principal + Total TBFS Income
+  Monthly Payment = Total Cost / term (EQUAL each month)
+
+Step 4: Build breakdown for tracking
+  Each month shows: Principal, Interest, Admin, Initiation
+  But client pays EQUAL amount each month
+```
+
+**Key Principle:** 
+- 30% of declining balance = Total TBFS income (one number)
+- Internally broken down for tracking: Interest, Admin (R60), Initiation
+- Client sees equal payments, system tracks detailed allocation
+
+**Example (R3,500 / 2 months):**
+```
+Month 1 TBFS: R3,500 × 0.30 = R1,050
+Month 2 TBFS: R1,750 × 0.30 = R525
+Total TBFS: R1,575
+
+Breakdown:
+- Initiation: R3,500 × 0.12 = R420
+- Admin: R60 × 2 = R120
+- Interest: R1,575 - R420 - R120 = R1,035
+
+Total Cost: R3,500 + R1,575 = R5,075
+Equal Payment: R5,075 / 2 = R2,537.50 per month
 ```
 
 ---
@@ -130,13 +165,13 @@ For each month in interest period:
 
 **Tier Structure (Based on Absolute Amounts):**
 
-| Tier | Range | Rate | Description |
-|------|-------|------|-------------|
-| Tier 1 | R0 - 30% of contributions | 3% | First R450 if R1,500 contributions |
-| Tier 2 | 30% - 75% of contributions | 8% | Next R675 if R1,500 contributions |
-| Tier 3 | 75% - 105% of contributions | 15% | Next R450 if R1,500 contributions |
-| Tier 4 | 105% - 110% of contributions | 25% | Next R75 if R1,500 contributions |
-| Tier 5 | >110% of contributions | 30% | Above R1,650 if R1,500 contributions |
+| Tier | Range | Rate | Method | Description |
+|------|-------|------|--------|-------------|
+| Tier 1 | R0 - 30% of contributions | 3% | Simple Interest | First R450 if R1,500 contributions |
+| Tier 2 | 30% - 75% of contributions | 8% | Simple Interest | Next R675 if R1,500 contributions |
+| Tier 3 | 75% - 105% of contributions | 15% | Simple Interest | Next R450 if R1,500 contributions |
+| Tier 4 | 105% - 110% of contributions | 25% | Simple Interest | Next R75 if R1,500 contributions |
+| Tier 5 | >110% of contributions | 30% | **Income Table** | Above R1,650 (same as standard loans!) |
 
 **Tier Boundary Calculation:**
 ```javascript
@@ -156,22 +191,45 @@ tierInterest = tierAmount × tierRate
 ```
 
 **For Tier 5 (>110%):**
-Uses Income Table Method:
+Uses Income Table Method (SAME as Standard Loans):
 ```javascript
+// Tier 5 uses 30% total TBFS income method
 tier5TotalCharge = tier5Amount × 0.30
-tier5Proportion = tier5Amount / loanAmount
-tier5ProportionalInitiation = monthlyInitiation × tier5Proportion
-tier5ProportionalAdmin = adminFee × tier5Proportion
-tier5Interest = tier5TotalCharge - tier5ProportionalInitiation - tier5ProportionalAdmin
+
+// Subtract FULL loan-level fees (not proportional)
+tier5Interest = tier5TotalCharge - adminFee - monthlyInitiationFee
+
+// Example: R18,450 in Tier 5
+// 30% Charge: R18,450 × 0.30 = R5,535
+// Less Admin: R5,535 - R55.97 = R5,479.03
+// Less Initiation: R5,479.03 - R390 = R5,089.03
+// Tier 5 Interest: R5,089.03
 ```
 
-**Admin Fee Calculation (Tiers 1-4 Only):**
+**Critical Difference from Tiers 1-4:**
+- Tiers 1-4: Simple interest rates (3%, 8%, 15%, 25%)
+- Tier 5: 30% Income Table (total TBFS income method)
+- Tier 5 behaves like standard loan for that portion
+- This is why very large loans (>110% contributions) become expensive
+
+**Admin Fee Calculation (Based on Tiers 1-4 Only):**
 ```javascript
 tiers1to4Rate = tiers1to4Interest / tier1to4Amount
 adminFee = 60 × (1 - tiers1to4Rate)
+
+// Example:
+// Tiers 1-4 Interest: R776.25
+// Tiers 1-4 Amount: R11,550
+// Rate: 776.25 / 11,550 = 6.72%
+// Admin: 60 × (1 - 0.0672) = R55.97
 ```
 
-**Key Principle:** Admin fee based ONLY on Tiers 1-4 effective rate, NOT including Tier 5. This breaks the circular dependency.
+**Key Principle:** 
+- Admin fee based ONLY on Tiers 1-4 effective rate
+- NOT including Tier 5
+- This breaks the circular dependency
+- When Tier 5 exists, admin fee is usually lower
+- When 10% minimum applies, admin fee becomes standard R60
 
 ---
 
@@ -186,12 +244,14 @@ adminFee = 60 × (1 - tiers1to4Rate)
 - NOT half-term like standard loans
 - Allows bonuses to accumulate throughout loan duration
 - Later months = declining balance + rising contributions = bigger bonuses
+- **Equal monthly payments** (all months same amount)
 
 **Rationale:** Full-term interest for stockvel members ensures:
 - Consistent monthly payments
 - Bonus accumulation over entire loan
 - Rewards for consistent contribution behavior
 - Fair treatment as contributions increase
+- Predictable payment amounts
 
 ---
 
@@ -1759,9 +1819,11 @@ document.addEventListener('keydown', (e) => {
 ### Key Business Rules by Category
 
 **INTEREST RATES:**
-- Standard: 15% monthly (declining balance)
-- Stockvel Tiers: 3%, 8%, 15%, 25%, 30% (based on loan-to-savings ratio)
+- Standard: 30% Income Table method (declining balance, EQUAL payments)
+- Stockvel Tiers 1-4: 3%, 8%, 15%, 25% (simple interest)
+- Stockvel Tier 5: 30% Income Table method (same as standard!)
 - Minimum: 10% (stockvel only, triggers bonus system)
+- Equal Payments: ALL loans use equal monthly installments
 
 **FEES:**
 - Standard Initiation: 9% of principal
@@ -1782,6 +1844,7 @@ document.addEventListener('keydown', (e) => {
 - Payout: Can be paid out anytime
 
 **PAYMENTS:**
+- Equal Installments: All months same amount (v1.7.5+)
 - Allocation: Admin → Initiation → Interest → Principal
 - Due Date: Last day of selected start month
 - Early Payoff: 20% discount on remaining interest
@@ -1798,7 +1861,19 @@ document.addEventListener('keydown', (e) => {
 ## Document Control
 
 **Version History:**
-- v1.0 - Initial comprehensive documentation (2025-10-31)
+- v1.7.5 (2025-10-31) - Updated for equal installments fix
+  - Clarified standard loan 30% Income Table method
+  - Added equal payment requirement for all loans
+  - Clarified Tier 5 uses Income Table method
+  - Updated interest rate descriptions
+  - Added detailed standard loan calculation example
+  - Updated payment allocation section
+  
+- v1.0 (2025-10-31) - Initial comprehensive documentation
+  - Complete business rules extraction
+  - All calculation methods documented
+  - Integration points mapped
+  - Technical rules captured
 
 **Maintenance:**
 - Update when business rules change
@@ -1810,9 +1885,17 @@ document.addEventListener('keydown', (e) => {
 - Source code: /workspace/index.html
 - Feature documentation: /workspace/TBFS-FEATURES.md
 - Calculation guides: /workspace/*.md files
+- Changelog: /workspace/CHANGELOG-v1.7.5.md
+
+**Recent Changes (v1.7.5):**
+1. ✅ Standard loans now use equal monthly payments
+2. ✅ Clarified 30% Income Table method
+3. ✅ Documented Tier 5 = Income Table method
+4. ✅ Added detailed calculation examples
+5. ✅ Updated all interest rate references
 
 ---
 
 **END OF BUSINESS RULES DOCUMENTATION**
 
-*This document represents a complete extraction of all business rules from the TBFS Loan Management System as of October 31, 2025. All rules have been verified against the source code and supporting documentation.*
+*This document represents a complete extraction of all business rules from the TBFS Loan Management System as of October 31, 2025, version 1.7.5. All rules have been verified against the source code and supporting documentation. The equal installments fix has been incorporated into all relevant sections.*
