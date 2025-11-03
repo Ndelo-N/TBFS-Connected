@@ -1,0 +1,11 @@
+# Ensure consistent line endings and UTF-8 encoding
+*.html text eol=lf encoding=utf-8
+*.js text eol=lf encoding=utf-8
+*.css text eol=lf encoding=utf-8
+*.json text eol=lf encoding=utf-8
+*.md text eol=lf encoding=utf-8
+
+# Explicitly mark these as UTF-8
+index.html text eol=lf encoding=utf-8
+loan-income-calculator.html text eol=lf encoding=utf-8
+sw.js text eol=lf encoding=utf-8
