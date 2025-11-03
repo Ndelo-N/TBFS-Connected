@@ -951,7 +951,7 @@
             <div style="display: flex; gap: 10px; flex-wrap: wrap; margin-top: 20px;">
                 <button class="btn btn-secondary" onclick="backupData()">?? Backup Data</button>
                 <button class="btn" onclick="restoreData()">?? Restore Data</button>
-                <button class="btn btn-danger" onclick="clearAllData()">?? Clear All Data</button>
+                <button class="btn btn-danger" onclick="clearAllData()">??? Clear All Data</button>
             </div>
 
             <!-- Transaction History Section -->
@@ -1147,7 +1147,7 @@
                         </div>
                     </div>
                     
-                    <button type="submit" class="calculate-btn" style="margin-top: 15px;">?? Record Receipt</button>
+                    <button type="submit" class="calculate-btn" style="margin-top: 15px;">? Record Receipt</button>
                 </form>
             </div>
 
@@ -4145,7 +4145,7 @@
                                 initiationFeeRemaining;
 
             // Get payment amount from user
-            const paymentAmount = prompt(`?? Enter payment amount for Loan #${loanId}:\n\n?? Current Status:\n??? Remaining Balance: R${loan.current_balance.toFixed(2)}\n??? Expected Monthly Payment: R${loan.monthly_payment.toFixed(2)}\n??? Remaining Principal: R${(loan.remaining_principal || loan.principal_amount).toFixed(2)}\n\n?? Full Payoff Amount: R${payoffAmount.toFixed(2)}\n   (Principal + Remaining Initiation Fee)`);
+            const paymentAmount = prompt(`?? Enter payment amount for Loan #${loanId}:\n\n?? Current Status:\n? Remaining Balance: R${loan.current_balance.toFixed(2)}\n? Expected Monthly Payment: R${loan.monthly_payment.toFixed(2)}\n? Remaining Principal: R${(loan.remaining_principal || loan.principal_amount).toFixed(2)}\n\n?? Full Payoff Amount: R${payoffAmount.toFixed(2)}\n   (Principal + Remaining Initiation Fee)`);
             
             if (!paymentAmount || isNaN(paymentAmount) || parseFloat(paymentAmount) <= 0) {
                 alert('Invalid payment amount');
@@ -4371,7 +4371,7 @@
             }
             
             summary += `?? Loan Status:\n`;
-            summary += `??? Remaining Principal: R${loan.remaining_principal.toFixed(2)}\n`;
+            summary += `? Remaining Principal: R${loan.remaining_principal.toFixed(2)}\n`;
             summary += `? Interest Cap Remaining: R${(loan.max_interest_allowed - loan.total_interest_charged).toFixed(2)}\n`;
             
             if (isFullPayoff || loan.remaining_principal <= 0) {
@@ -4515,7 +4515,7 @@
                 `?? Adjust Loan #${loanId} - ${loan.client_name}\n\n` +
                 `Current Details:\n` +
                 `? Principal Amount: R${loan.principal_amount.toFixed(2)}\n` +
-                `??? Remaining Principal: R${loan.remaining_principal.toFixed(2)}\n` +
+                `? Remaining Principal: R${loan.remaining_principal.toFixed(2)}\n` +
                 `? Current Balance: R${loan.current_balance.toFixed(2)}\n` +
                 `? Total Interest Charged: R${(loan.total_interest_charged || 0).toFixed(2)}\n` +
                 `? Max Interest Allowed: R${loan.max_interest_allowed.toFixed(2)}\n\n` +
@@ -5006,7 +5006,7 @@
                                 <span style="margin-left: 10px; color: #7f8c8d;">Expires: ${endDate.toLocaleDateString('en-ZA')}</span>
                             </div>
                             <div style="display: flex; gap: 8px;">
-                                <button onclick="viewMemberDetails(${member.memberNumber})" class="export-btn" style="padding: 8px 16px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);">??? View Details</button>
+                                <button onclick="viewMemberDetails(${member.memberNumber})" class="export-btn" style="padding: 8px 16px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);">?? View Details</button>
                                 <button onclick="renewMembershipByNumber(${member.memberNumber})" class="calculate-btn" style="padding: 8px 16px;">?? Renew Membership</button>
                             </div>
                         </div>
@@ -5440,7 +5440,7 @@
                 
                 let statusBadge = '';
                 if (daysUntilExpiry < 0) {
-                    statusBadge = '<span style="background: #e74c3c; color: white; padding: 4px 8px; border-radius: 4px; font-size: 12px;">? Expired</span>';
+                    statusBadge = '<span style="background: #e74c3c; color: white; padding: 4px 8px; border-radius: 4px; font-size: 12px;">?? Expired</span>';
                 } else if (daysUntilExpiry <= 7) {
                     statusBadge = '<span style="background: #e67e22; color: white; padding: 4px 8px; border-radius: 4px; font-size: 12px;">?? Urgent</span>';
                 } else if (daysUntilExpiry <= 30) {
@@ -5460,7 +5460,7 @@
                         <td>${statusBadge}</td>
                         <td>${endDate.toLocaleDateString()}</td>
                         <td>
-                            <button onclick="viewMemberDetails(${member.memberNumber})" class="export-btn" style="padding: 6px 12px; font-size: 12px;">??? View</button>
+                            <button onclick="viewMemberDetails(${member.memberNumber})" class="export-btn" style="padding: 6px 12px; font-size: 12px;">?? View</button>
                             <button onclick="renewMembershipByNumber(${member.memberNumber})" class="calculate-btn" style="padding: 6px 12px; font-size: 12px;">?? Renew</button>
                         </td>
                     </tr>
@@ -5703,7 +5703,7 @@
                 
             } catch (error) {
                 console.error('Update check failed:', error);
-                document.getElementById('updateStatus').textContent = '? Failed to check for updates. Check your internet connection.';
+                document.getElementById('updateStatus').textContent = '?? Failed to check for updates. Check your internet connection.';
                 document.getElementById('updateStatus').style.color = '#e74c3c';
                 if (button) {
                     button.disabled = false;
@@ -7056,7 +7056,7 @@
             // Download
             XLSX.writeFile(wb, `TBFS_Comprehensive_Report_${new Date().toISOString().split('T')[0]}.xlsx`);
             
-            alert('? Enhanced Excel report with 4 sheets exported successfully!\n\n?? Sheets included:\n?? Summary\n?? Monthly Revenue\n?? Cash Flow Forecast\n?? Loan Details');
+            alert('? Enhanced Excel report with 4 sheets exported successfully!\n\n?? Sheets included:\n? Summary\n? Monthly Revenue\n? Cash Flow Forecast\n? Loan Details');
         }
 
         // Print Report
