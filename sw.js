@@ -1,4 +1,4 @@
-const CACHE_NAME = 'tbfs-loan-manager-v33'; // v1.7.5 - Fix: Standard loan equal installments calculation
+const CACHE_NAME = 'tbfs-loan-manager-v34'; // v1.8.0 - Feature: Batch loan processing for current loans
 const urlsToCache = [
   './',
   './index.html',

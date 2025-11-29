@@ -1224,7 +1224,12 @@
 
         <!-- LOANS TAB -->
         <div id="loans" class="tab-content">
-            <h2>Active Loans</h2>
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; flex-wrap: wrap; gap: 10px;">
+                <h2 style="margin: 0;">Active Loans</h2>
+                <button class="btn" onclick="processAllCurrentLoans()" style="background: linear-gradient(135deg, #f39c12 0%, #e67e22 100%); padding: 10px 20px;">
+                    ⚡ Process All Current Loans
+                </button>
+            </div>
             <div id="loansList"></div>
         </div>
 
@@ -1552,7 +1557,7 @@
 
     <script>
         // App Version
-        const APP_VERSION = '1.7.4'; // Fix: PWA cloud data update with network-first for HTML
+        const APP_VERSION = '1.8.0'; // Feature: Batch loan processing for current loans
         
         // App State Management
         const AppState = {
@@ -4821,6 +4826,318 @@
                 `Additional Initiation Fee: R${additionalInitiationFee.toFixed(2)}\n\n` +
                 `Reason: ${reason}`
             );
+        }
+
+        // ===== BATCH LOAN PROCESSING =====
+        // Process All Current Loans - Identify overdue loans and apply late fees in batch
+        function processAllCurrentLoans() {
+            const activeLoans = AppState.loans.filter(l => l.status === 'active');
+            
+            if (activeLoans.length === 0) {
+                alert('📋 No active loans to process.');
+                return;
+            }
+
+            // Analyze all active loans
+            const today = new Date();
+            const overdueLoans = [];
+            
+            activeLoans.forEach(loan => {
+                // Calculate next due date
+                const loanStart = new Date(loan.created_at);
+                const paymentsMade = loan.payments_made || 0;
+                const targetMonth = loanStart.getMonth() + paymentsMade;
+                const targetYear = loanStart.getFullYear() + Math.floor(targetMonth / 12);
+                const adjustedMonth = targetMonth % 12;
+                
+                // Last day of target month
+                const nextDueDate = new Date(targetYear, adjustedMonth + 1, 0);
+                
+                // Check if overdue
+                if (nextDueDate < today) {
+                    const daysOverdue = Math.floor((today - nextDueDate) / (1000 * 60 * 60 * 24));
+                    const currentInterest = loan.total_interest_charged || 0;
+                    const maxInterest = loan.max_interest_allowed;
+                    const remainingInterestCap = maxInterest - currentInterest;
+                    
+                    // Calculate recommended late fee (0.5% of remaining balance per week overdue, max 30 days)
+                    const weeksOverdue = Math.min(Math.ceil(daysOverdue / 7), 4); // Cap at 4 weeks
+                    const lateFeeRate = 0.005; // 0.5% per week
+                    const recommendedLateFee = Math.min(
+                        loan.current_balance * lateFeeRate * weeksOverdue,
+                        remainingInterestCap // Don't exceed interest cap
+                    );
+                    
+                    overdueLoans.push({
+                        loan: loan,
+                        daysOverdue: daysOverdue,
+                        weeksOverdue: weeksOverdue,
+                        nextDueDate: nextDueDate,
+                        recommendedLateFee: recommendedLateFee,
+                        currentInterest: currentInterest,
+                        maxInterest: maxInterest,
+                        remainingCap: remainingInterestCap
+                    });
+                }
+            });
+
+            if (overdueLoans.length === 0) {
+                alert(
+                    `✅ All Loans Up to Date!\n\n` +
+                    `Total Active Loans: ${activeLoans.length}\n` +
+                    `Overdue Loans: 0\n\n` +
+                    `🎉 No late fees needed at this time.`
+                );
+                return;
+            }
+
+            // Sort by days overdue (most overdue first)
+            overdueLoans.sort((a, b) => b.daysOverdue - a.daysOverdue);
+
+            // Build summary report
+            let summaryReport = `⚡ LOAN PROCESSING REPORT\n` +
+                `${new Date().toLocaleDateString('en-ZA')}\n` +
+                `${'='.repeat(50)}\n\n` +
+                `📊 PORTFOLIO OVERVIEW:\n` +
+                `Total Active Loans: ${activeLoans.length}\n` +
+                `Overdue Loans: ${overdueLoans.length} (${Math.round(overdueLoans.length / activeLoans.length * 100)}%)\n` +
+                `On-Time Loans: ${activeLoans.length - overdueLoans.length}\n\n` +
+                `${'='.repeat(50)}\n\n`;
+
+            let totalRecommendedFees = 0;
+
+            overdueLoans.forEach((item, index) => {
+                totalRecommendedFees += item.recommendedLateFee;
+                summaryReport += 
+                    `${index + 1}. Loan #${item.loan.loan_id} - ${item.loan.client_name}\n` +
+                    `   📅 Days Overdue: ${item.daysOverdue} (${item.weeksOverdue} weeks)\n` +
+                    `   💰 Current Balance: R${item.loan.current_balance.toFixed(2)}\n` +
+                    `   📈 Interest Cap: R${item.currentInterest.toFixed(2)} / R${item.maxInterest.toFixed(2)}\n` +
+                    `   💵 Recommended Late Fee: R${item.recommendedLateFee.toFixed(2)}\n`;
+                
+                if (item.recommendedLateFee === 0) {
+                    summaryReport += `   ⚠️  Cannot add fee - Interest cap reached!\n`;
+                }
+                summaryReport += `\n`;
+            });
+
+            summaryReport += 
+                `${'='.repeat(50)}\n\n` +
+                `💰 TOTAL RECOMMENDED LATE FEES: R${totalRecommendedFees.toFixed(2)}\n\n` +
+                `${'='.repeat(50)}\n\n` +
+                `OPTIONS:\n` +
+                `1 - Apply All Recommended Fees (${overdueLoans.filter(i => i.recommendedLateFee > 0).length} loans)\n` +
+                `2 - Process Loans Individually\n` +
+                `3 - View Report Only (No Changes)\n` +
+                `4 - Cancel\n\n` +
+                `Enter choice (1-4):`;
+
+            const choice = prompt(summaryReport);
+
+            if (!choice || choice === '4') {
+                alert('❌ Processing cancelled - No changes made.');
+                return;
+            }
+
+            if (choice === '3') {
+                alert('📋 Report viewed - No changes made to any loans.');
+                return;
+            }
+
+            if (choice === '1') {
+                // Apply all recommended fees
+                const loansToProcess = overdueLoans.filter(item => item.recommendedLateFee > 0);
+                
+                if (loansToProcess.length === 0) {
+                    alert('⚠️  No late fees can be applied - All affected loans have reached their interest cap.');
+                    return;
+                }
+
+                const confirm = window.confirm(
+                    `⚠️  CONFIRM BATCH PROCESSING\n\n` +
+                    `You are about to apply late fees to ${loansToProcess.length} loans:\n\n` +
+                    `Total Late Fees: R${totalRecommendedFees.toFixed(2)}\n\n` +
+                    `This action will:\n` +
+                    `✓ Add late interest to each overdue loan\n` +
+                    `✓ Update loan balances\n` +
+                    `✓ Log all changes in transaction history\n\n` +
+                    `Proceed with batch processing?`
+                );
+
+                if (!confirm) {
+                    alert('❌ Batch processing cancelled - No changes made.');
+                    return;
+                }
+
+                // Process all loans
+                let processedCount = 0;
+                let totalFeesApplied = 0;
+                const processedLoans = [];
+
+                loansToProcess.forEach(item => {
+                    const loan = item.loan;
+                    const lateFee = item.recommendedLateFee;
+                    const oldBalance = loan.current_balance;
+                    const oldInterest = loan.total_interest_charged || 0;
+
+                    // Apply late fee
+                    loan.total_interest_charged = (loan.total_interest_charged || 0) + lateFee;
+                    loan.current_balance += lateFee;
+
+                    // Round to 2 decimal places
+                    loan.total_interest_charged = Math.round(loan.total_interest_charged * 100) / 100;
+                    loan.current_balance = Math.round(loan.current_balance * 100) / 100;
+
+                    // Log the adjustment
+                    AppState.logTransaction('loan_adjustment',
+                        `Batch Processing: Late fee R${lateFee.toFixed(2)} applied to Loan #${loan.loan_id} (${item.daysOverdue} days overdue)`, {
+                        loanId: loan.loan_id,
+                        clientName: loan.client_name,
+                        adjustmentType: 'batch_late_interest',
+                        amount: lateFee,
+                        reason: `Automated late fee - ${item.daysOverdue} days overdue (${item.weeksOverdue} weeks)`,
+                        daysOverdue: item.daysOverdue,
+                        weeksOverdue: item.weeksOverdue,
+                        previousInterest: oldInterest,
+                        newInterest: loan.total_interest_charged,
+                        previousBalance: oldBalance,
+                        newBalance: loan.current_balance,
+                        processDate: new Date().toISOString()
+                    });
+
+                    processedLoans.push({
+                        loanId: loan.loan_id,
+                        clientName: loan.client_name,
+                        lateFee: lateFee,
+                        newBalance: loan.current_balance
+                    });
+
+                    processedCount++;
+                    totalFeesApplied += lateFee;
+                });
+
+                // Save and update
+                AppState.save();
+                AppState.updateDashboard();
+
+                // Build success report
+                let successReport = 
+                    `✅ BATCH PROCESSING COMPLETE!\n\n` +
+                    `${'='.repeat(50)}\n\n` +
+                    `📊 SUMMARY:\n` +
+                    `Loans Processed: ${processedCount}\n` +
+                    `Total Late Fees Applied: R${totalFeesApplied.toFixed(2)}\n` +
+                    `Processing Date: ${new Date().toLocaleString('en-ZA')}\n\n` +
+                    `${'='.repeat(50)}\n\n` +
+                    `DETAILS:\n\n`;
+
+                processedLoans.forEach((item, index) => {
+                    successReport += 
+                        `${index + 1}. Loan #${item.loanId} - ${item.clientName}\n` +
+                        `   Late Fee: R${item.lateFee.toFixed(2)}\n` +
+                        `   New Balance: R${item.newBalance.toFixed(2)}\n\n`;
+                });
+
+                successReport += 
+                    `${'='.repeat(50)}\n\n` +
+                    `All changes have been saved and logged in transaction history.`;
+
+                alert(successReport);
+                
+            } else if (choice === '2') {
+                // Process individually
+                let processedCount = 0;
+                let skippedCount = 0;
+
+                for (const item of overdueLoans) {
+                    if (item.recommendedLateFee === 0) {
+                        skippedCount++;
+                        continue;
+                    }
+
+                    const action = prompt(
+                        `📋 Loan #${item.loan.loan_id} - ${item.loan.client_name}\n\n` +
+                        `📅 Days Overdue: ${item.daysOverdue}\n` +
+                        `💰 Current Balance: R${item.loan.current_balance.toFixed(2)}\n` +
+                        `📈 Interest: R${item.currentInterest.toFixed(2)} / R${item.maxInterest.toFixed(2)} (cap)\n` +
+                        `💵 Recommended Late Fee: R${item.recommendedLateFee.toFixed(2)}\n\n` +
+                        `OPTIONS:\n` +
+                        `1 - Apply Recommended Fee (R${item.recommendedLateFee.toFixed(2)})\n` +
+                        `2 - Enter Custom Amount\n` +
+                        `3 - Skip This Loan\n` +
+                        `4 - Stop Processing\n\n` +
+                        `Enter choice (1-4):`
+                    );
+
+                    if (!action || action === '4') {
+                        alert(`⏹️  Processing stopped. ${processedCount} loans processed, ${overdueLoans.length - processedCount - skippedCount} remaining.`);
+                        break;
+                    }
+
+                    if (action === '3') {
+                        skippedCount++;
+                        continue;
+                    }
+
+                    let lateFee = item.recommendedLateFee;
+
+                    if (action === '2') {
+                        const customAmount = prompt(`Enter custom late fee amount (max R${item.remainingCap.toFixed(2)}):`);
+                        if (!customAmount || isNaN(customAmount) || parseFloat(customAmount) <= 0) {
+                            alert('Invalid amount - Skipping this loan.');
+                            skippedCount++;
+                            continue;
+                        }
+                        lateFee = Math.min(parseFloat(customAmount), item.remainingCap);
+                    }
+
+                    // Get reason
+                    const reason = prompt(
+                        `Enter reason for late fee:\n` +
+                        `(Default: "${item.daysOverdue} days overdue")`
+                    ) || `${item.daysOverdue} days overdue`;
+
+                    // Apply late fee
+                    const loan = item.loan;
+                    const oldBalance = loan.current_balance;
+                    const oldInterest = loan.total_interest_charged || 0;
+
+                    loan.total_interest_charged = (loan.total_interest_charged || 0) + lateFee;
+                    loan.current_balance += lateFee;
+
+                    loan.total_interest_charged = Math.round(loan.total_interest_charged * 100) / 100;
+                    loan.current_balance = Math.round(loan.current_balance * 100) / 100;
+
+                    AppState.logTransaction('loan_adjustment',
+                        `Late fee R${lateFee.toFixed(2)} applied to Loan #${loan.loan_id} - ${reason}`, {
+                        loanId: loan.loan_id,
+                        clientName: loan.client_name,
+                        adjustmentType: 'late_interest',
+                        amount: lateFee,
+                        reason: reason,
+                        daysOverdue: item.daysOverdue,
+                        previousInterest: oldInterest,
+                        newInterest: loan.total_interest_charged,
+                        previousBalance: oldBalance,
+                        newBalance: loan.current_balance
+                    });
+
+                    processedCount++;
+                }
+
+                AppState.save();
+                AppState.updateDashboard();
+
+                alert(
+                    `✅ Individual Processing Complete!\n\n` +
+                    `Loans Processed: ${processedCount}\n` +
+                    `Loans Skipped: ${skippedCount}\n` +
+                    `Total Overdue: ${overdueLoans.length}`
+                );
+
+            } else {
+                alert('❌ Invalid choice - Processing cancelled.');
+            }
         }
 
         // ===== UPDATE MANAGEMENT SYSTEM =====
