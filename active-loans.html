@@ -1,0 +1,650 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#667eea">
+    <title>Active Loans - TBFS</title>
+    
+    <!-- PWA Meta Tags -->
+    <link rel="manifest" href="manifest.json">
+    <link rel="apple-touch-icon" href="icons/icon-192x192.png">
+    <link rel="icon" type="image/png" sizes="32x32" href="icons/icon-32x32.png">
+    
+    <!-- Shared Styles -->
+    <link rel="stylesheet" href="shared/styles.css">
+    
+    <!-- Page-Specific Styles -->
+    <style>
+        .loan-card {
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            margin-bottom: 20px;
+        }
+        
+        .loan-card h4 {
+            color: #2c3e50;
+            margin-bottom: 15px;
+            font-size: 18px;
+        }
+        
+        .info-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 8px 0;
+            border-bottom: 1px solid #f0f0f0;
+        }
+        
+        .info-row:last-child {
+            border-bottom: none;
+        }
+        
+        .status-badge {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 600;
+            text-transform: uppercase;
+        }
+        
+        .status-active {
+            background: #d4edda;
+            color: #155724;
+        }
+        
+        .status-completed {
+            background: #cce5ff;
+            color: #004085;
+        }
+        
+        .status-defaulted {
+            background: #f8d7da;
+            color: #721c24;
+        }
+        
+        .status-blacklisted {
+            background: #212529;
+            color: white;
+        }
+        
+        .empty-state {
+            text-align: center;
+            padding: 60px 20px;
+            color: #7f8c8d;
+        }
+        
+        .empty-state-icon {
+            font-size: 64px;
+            margin-bottom: 20px;
+            opacity: 0.3;
+        }
+        
+        .filter-section {
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+            display: flex;
+            gap: 15px;
+            flex-wrap: wrap;
+            align-items: center;
+        }
+        
+        .filter-section select {
+            padding: 10px 15px;
+            border: 2px solid #e9ecef;
+            border-radius: 8px;
+            font-size: 14px;
+        }
+        
+        .stats-summary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 20px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+        }
+        
+        .stats-summary h3 {
+            margin-bottom: 15px;
+        }
+        
+        .stats-row {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 15px;
+        }
+        
+        .stat-item {
+            background: rgba(255, 255, 255, 0.1);
+            padding: 15px;
+            border-radius: 8px;
+        }
+        
+        .stat-label {
+            font-size: 12px;
+            opacity: 0.9;
+            margin-bottom: 5px;
+        }
+        
+        .stat-value {
+            font-size: 24px;
+            font-weight: bold;
+        }
+        
+        @media (max-width: 768px) {
+            .loan-card {
+                padding: 15px;
+            }
+            
+            .info-row {
+                flex-direction: column;
+                align-items: flex-start;
+                gap: 5px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <!-- Navigation Header -->
+    <div id="navigation-header"></div>
+    
+    <!-- Main Container -->
+    <div class="container fade-in">
+        <div class="page-content">
+            <h1 class="mb-lg">💰 Active Loans Management</h1>
+            
+            <!-- Stats Summary -->
+            <div class="stats-summary">
+                <h3>📊 Portfolio Overview</h3>
+                <div class="stats-row">
+                    <div class="stat-item">
+                        <div class="stat-label">Active Loans</div>
+                        <div class="stat-value" id="activeLoansCount">0</div>
+                    </div>
+                    <div class="stat-item">
+                        <div class="stat-label">Total Outstanding</div>
+                        <div class="stat-value" id="totalOutstanding">R0.00</div>
+                    </div>
+                    <div class="stat-item">
+                        <div class="stat-label">Overdue Loans</div>
+                        <div class="stat-value" id="overdueCount">0</div>
+                    </div>
+                    <div class="stat-item">
+                        <div class="stat-label">This Month Revenue</div>
+                        <div class="stat-value" id="monthRevenue">R0.00</div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Filter Section -->
+            <div class="filter-section">
+                <label><strong>Filter by Status:</strong></label>
+                <select id="statusFilter" onchange="filterLoans()">
+                    <option value="all">All Loans</option>
+                    <option value="active" selected>Active Only</option>
+                    <option value="completed">Completed</option>
+                    <option value="defaulted">Defaulted</option>
+                    <option value="blacklisted">Blacklisted</option>
+                    <option value="overdue">Overdue</option>
+                </select>
+                
+                <label><strong>Sort by:</strong></label>
+                <select id="sortBy" onchange="filterLoans()">
+                    <option value="date">Date (Newest First)</option>
+                    <option value="amount">Loan Amount</option>
+                    <option value="balance">Outstanding Balance</option>
+                    <option value="due">Due Date</option>
+                </select>
+                
+                <button class="btn btn-success" onclick="location.href='calculator.html'" style="margin-left: auto;">
+                    ➕ New Loan
+                </button>
+            </div>
+            
+            <!-- Loans List -->
+            <div id="loansList"></div>
+        </div>
+    </div>
+    
+    <!-- Shared Modules -->
+    <script src="shared/app-state.js"></script>
+    <script src="shared/calculations.js"></script>
+    <script src="shared/navigation.js"></script>
+    
+    <!-- Page Logic -->
+    <script>
+        // Global state
+        let AppState = {};
+        let allLoans = [];
+        let currentFilter = 'active';
+        let currentSort = 'date';
+        
+        /**
+         * Initialize page
+         */
+        function init() {
+            // Load app state
+            AppState = AppStateManager.load();
+            
+            // Initialize navigation
+            Navigation.init('loans');
+            
+            // Load loans
+            loadLoans();
+            
+            // Listen for state updates from other tabs
+            AppStateManager.onUpdate(() => {
+                console.log('State updated from another tab, reloading...');
+                AppState = AppStateManager.load();
+                loadLoans();
+            });
+            
+            console.log('✅ Active Loans page initialized');
+        }
+        
+        /**
+         * Load and display all loans
+         */
+        function loadLoans() {
+            allLoans = AppState.loans || [];
+            updateStats();
+            filterLoans();
+        }
+        
+        /**
+         * Update statistics
+         */
+        function updateStats() {
+            const activeLoans = allLoans.filter(l => l.status === 'active');
+            const totalOutstanding = activeLoans.reduce((sum, l) => sum + (l.remaining_principal || 0), 0);
+            
+            // Calculate overdue loans
+            const today = new Date();
+            const overdueLoans = activeLoans.filter(l => {
+                if (!l.created_at || !l.start_month_index) return false;
+                const loanDate = new Date(l.created_at);
+                const paymentsMade = l.payments_made || 0;
+                const targetMonthOffset = l.start_month_index + paymentsMade;
+                const targetYear = loanDate.getFullYear() + Math.floor(targetMonthOffset / 12);
+                const targetMonth = targetMonthOffset % 12;
+                const dueDate = new Date(targetYear, targetMonth + 1, 0);
+                return dueDate < today;
+            });
+            
+            // Calculate this month's revenue (from transactions)
+            const thisMonth = new Date().getMonth();
+            const thisYear = new Date().getFullYear();
+            const transactions = AppState.transactions || [];
+            const monthRevenue = transactions
+                .filter(t => {
+                    const tDate = new Date(t.date);
+                    return tDate.getMonth() === thisMonth && 
+                           tDate.getFullYear() === thisYear &&
+                           t.type === 'payment';
+                })
+                .reduce((sum, t) => sum + (t.data?.interestPaid || 0) + (t.data?.adminFeePaid || 0) + (t.data?.initiationFeePaid || 0), 0);
+            
+            // Update display
+            document.getElementById('activeLoansCount').textContent = activeLoans.length;
+            document.getElementById('totalOutstanding').textContent = Calculations.formatCurrency(totalOutstanding);
+            document.getElementById('overdueCount').textContent = overdueLoans.length;
+            document.getElementById('monthRevenue').textContent = Calculations.formatCurrency(monthRevenue);
+        }
+        
+        /**
+         * Filter and sort loans
+         */
+        function filterLoans() {
+            const statusFilter = document.getElementById('statusFilter').value;
+            const sortBy = document.getElementById('sortBy').value;
+            
+            let filteredLoans = [...allLoans];
+            
+            // Apply status filter
+            if (statusFilter !== 'all') {
+                if (statusFilter === 'overdue') {
+                    const today = new Date();
+                    filteredLoans = filteredLoans.filter(l => {
+                        if (l.status !== 'active') return false;
+                        if (!l.created_at || !l.start_month_index) return false;
+                        const loanDate = new Date(l.created_at);
+                        const paymentsMade = l.payments_made || 0;
+                        const targetMonthOffset = l.start_month_index + paymentsMade;
+                        const targetYear = loanDate.getFullYear() + Math.floor(targetMonthOffset / 12);
+                        const targetMonth = targetMonthOffset % 12;
+                        const dueDate = new Date(targetYear, targetMonth + 1, 0);
+                        return dueDate < today;
+                    });
+                } else {
+                    filteredLoans = filteredLoans.filter(l => l.status === statusFilter);
+                }
+            }
+            
+            // Apply sorting
+            filteredLoans.sort((a, b) => {
+                switch (sortBy) {
+                    case 'date':
+                        return new Date(b.created_at) - new Date(a.created_at);
+                    case 'amount':
+                        return (b.principal || 0) - (a.principal || 0);
+                    case 'balance':
+                        return (b.remaining_principal || 0) - (a.remaining_principal || 0);
+                    case 'due':
+                        // Calculate due dates and compare
+                        const getDueDate = (loan) => {
+                            if (!loan.created_at || !loan.start_month_index) return new Date();
+                            const loanDate = new Date(loan.created_at);
+                            const paymentsMade = loan.payments_made || 0;
+                            const targetMonthOffset = loan.start_month_index + paymentsMade;
+                            const targetYear = loanDate.getFullYear() + Math.floor(targetMonthOffset / 12);
+                            const targetMonth = targetMonthOffset % 12;
+                            return new Date(targetYear, targetMonth + 1, 0);
+                        };
+                        return getDueDate(a) - getDueDate(b);
+                    default:
+                        return 0;
+                }
+            });
+            
+            displayLoans(filteredLoans);
+        }
+        
+        /**
+         * Display loans
+         */
+        function displayLoans(loans) {
+            const container = document.getElementById('loansList');
+            
+            if (loans.length === 0) {
+                container.innerHTML = `
+                    <div class="empty-state">
+                        <div class="empty-state-icon">📋</div>
+                        <h3>No loans found</h3>
+                        <p>No loans match your current filter.</p>
+                        <button class="btn btn-primary mt-lg" onclick="location.href='calculator.html'">
+                            ➕ Create New Loan
+                        </button>
+                    </div>
+                `;
+                return;
+            }
+            
+            container.innerHTML = loans.map(loan => {
+                // Calculate dates and status
+                const loanDate = new Date(loan.created_at);
+                const loanDateStr = loanDate.toLocaleDateString('en-ZA', { 
+                    day: '2-digit', month: 'short', year: 'numeric' 
+                });
+                
+                // Calculate payments made
+                const paymentsMade = loan.payments_made || 0;
+                
+                // Calculate next due date
+                let nextDueStr = 'N/A';
+                let isOverdue = false;
+                let daysOverdue = 0;
+                
+                if (loan.status === 'active' && loan.start_month_index !== undefined) {
+                    const startYear = loanDate.getFullYear();
+                    const targetMonthOffset = loan.start_month_index + paymentsMade;
+                    const targetYear = startYear + Math.floor(targetMonthOffset / 12);
+                    const targetMonth = targetMonthOffset % 12;
+                    const dueDate = new Date(targetYear, targetMonth + 1, 0);
+                    
+                    nextDueStr = dueDate.toLocaleDateString('en-ZA', {
+                        day: '2-digit', month: 'short', year: 'numeric'
+                    });
+                    
+                    const today = new Date();
+                    isOverdue = dueDate < today;
+                    if (isOverdue) {
+                        daysOverdue = Math.floor((today - dueDate) / (1000 * 60 * 60 * 24));
+                    }
+                }
+                
+                const principal = loan.principal || loan.principal_amount || 0;
+                const remainingPrincipal = loan.remaining_principal || principal;
+                const monthlyPayment = loan.monthly_payment || 0;
+                const currentBalance = loan.current_balance || 0;
+                
+                return `
+                    <div class="loan-card">
+                        <h4>Loan #${loan.loan_id} - ${loan.client_name}</h4>
+                        
+                        <div class="info-row">
+                            <span>📅 Loan Date:</span>
+                            <strong style="color: #7f8c8d;">${loanDateStr}</strong>
+                        </div>
+                        
+                        ${loan.status === 'active' ? `
+                        <div class="info-row">
+                            <span>📆 Next Payment Due:</span>
+                            <strong style="color: ${isOverdue ? '#e74c3c' : '#27ae60'};">
+                                ${nextDueStr}${isOverdue ? ` (${daysOverdue} days overdue!)` : ''}
+                            </strong>
+                        </div>
+                        ` : ''}
+                        
+                        <div class="info-row">
+                            <span>💰 Principal:</span>
+                            <strong>${Calculations.formatCurrency(principal)}</strong>
+                        </div>
+                        
+                        <div class="info-row">
+                            <span>💳 Monthly Payment:</span>
+                            <strong>${Calculations.formatCurrency(monthlyPayment)}</strong>
+                        </div>
+                        
+                        <div class="info-row">
+                            <span>📊 Progress:</span>
+                            <strong>${paymentsMade}/${loan.term_months} payments made</strong>
+                        </div>
+                        
+                        <div class="info-row">
+                            <span>💵 Remaining Principal:</span>
+                            <strong style="color: #e74c3c;">${Calculations.formatCurrency(remainingPrincipal)}</strong>
+                        </div>
+                        
+                        <div class="info-row">
+                            <span>📋 Status:</span>
+                            <span class="status-badge status-${loan.status}">${loan.status}</span>
+                        </div>
+                        
+                        <div class="info-row">
+                            <span>⚡ Actions:</span>
+                            <div style="display: flex; gap: 5px; flex-wrap: wrap;">
+                                ${loan.status === 'active' ? `
+                                    <button class="btn btn-success" style="padding: 8px 12px; font-size: 13px;" 
+                                            onclick="makePayment(${loan.loan_id})">
+                                        💰 Make Payment
+                                    </button>
+                                    <button class="btn btn-warning" style="padding: 8px 12px; font-size: 13px;"
+                                            onclick="viewLoanDetails(${loan.loan_id})">
+                                        👁️ View Details
+                                    </button>
+                                    <button class="btn btn-danger" style="padding: 8px 12px; font-size: 13px;"
+                                            onclick="markAsDefaulted(${loan.loan_id})">
+                                        ⚠️ Mark Default
+                                    </button>
+                                ` : `
+                                    <button class="btn btn-secondary" style="padding: 8px 12px; font-size: 13px;"
+                                            onclick="viewLoanDetails(${loan.loan_id})">
+                                        👁️ View Details
+                                    </button>
+                                    ${loan.status === 'completed' ? `
+                                        <button class="btn" style="padding: 8px 12px; font-size: 13px; background: #27ae60;"
+                                                onclick="alert('✅ This loan has been fully paid!')">
+                                            ✅ Completed
+                                        </button>
+                                    ` : ''}
+                                `}
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+        
+        /**
+         * Make payment on a loan
+         */
+        function makePayment(loanId) {
+            const loan = allLoans.find(l => l.loan_id === loanId);
+            if (!loan) {
+                alert('❌ Loan not found!');
+                return;
+            }
+            
+            if (loan.status !== 'active') {
+                alert('⚠️ Can only make payments on active loans!');
+                return;
+            }
+            
+            // Get payment amount
+            const expectedPayment = loan.monthly_payment || 0;
+            const remainingPrincipal = loan.remaining_principal || loan.principal || 0;
+            
+            const paymentAmount = prompt(
+                `💰 Enter payment amount for Loan #${loanId}\n\n` +
+                `Expected Monthly Payment: ${Calculations.formatCurrency(expectedPayment)}\n` +
+                `Remaining Principal: ${Calculations.formatCurrency(remainingPrincipal)}\n` +
+                `Current Balance: ${Calculations.formatCurrency(loan.current_balance || 0)}`
+            );
+            
+            if (!paymentAmount || isNaN(paymentAmount) || parseFloat(paymentAmount) <= 0) {
+                alert('❌ Invalid payment amount!');
+                return;
+            }
+            
+            const amount = parseFloat(paymentAmount);
+            
+            // Process payment using shared calculation module
+            const allocation = Calculations.allocatePayment(amount, loan);
+            
+            // Update loan
+            loan.remaining_principal = Math.max(0, loan.remaining_principal - allocation.principalPaid);
+            loan.current_balance = Math.max(0, loan.current_balance - amount);
+            loan.payments_made = (loan.payments_made || 0) + 1;
+            loan.total_interest_charged = (loan.total_interest_charged || 0) + allocation.interestPaid;
+            loan.initiation_fee_paid = (loan.initiation_fee_paid || 0) + allocation.initiationPaid;
+            
+            // Check if loan is paid off
+            if (loan.remaining_principal <= 0.01) {
+                loan.status = 'completed';
+                loan.completion_date = new Date().toISOString();
+            }
+            
+            // Update AppState
+            AppState.capital += amount;
+            AppState.deployedCapital = Math.max(0, AppState.deployedCapital - allocation.principalPaid);
+            AppState.totalInterestEarned += allocation.interestPaid;
+            AppState.totalFeesEarned += allocation.adminPaid + allocation.initiationPaid;
+            AppState.totalProfit += allocation.interestPaid + allocation.adminPaid + allocation.initiationPaid;
+            
+            // Log transaction
+            if (!AppState.transactions) AppState.transactions = [];
+            AppState.transactions.push({
+                id: Date.now(),
+                type: 'payment',
+                date: new Date().toISOString(),
+                description: `Payment: ${Calculations.formatCurrency(amount)} for Loan #${loanId}`,
+                amount: amount,
+                data: {
+                    loanId: loanId,
+                    principalPaid: allocation.principalPaid,
+                    interestPaid: allocation.interestPaid,
+                    adminFeePaid: allocation.adminPaid,
+                    initiationFeePaid: allocation.initiationPaid
+                }
+            });
+            
+            // Save state
+            AppStateManager.save(AppState);
+            
+            // Show success message
+            alert(
+                `✅ Payment Processed Successfully!\n\n` +
+                `💰 Total Paid: ${Calculations.formatCurrency(amount)}\n\n` +
+                `📊 Breakdown:\n` +
+                `• Principal: ${Calculations.formatCurrency(allocation.principalPaid)}\n` +
+                `• Interest: ${Calculations.formatCurrency(allocation.interestPaid)}\n` +
+                `• Admin Fee: ${Calculations.formatCurrency(allocation.adminPaid)}\n` +
+                `• Initiation Fee: ${Calculations.formatCurrency(allocation.initiationPaid)}\n\n` +
+                `📈 Remaining Principal: ${Calculations.formatCurrency(loan.remaining_principal)}`
+            );
+            
+            // Reload loans
+            loadLoans();
+        }
+        
+        /**
+         * View loan details
+         */
+        function viewLoanDetails(loanId) {
+            const loan = allLoans.find(l => l.loan_id === loanId);
+            if (!loan) {
+                alert('❌ Loan not found!');
+                return;
+            }
+            
+            const details = `
+📋 Loan #${loan.loan_id} - Details
+
+👤 Client: ${loan.client_name}
+💰 Principal: ${Calculations.formatCurrency(loan.principal || 0)}
+📅 Term: ${loan.term_months} months
+💳 Monthly Payment: ${Calculations.formatCurrency(loan.monthly_payment || 0)}
+📊 Payments Made: ${loan.payments_made || 0}/${loan.term_months}
+💵 Remaining Principal: ${Calculations.formatCurrency(loan.remaining_principal || 0)}
+📋 Status: ${loan.status}
+📅 Created: ${new Date(loan.created_at).toLocaleDateString('en-ZA')}
+${loan.completion_date ? `✅ Completed: ${new Date(loan.completion_date).toLocaleDateString('en-ZA')}` : ''}
+            `.trim();
+            
+            alert(details);
+        }
+        
+        /**
+         * Mark loan as defaulted
+         */
+        function markAsDefaulted(loanId) {
+            if (!confirm('⚠️ Are you sure you want to mark this loan as DEFAULTED?\n\nThis action can be reversed later if needed.')) {
+                return;
+            }
+            
+            const loan = allLoans.find(l => l.loan_id === loanId);
+            if (!loan) {
+                alert('❌ Loan not found!');
+                return;
+            }
+            
+            loan.status = 'defaulted';
+            loan.default_date = new Date().toISOString();
+            
+            // Log transaction
+            if (!AppState.transactions) AppState.transactions = [];
+            AppState.transactions.push({
+                id: Date.now(),
+                type: 'status_change',
+                date: new Date().toISOString(),
+                description: `Loan #${loanId} marked as DEFAULTED`,
+                data: { loanId: loanId, newStatus: 'defaulted' }
+            });
+            
+            // Save state
+            AppStateManager.save(AppState);
+            
+            alert('✅ Loan marked as defaulted.');
+            loadLoans();
+        }
+        
+        // Initialize on page load
+        document.addEventListener('DOMContentLoaded', init);
+    </script>
+</body>
+</html>
