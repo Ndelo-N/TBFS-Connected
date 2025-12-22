@@ -702,32 +702,296 @@
         }
         
         /**
-         * Generate PDF report
+         * Helper to load image as base64
+         */
+        function getBase64Image(imgUrl, callback) {
+            var img = new window.Image();
+            img.crossOrigin = '';
+            img.onload = function() {
+                var canvas = document.createElement('canvas');
+                canvas.width = img.width;
+                canvas.height = img.height;
+                var ctx = canvas.getContext('2d');
+                ctx.drawImage(img, 0, 0);
+                var dataURL = canvas.toDataURL('image/png');
+                callback(dataURL);
+            };
+            img.onerror = function() { callback(null); };
+            img.src = imgUrl;
+        }
+        
+        /**
+         * Mobile-friendly PDF download helper
+         */
+        function downloadPDFMobileFriendly(doc, filename) {
+            try {
+                // Detect if on mobile device
+                const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+                
+                if (isMobile) {
+                    console.log('Mobile device detected - using blob URL method');
+                    
+                    // Create blob from PDF
+                    const blob = doc.output('blob');
+                    const blobUrl = URL.createObjectURL(blob);
+                    
+                    // Try to open in new window/tab
+                    const newWindow = window.open(blobUrl, '_blank');
+                    
+                    if (newWindow) {
+                        console.log('PDF opened in new window for mobile viewing');
+                        
+                        // Show success message with instructions
+                        alert('📄 PDF generated successfully!\n\n📱 The PDF has opened in a new tab.\n\nTo save it:\n• Tap the share/download icon\n• Choose "Save to Files" or "Download"\n\nThe PDF will then be saved to your device.');
+                        
+                        // Clean up blob URL after a delay
+                        setTimeout(() => URL.revokeObjectURL(blobUrl), 60000);
+                    } else {
+                        // Popup blocked - try alternative method
+                        console.log('Popup blocked - trying alternative method');
+                        
+                        // Create a download link
+                        const link = document.createElement('a');
+                        link.href = blobUrl;
+                        link.download = filename;
+                        link.style.display = 'none';
+                        document.body.appendChild(link);
+                        
+                        // Try to trigger download
+                        link.click();
+                        
+                        // Clean up
+                        setTimeout(() => {
+                            document.body.removeChild(link);
+                            URL.revokeObjectURL(blobUrl);
+                        }, 100);
+                        
+                        alert('📄 PDF generated!\n\n📱 If the download didn\'t start automatically, please check your browser\'s download settings or allow pop-ups for this app.');
+                    }
+                } else {
+                    // Desktop - use standard save method
+                    console.log('Desktop device - using standard save method');
+                    doc.save(filename);
+                    console.log('PDF downloaded successfully:', filename);
+                }
+                
+                return true;
+            } catch (error) {
+                console.error('Error in downloadPDFMobileFriendly:', error);
+                
+                // Final fallback - try standard save
+                try {
+                    doc.save(filename);
+                    return true;
+                } catch (fallbackError) {
+                    console.error('Fallback save also failed:', fallbackError);
+                    alert('❌ Failed to download PDF. Please try again or contact support.');
+                    return false;
+                }
+            }
+        }
+        
+        /**
+         * Generate PDF report - Professional version
          */
         function generatePDF() {
-            if (!loanData) {
-                alert('❌ Please calculate a loan first');
-                return;
+            console.log('generatePDF function called');
+            
+            try {
+                if (!loanData || !loanData.firstName) {
+                    alert('❌ Please calculate a loan first before generating PDF');
+                    return;
+                }
+
+                // Check if jsPDF is loaded
+                if (typeof window.jspdf === 'undefined') {
+                    console.error('jsPDF not loaded');
+                    alert('❌ PDF generation library not loaded. Please refresh the page and try again.');
+                    return;
+                }
+
+                // Load logo and then generate PDF
+                getBase64Image('./TBFS_Logo.png', function(logoDataUrl) {
+                    const { jsPDF } = window.jspdf;
+                    const doc = new jsPDF();
+
+                    console.log('Creating PDF document');
+
+                    // Set font
+                    doc.setFont('helvetica');
+
+                    // Header with logo
+                    if (logoDataUrl) {
+                        doc.addImage(logoDataUrl, 'PNG', 85, 5, 40, 40);
+                    } else {
+                        console.warn('Logo image could not be loaded - continuing without logo');
+                    }
+                    doc.setFontSize(18);
+                    doc.setTextColor(44, 62, 80);
+                    doc.text('THABA BOSIU FINANCIAL SERVICES', 105, 50, { align: 'center' });
+                    doc.setFontSize(10);
+                    doc.setTextColor(100, 100, 100);
+                    doc.text('Your Financial Refuge', 105, 57, { align: 'center' });
+
+                    // Line separator
+                    doc.setDrawColor(102, 126, 234);
+                    doc.setLineWidth(0.5);
+                    doc.line(20, 62, 190, 62);
+
+                    // Client Information and Loan Summary
+                    doc.setFontSize(12);
+                    doc.setTextColor(44, 62, 80);
+                    doc.text('Loan Details', 20, 70);
+                    doc.text('Loan Summary', 105, 70);
+
+                    // Left column - Client Info
+                    doc.setFontSize(10);
+                    doc.text(`Client Name: ${loanData.firstName} ${loanData.lastName}`, 20, 80);
+                    doc.text(`Account Number: ${loanData.accountNumber}`, 20, 87);
+                    doc.text(`Loan Amount: R ${loanData.principal.toFixed(2)}`, 20, 94);
+                    doc.text(`Term: ${loanData.term} months`, 20, 101);
+                    doc.text(`Start Month: ${Calculations.getMonthName(loanData.startMonthIndex)}`, 20, 108);
+                    
+                    if (loanData.isStockvelMember) {
+                        doc.text(`Stockvel Member: Yes`, 20, 115);
+                        doc.text(`Total Contributions: R ${loanData.totalContributions.toFixed(2)}`, 20, 122);
+                        doc.text(`Monthly Contribution: R ${loanData.monthlyContribution.toFixed(2)}`, 20, 129);
+                        
+                        // Membership dates
+                        if (loanData.membershipStartDate) {
+                            const startDate = new Date(loanData.membershipStartDate).toLocaleDateString('en-ZA');
+                            const endDate = loanData.membershipEndDate ? new Date(loanData.membershipEndDate).toLocaleDateString('en-ZA') : 'Not set';
+                            doc.text(`Membership: ${startDate} to ${endDate}`, 20, 136);
+                        }
+                        
+                        // Initiation fee
+                        const initiationFeeText = loanData.initiationFee === 0 ? 
+                            `Initiation Fee: R 0.00 (Waived)` : 
+                            `Initiation Fee: R ${loanData.initiationFee.toLocaleString('en-ZA', {minimumFractionDigits: 2})}`;
+                        doc.text(initiationFeeText, 20, 150);
+                        
+                        // Total admin fees
+                        const totalAdminFees = loanData.schedule.reduce((sum, p) => sum + (p.admin_fee || 0), 0);
+                        doc.text(`Total Admin Fees: R ${totalAdminFees.toFixed(2)}`, 20, 157);
+                        
+                        doc.setFontSize(10);
+                        doc.setTextColor(44, 62, 80);
+                    } else {
+                        doc.text(`Initiation Fee: R ${loanData.initiationFee.toFixed(2)}`, 20, 115);
+                        const adminFee = loanData.schedule[0] ? (loanData.schedule[0].admin_fee || 60) : 60;
+                        doc.text(`Admin Fee: R ${adminFee.toFixed(2)} per month`, 20, 122);
+                    }
+
+                    // Right column - Loan Summary
+                    const totalCost = loanData.schedule.reduce((sum, p) => sum + p.monthly_payment, 0);
+                    doc.text(`Monthly Repayment: R ${loanData.monthlyPayment.toFixed(2)}`, 105, 80);
+                    doc.text(`Total Cost: R ${totalCost.toFixed(2)}`, 105, 87);
+                    doc.text(`Total Interest: R ${loanData.totalInterest.toFixed(2)}`, 105, 94);
+
+                    // Banking Details
+                    doc.setFontSize(12);
+                    doc.setTextColor(44, 62, 80);
+                    const bankingDetailsY = loanData.isStockvelMember ? 170 : 125;
+                    doc.text('Banking Details', 20, bankingDetailsY);
+
+                    doc.setFontSize(10);
+                    doc.text('To pay please use:', 20, bankingDetailsY + 10);
+                    doc.setFontSize(9);
+                    doc.text(`Account Holder: Thaba Bosiu Financial Services`, 25, bankingDetailsY + 17);
+                    doc.text(`Bank Name: TymeBank`, 25, bankingDetailsY + 24);
+                    doc.text(`Branch Code: 678910`, 25, bankingDetailsY + 31);
+                    doc.text(`Account Number: 53000021839`, 25, bankingDetailsY + 38);
+                    doc.setFont('helvetica', 'italic');
+                    doc.text('Please use your Name and Surname as the reference', 25, bankingDetailsY + 45);
+                    doc.setFont('helvetica', 'normal');
+
+                    // Monthly breakdown table
+                    doc.setFontSize(12);
+                    doc.setTextColor(44, 62, 80);
+                    const tableStartY = bankingDetailsY + 60;
+                    doc.text('Monthly Payment Breakdown', 20, tableStartY);
+
+                    // Table headers
+                    doc.setFontSize(8);
+                    const startY = tableStartY + 10;
+                    const rowHeight = 7;
+                    doc.setFillColor(44, 62, 80);
+                    doc.setTextColor(255, 255, 255);
+                    doc.rect(20, startY, 170, rowHeight, 'F');
+                    
+                    // Headers
+                    doc.text('Month', 25, startY + 5);
+                    doc.text('Payment', 45, startY + 5);
+                    doc.text('Principal', 68, startY + 5);
+                    doc.text('Interest', 92, startY + 5);
+                    doc.text('Init Fee', 115, startY + 5);
+                    doc.text('Admin', 138, startY + 5);
+                    doc.text('Balance', 160, startY + 5);
+
+                    // Table rows with month names
+                    doc.setTextColor(0, 0, 0);
+                    let currentY = startY + rowHeight;
+                    const availableHeight = 280 - currentY;
+                    const maxRows = Math.floor(availableHeight / rowHeight);
+                    const rowsToShow = Math.min(maxRows, loanData.schedule.length);
+                    
+                    for (let i = 0; i < rowsToShow; i++) {
+                        const payment = loanData.schedule[i];
+                        if (i % 2 === 0) {
+                            doc.setFillColor(248, 249, 250);
+                            doc.rect(20, currentY, 170, rowHeight, 'F');
+                        }
+                        doc.setTextColor(0, 0, 0);
+                        
+                        // Format month name from due date
+                        const dueDate = new Date(payment.due_date);
+                        const monthName = Calculations.getMonthName(dueDate.getMonth());
+                        
+                        doc.text(monthName, 25, currentY + 5);
+                        doc.text(`R${payment.monthly_payment.toFixed(2)}`, 45, currentY + 5);
+                        doc.text(`R${payment.principal_payment.toFixed(2)}`, 68, currentY + 5);
+                        doc.text(`R${payment.interest_payment.toFixed(2)}`, 92, currentY + 5);
+                        doc.text(`R${(payment.initiation_fee || 0).toFixed(2)}`, 115, currentY + 5);
+                        doc.text(`R${payment.admin_fee.toFixed(2)}`, 138, currentY + 5);
+                        doc.text(`R${payment.outstanding_balance.toFixed(2)}`, 160, currentY + 5);
+                        
+                        currentY += rowHeight;
+                    }
+                    
+                    if (rowsToShow < loanData.schedule.length) {
+                        doc.setFontSize(8);
+                        doc.setTextColor(100, 100, 100);
+                        doc.text(`Note: Showing ${rowsToShow} of ${loanData.schedule.length} months`, 20, currentY + 10);
+                    }
+
+                    // Footer
+                    const today = new Date().toLocaleDateString('en-ZA');
+                    doc.setFontSize(8);
+                    doc.setTextColor(100, 100, 100);
+                    doc.text(`Generated on: ${today}`, 20, 280);
+                    doc.text('Thaba Bosiu Financial Services - Your Financial Refuge', 105, 285, { align: 'center' });
+
+                    // Save PDF using mobile-friendly method
+                    const filename = `TBFS_Loan_Schedule_${loanData.accountNumber}.pdf`;
+                    const success = downloadPDFMobileFriendly(doc, filename);
+
+                    if (success) {
+                        console.log('PDF generated successfully:', filename);
+
+                        // Show success message (on desktop, mobile gets alert)
+                        const statusEl = document.getElementById('pdfStatus');
+                        if (statusEl && !/Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent)) {
+                            statusEl.innerHTML = '<p style="color: #27ae60; margin-top: 10px;">✅ PDF downloaded successfully!</p>';
+                            setTimeout(() => {
+                                statusEl.innerHTML = '';
+                            }, 5000);
+                        }
+                    }
+                });
+            } catch (error) {
+                console.error('Error generating PDF:', error);
+                alert('❌ An error occurred while generating the PDF. Please try again.');
             }
-            
-            const { jsPDF } = window.jspdf;
-            const doc = new jsPDF();
-            
-            // Add content
-            doc.setFontSize(20);
-            doc.text('TBFS Loan Schedule', 105, 20, { align: 'center' });
-            
-            doc.setFontSize(12);
-            doc.text(`Client: ${loanData.firstName} ${loanData.lastName}`, 20, 40);
-            doc.text(`Account: ${loanData.accountNumber}`, 20, 50);
-            doc.text(`Loan Amount: ${Calculations.formatCurrency(loanData.principal)}`, 20, 60);
-            doc.text(`Term: ${loanData.term} months`, 20, 70);
-            doc.text(`Monthly Payment: ${Calculations.formatCurrency(loanData.monthlyPayment)}`, 20, 80);
-            
-            // Save PDF
-            doc.save(`TBFS_Loan_Schedule_${loanData.accountNumber}_${Date.now()}.pdf`);
-            
-            document.getElementById('pdfStatus').innerHTML = '<p style="color: #27ae60; margin-top: 10px;">✅ PDF downloaded successfully!</p>';
         }
         
         /**
@@ -813,27 +1077,73 @@
                 AppState.clients.push(client);
             }
             
-            // Create loan record
+            // Calculate interest cap based on Math.ceil(term/2) with minimum 3 months
+            // BUT cannot exceed the actual loan term (for 1-2 month loans)
+            const calculatedMonths = Math.ceil(loanData.term / 2) >= 3 ? Math.ceil(loanData.term / 2) : 3;
+            const interestMonths = Math.min(calculatedMonths, loanData.term);
+            
+            // Detect if this is a stockvel MEMBER loan (from separate registry)
+            let memberNumber = null;
+            let tieredRate = null;
+            
+            if (loanData.isStockvelMember) {
+                // Try to find member by name and phone/account
+                const memberName = `${loanData.firstName} ${loanData.lastName}`;
+                const stockvelMembers = AppState.stockvelMembers || [];
+                const possibleMember = stockvelMembers.find(m => 
+                    m.name === memberName || 
+                    m.phone === loanData.accountNumber
+                );
+                
+                if (possibleMember) {
+                    memberNumber = possibleMember.memberNumber;
+                }
+                
+                // Calculate tiered rate for bonus calculation later
+                if (loanData.totalContributions > 0) {
+                    const tieredResult = Calculations.calculateTieredStockvelInterest(loanData.principal, loanData.totalContributions);
+                    // Use tiers 1-4 interest only for bonus calculation
+                    const tieredInterest = tieredResult.tiers1to4Interest;
+                    tieredRate = loanData.totalContributions > 0 ? (tieredInterest / loanData.totalContributions) : 0;
+                }
+            }
+            
+            // Calculate total cost
+            const totalCost = loanData.schedule.reduce((sum, p) => sum + p.monthly_payment, 0);
+            
+            // Create loan record with payment flexibility tracking
             const loan = {
                 loan_id: (AppState.loans || []).length + 1,
                 client_name: `${loanData.firstName} ${loanData.lastName}`,
                 account_number: loanData.accountNumber,
                 principal_amount: loanData.principal,
-                original_principal: loanData.principal,
-                remaining_principal: loanData.principal,
+                original_principal: loanData.principal, // Track original for interest cap
+                remaining_principal: loanData.principal, // Track remaining principal
                 term_months: loanData.term,
+                interest_calculation_months: interestMonths, // Store the interest period for cap
                 monthly_payment: loanData.monthlyPayment,
+                total_cost: totalCost,
+                current_balance: totalCost,
+                total_initiation_fee: loanData.initiationFee, // Total initiation fee
+                initiation_fee_paid: 0, // Track how much initiation fee has been paid
                 total_interest: loanData.totalInterest,
-                total_cost: loanData.schedule.reduce((sum, p) => sum + p.monthly_payment, 0),
+                max_interest_allowed: loanData.totalInterest, // Interest cap (based on Math.ceil(term/2) calculation)
+                expected_monthly_interest: loanData.totalInterest / loanData.term, // Equalized monthly interest
+                total_interest_charged: 0, // Track total interest charged so far
+                interest_paid: 0, // Track interest payments
                 loan_type: loanData.isStockvelMember ? 'stockvel' : 'standard',
                 status: 'active',
-                created_at: new Date().toISOString(),
+                created_at: new Date(loanData.loanDate + 'T12:00:00').toISOString(), // Use custom loan date
                 disbursement_date: loanData.loanDate,
+                start_month_index: loanData.startMonthIndex, // Store start month for due date calculations
                 schedule: loanData.schedule,
-                payments_made: 0,
+                payments_made: 0, // Track number of payments received
                 total_contributions: loanData.totalContributions || 0,
                 monthly_contribution: loanData.monthlyContribution || 0,
-                accumulated_bonus: loanData.accumulatedBonus || 0
+                accumulated_bonus: loanData.accumulatedBonus || 0,
+                memberNumber: memberNumber, // Link to stockvel member registry (null if not stockvel)
+                tieredRate: tieredRate, // Store tiered rate for bonus calculation (null if not stockvel)
+                isStockvelLoan: loanData.isStockvelMember // Flag for easy identification
             };
             
             // Add loan to state
