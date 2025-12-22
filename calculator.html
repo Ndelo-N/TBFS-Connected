@@ -1158,10 +1158,14 @@
                 AppState.clients.push(client);
             }
             
-            // Calculate interest cap based on Math.ceil(term/2) with minimum 3 months
-            // BUT cannot exceed the actual loan term (for 1-2 month loans)
-            const calculatedMonths = Math.ceil(loanData.term / 2) >= 3 ? Math.ceil(loanData.term / 2) : 3;
-            const interestMonths = Math.min(calculatedMonths, loanData.term);
+            // Add interest cap fields using shared calculation module
+            const interestCapFields = Calculations.addInterestCapFields({
+                principal: loanData.principal,
+                term: loanData.term,
+                totalInterest: loanData.totalInterest
+            });
+            
+            console.log('Interest Cap Applied:', interestCapFields._interest_cap_description);
             
             // Detect if this is a stockvel MEMBER loan (from separate registry)
             let memberNumber = null;
@@ -1197,34 +1201,47 @@
                 loan_id: (AppState.loans || []).length + 1,
                 client_name: `${loanData.firstName} ${loanData.lastName}`,
                 account_number: loanData.accountNumber,
+                
+                // Principal tracking
                 principal_amount: loanData.principal,
-                original_principal: loanData.principal, // Track original for interest cap
-                remaining_principal: loanData.principal, // Track remaining principal
+                remaining_principal: loanData.principal,
+                
+                // Term & payments
                 term_months: loanData.term,
-                interest_calculation_months: interestMonths, // Store the interest period for cap
                 monthly_payment: loanData.monthlyPayment,
+                payments_made: 0,
+                
+                // Financial totals
                 total_cost: totalCost,
                 current_balance: totalCost,
-                total_initiation_fee: loanData.initiationFee, // Total initiation fee
-                initiation_fee_paid: 0, // Track how much initiation fee has been paid
                 total_interest: loanData.totalInterest,
-                max_interest_allowed: loanData.totalInterest, // Interest cap (based on Math.ceil(term/2) calculation)
-                expected_monthly_interest: loanData.totalInterest / loanData.term, // Equalized monthly interest
-                total_interest_charged: 0, // Track total interest charged so far
-                interest_paid: 0, // Track interest payments
+                
+                // Fee tracking
+                total_initiation_fee: loanData.initiationFee,
+                initiation_fee_paid: 0,
+                
+                // Interest cap fields (from shared module)
+                ...interestCapFields,
+                
+                // Type & status
                 loan_type: loanData.isStockvelMember ? 'stockvel' : 'standard',
                 status: 'active',
-                created_at: new Date(loanData.loanDate + 'T12:00:00').toISOString(), // Use custom loan date
+                
+                // Dates
+                created_at: new Date(loanData.loanDate + 'T12:00:00').toISOString(),
                 disbursement_date: loanData.loanDate,
-                start_month_index: loanData.startMonthIndex, // Store start month for due date calculations
+                start_month_index: loanData.startMonthIndex,
+                
+                // Schedule
                 schedule: loanData.schedule,
-                payments_made: 0, // Track number of payments received
+                
+                // Stockvel-specific
                 total_contributions: loanData.totalContributions || 0,
                 monthly_contribution: loanData.monthlyContribution || 0,
                 accumulated_bonus: loanData.accumulatedBonus || 0,
-                memberNumber: memberNumber, // Link to stockvel member registry (null if not stockvel)
-                tieredRate: tieredRate, // Store tiered rate for bonus calculation (null if not stockvel)
-                isStockvelLoan: loanData.isStockvelMember // Flag for easy identification
+                memberNumber: memberNumber,
+                tieredRate: tieredRate,
+                isStockvelLoan: loanData.isStockvelMember
             };
             
             // Add loan to state
