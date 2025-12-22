@@ -1,0 +1,810 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#667eea">
+    <title>Loan Calculator - TBFS</title>
+    
+    <!-- PWA Meta Tags -->
+    <link rel="manifest" href="manifest.json">
+    <link rel="apple-touch-icon" href="icons/icon-192x192.png">
+    <link rel="icon" type="image/png" sizes="32x32" href="icons/icon-32x32.png">
+    
+    <!-- Shared Styles -->
+    <link rel="stylesheet" href="shared/styles.css">
+    
+    <!-- jsPDF for PDF generation -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    
+    <!-- SheetJS for Excel export -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    
+    <!-- Page-Specific Styles -->
+    <style>
+        .stockvel-info {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            border-left: 4px solid #667eea;
+        }
+        
+        .stockvel-info h4 {
+            color: #667eea;
+            margin-bottom: 10px;
+        }
+        
+        .stockvel-info ul {
+            margin: 10px 0;
+            padding-left: 20px;
+        }
+        
+        .stockvel-info li {
+            margin: 8px 0;
+            color: #2c3e50;
+        }
+        
+        .banking-details {
+            background: #f8f9fa;
+            padding: 20px;
+            border-radius: 10px;
+            margin: 30px 0;
+            border: 2px solid #e0e6ed;
+        }
+        
+        .banking-details h3 {
+            color: #2c3e50;
+            margin-bottom: 15px;
+            font-size: 18px;
+        }
+        
+        .banking-account {
+            background: white;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 15px;
+        }
+        
+        .banking-account p {
+            margin: 5px 0;
+        }
+        
+        .results-section {
+            display: none;
+            margin-top: 30px;
+            animation: fadeIn 0.5s;
+        }
+        
+        .results-section.visible {
+            display: block;
+        }
+        
+        .summary-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 20px;
+            margin: 20px 0;
+        }
+        
+        .summary-card {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            padding: 20px;
+            border-radius: 15px;
+            color: white;
+            text-align: center;
+        }
+        
+        .summary-card h3 {
+            font-size: 14px;
+            margin-bottom: 10px;
+            opacity: 0.9;
+        }
+        
+        .summary-card .value {
+            font-size: 28px;
+            font-weight: bold;
+        }
+        
+        .breakdown-table-container {
+            overflow-x: auto;
+            margin: 20px 0;
+        }
+        
+        .stockvel-only {
+            display: none;
+        }
+        
+        .stockvel-active .stockvel-only {
+            display: table-cell;
+        }
+        
+        @media (max-width: 768px) {
+            .summary-grid {
+                grid-template-columns: 1fr;
+            }
+            
+            .banking-details {
+                padding: 15px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <!-- Navigation Header -->
+    <div id="navigation-header"></div>
+    
+    <!-- Main Container -->
+    <div class="container fade-in">
+        <div class="page-content">
+            <h1 class="mb-lg">💳 Loan Calculator</h1>
+            
+            <!-- Loan Application Form -->
+            <div class="card">
+                <h2 class="card-header">Loan Application Details</h2>
+                <form id="loanForm">
+                    <div class="form-grid">
+                        <div class="form-group">
+                            <label class="form-label">First Name:</label>
+                            <input type="text" id="firstName" class="form-input" required>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">Last Name:</label>
+                            <input type="text" id="lastName" class="form-input" required>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">Account Number:</label>
+                            <input type="text" id="accountNumber" class="form-input" required>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">Member # (Optional):</label>
+                            <input type="number" id="memberNumber" class="form-input" placeholder="e.g. 1001 - auto-fills stockvel data">
+                            <small style="color: #7f8c8d; font-size: 11px;">💡 Enter Member # to auto-populate stockvel fields</small>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">Loan Amount (R):</label>
+                            <input type="number" id="principal" class="form-input" min="100" step="100" required>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">Loan Term (months):</label>
+                            <input type="number" id="term" class="form-input" min="1" required>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">Loan Disbursement Date:</label>
+                            <input type="date" id="loanDate" class="form-input" required>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-label">Start Month:</label>
+                            <select id="startMonth" class="form-select" required>
+                                <option value="">Select Month</option>
+                                <option value="0">January</option>
+                                <option value="1">February</option>
+                                <option value="2">March</option>
+                                <option value="3">April</option>
+                                <option value="4">May</option>
+                                <option value="5">June</option>
+                                <option value="6">July</option>
+                                <option value="7">August</option>
+                                <option value="8">September</option>
+                                <option value="9">October</option>
+                                <option value="10">November</option>
+                                <option value="11">December</option>
+                            </select>
+                        </div>
+                        <div class="form-group" style="grid-column: 1 / -1;">
+                            <div class="checkbox-container">
+                                <input type="checkbox" id="stockvelMember" onchange="toggleStockvelFields()">
+                                <label for="stockvelMember">Stockvel Member</label>
+                            </div>
+                        </div>
+                        
+                        <!-- Stockvel Member Fields -->
+                        <div id="stockvelFields" style="display: none; grid-column: 1 / -1;">
+                            <div class="stockvel-info">
+                                <h4>Stockvel Member Benefits</h4>
+                                <ul>
+                                    <li><strong>Initiation Fee:</strong> WAIVED up to contributions, 12% on excess (distributed over term)</li>
+                                    <li><strong>Tiered Interest Rates:</strong> Based on loan amount vs. your contributions
+                                        <ul style="margin-top: 5px; font-size: 12px;">
+                                            <li>First 30% of contributions: 3%</li>
+                                            <li>30-75% of contributions: 8%</li>
+                                            <li>75-105% of contributions: 15%</li>
+                                            <li>105-110% of contributions: 25%</li>
+                                            <li>Above 110% of contributions: 30%</li>
+                                        </ul>
+                                    </li>
+                                    <li><strong>10% Minimum Interest:</strong> Applied if tiered rate is below 10%</li>
+                                    <li><strong>Admin Fee:</strong> R60 × (1 - interest rate)</li>
+                                    <li><strong>Equal Monthly Payments:</strong> Total cost divided evenly across all months</li>
+                                </ul>
+                            </div>
+                            <div class="form-grid">
+                                <div class="form-group">
+                                    <label class="form-label">Membership Start Date:</label>
+                                    <input type="date" id="membershipStartDate" class="form-input" onchange="calculateMembershipEndDate()">
+                                </div>
+                                <div class="form-group">
+                                    <label class="form-label">Membership End Date:</label>
+                                    <input type="date" id="membershipEndDate" class="form-input" readonly style="background: #f0f0f0; cursor: not-allowed;" title="Auto-calculated as start date + 12 months">
+                                    <small style="color: #666; font-size: 11px;">Automatically calculated (12 months from start)</small>
+                                </div>
+                                <div class="form-group">
+                                    <label class="form-label">Total Contributions to Date (R):</label>
+                                    <input type="number" id="totalContributions" class="form-input" min="0" step="100" placeholder="Enter total amount contributed">
+                                </div>
+                                <div class="form-group">
+                                    <label class="form-label">Monthly Contribution (R):</label>
+                                    <input type="number" id="monthlyContribution" class="form-input" min="0" step="50" placeholder="Enter monthly contribution">
+                                </div>
+                                <div class="form-group">
+                                    <label class="form-label">Accumulated Bonus (R):</label>
+                                    <input type="number" id="accumulatedBonus" class="form-input" min="0" step="0.01" value="0" placeholder="Bonus from previous loans">
+                                    <small style="color: #666; font-size: 11px;">Total bonus accumulated from all loans</small>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <button type="submit" class="btn btn-primary btn-lg mt-md">Calculate Loan Repayment</button>
+                </form>
+            </div>
+            
+            <!-- Results Section -->
+            <div id="results" class="results-section">
+                <div class="card">
+                    <h2 class="card-header">Loan Repayment Summary</h2>
+                    <div id="clientInfo" class="mb-md"></div>
+                    
+                    <div class="summary-grid">
+                        <div class="summary-card">
+                            <h3>Monthly Repayment</h3>
+                            <div class="value" id="monthlyPayment">R 0.00</div>
+                        </div>
+                        <div class="summary-card">
+                            <h3>Total Cost</h3>
+                            <div class="value" id="totalCost">R 0.00</div>
+                        </div>
+                        <div class="summary-card">
+                            <h3>Number of Payments</h3>
+                            <div class="value" id="numberOfPayments">0</div>
+                        </div>
+                        <div class="summary-card">
+                            <h3>Total Interest</h3>
+                            <div class="value" id="totalInterest">R 0.00</div>
+                        </div>
+                        <div class="summary-card" id="stockvelSummaryCard" style="display: none;">
+                            <h3>Initiation Fee</h3>
+                            <div class="value" id="initiationFeeDisplay">R 0.00</div>
+                        </div>
+                    </div>
+                    
+                    <h3 class="section-title mt-lg">Monthly Breakdown</h3>
+                    <div class="breakdown-table-container">
+                        <table class="table" id="breakdownTable">
+                            <thead>
+                                <tr>
+                                    <th>Month</th>
+                                    <th>Monthly Payment</th>
+                                    <th>Principal Payment</th>
+                                    <th>Interest</th>
+                                    <th>Initiation Fee</th>
+                                    <th>Admin Fee</th>
+                                    <th>Outstanding Balance</th>
+                                    <th class="stockvel-only">Bonus</th>
+                                </tr>
+                            </thead>
+                            <tbody id="breakdownBody">
+                            </tbody>
+                        </table>
+                    </div>
+                    
+                    <button class="btn btn-warning mt-md" onclick="exportToExcel()">📊 Export to Excel</button>
+                    
+                    <!-- Banking Details -->
+                    <div class="banking-details">
+                        <h3>Banking Details</h3>
+                        <p style="margin-bottom: 10px; color: #2c3e50;">To pay please use:</p>
+                        <div class="banking-account">
+                            <p><strong>Account Holder:</strong> Thaba Bosiu Financial Services</p>
+                            <p><strong>Bank Name:</strong> TymeBank</p>
+                            <p><strong>Branch Code:</strong> 678910</p>
+                            <p><strong>Account Number:</strong> 53000021839</p>
+                        </div>
+                        <p style="color: #2c3e50; font-style: italic;">Please use your <strong>Name and Surname</strong> as the reference</p>
+                    </div>
+                    
+                    <div class="mt-md">
+                        <button class="btn btn-danger" onclick="generatePDF()">📄 Download PDF Report</button>
+                        <button class="btn btn-success" style="margin-left: 10px;" onclick="acceptLoan()">✅ Accept Loan & Add to System</button>
+                    </div>
+                    <div id="pdfStatus" class="mt-sm"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Shared Modules -->
+    <script src="shared/app-state.js"></script>
+    <script src="shared/calculations.js"></script>
+    <script src="shared/navigation.js"></script>
+    
+    <!-- Page Logic -->
+    <script>
+        // Global state
+        let AppState = {};
+        let loanData = null;
+        let currentYear = new Date().getFullYear();
+        
+        /**
+         * Initialize page
+         */
+        function init() {
+            // Load app state
+            AppState = AppStateManager.load();
+            
+            // Initialize navigation
+            NavigationManager.init('calculator');
+            
+            // Set default loan date to today
+            document.getElementById('loanDate').valueAsDate = new Date();
+            
+            // Set up form handler
+            document.getElementById('loanForm').addEventListener('submit', function(e) {
+                e.preventDefault();
+                calculateLoan();
+            });
+            
+            // Set up member number lookup
+            document.getElementById('memberNumber').addEventListener('change', loadMemberData);
+            
+            // Listen for state updates from other tabs
+            AppStateManager.onUpdate(() => {
+                console.log('State updated from another tab, reloading...');
+                AppState = AppStateManager.load();
+            });
+            
+            console.log('✅ Calculator page initialized');
+        }
+        
+        /**
+         * Toggle stockvel fields
+         */
+        function toggleStockvelFields() {
+            const isChecked = document.getElementById('stockvelMember').checked;
+            const fields = document.getElementById('stockvelFields');
+            fields.style.display = isChecked ? 'block' : 'none';
+        }
+        
+        /**
+         * Calculate membership end date
+         */
+        function calculateMembershipEndDate() {
+            const startDate = document.getElementById('membershipStartDate').value;
+            if (!startDate) return;
+            
+            const endDate = Calculations.calculateMembershipEndDate(startDate);
+            document.getElementById('membershipEndDate').value = endDate;
+        }
+        
+        /**
+         * Load member data by member number
+         */
+        function loadMemberData() {
+            const memberNumber = parseInt(document.getElementById('memberNumber').value);
+            if (!memberNumber) return;
+            
+            const member = (AppState.stockvelMembers || []).find(m => m.memberNumber === memberNumber);
+            if (!member) {
+                alert('❌ Member not found');
+                return;
+            }
+            
+            // Auto-fill fields
+            const [firstName, ...lastNameParts] = member.name.split(' ');
+            document.getElementById('firstName').value = firstName || '';
+            document.getElementById('lastName').value = lastNameParts.join(' ') || '';
+            document.getElementById('accountNumber').value = member.phone || member.memberNumber;
+            document.getElementById('stockvelMember').checked = true;
+            toggleStockvelFields();
+            document.getElementById('membershipStartDate').value = member.membershipStartDate || '';
+            document.getElementById('membershipEndDate').value = member.membershipEndDate || '';
+            document.getElementById('totalContributions').value = member.totalContributions || 0;
+            document.getElementById('monthlyContribution').value = member.monthlyContribution || 0;
+            document.getElementById('accumulatedBonus').value = member.accumulatedBonus || 0;
+            
+            alert(`✅ Member data loaded: ${member.name}`);
+        }
+        
+        /**
+         * Calculate loan
+         */
+        function calculateLoan() {
+            try {
+                // Get form values
+                const firstName = document.getElementById('firstName').value.trim();
+                const lastName = document.getElementById('lastName').value.trim();
+                const accountNumber = document.getElementById('accountNumber').value.trim();
+                const principal = parseFloat(document.getElementById('principal').value);
+                const term = parseInt(document.getElementById('term').value);
+                const loanDate = document.getElementById('loanDate').value;
+                const startMonthIndex = parseInt(document.getElementById('startMonth').value);
+                
+                // Stockvel fields
+                const isStockvelMember = document.getElementById('stockvelMember').checked;
+                const totalContributions = isStockvelMember ? parseFloat(document.getElementById('totalContributions').value) || 0 : 0;
+                const monthlyContribution = isStockvelMember ? parseFloat(document.getElementById('monthlyContribution').value) || 0 : 0;
+                const membershipStartDate = isStockvelMember ? document.getElementById('membershipStartDate').value : '';
+                const membershipEndDate = isStockvelMember ? document.getElementById('membershipEndDate').value : '';
+                const accumulatedBonus = isStockvelMember ? parseFloat(document.getElementById('accumulatedBonus').value) || 0 : 0;
+                
+                // Validation
+                if (!firstName || !lastName || !accountNumber || isNaN(startMonthIndex)) {
+                    alert('❌ Please fill in all required fields including start month');
+                    return;
+                }
+                
+                if (isStockvelMember) {
+                    if (!membershipStartDate || !membershipEndDate) {
+                        alert('❌ Please enter membership dates');
+                        return;
+                    }
+                    if (totalContributions === 0 && monthlyContribution === 0) {
+                        alert('❌ Please enter your contribution amounts as a Stockvel member');
+                        return;
+                    }
+                    
+                    // Validate membership expiry
+                    const today = new Date();
+                    const membershipExpiry = new Date(membershipEndDate);
+                    const monthsUntilExpiry = Math.floor((membershipExpiry - today) / (1000 * 60 * 60 * 24 * 30));
+                    
+                    if (monthsUntilExpiry < 1) {
+                        alert('⛔ Membership has expired! Please renew membership before taking a loan.');
+                        return;
+                    }
+                    
+                    if (term > monthsUntilExpiry) {
+                        alert(`⛔ Loan term too long!\n\nYour membership expires in ${monthsUntilExpiry} month(s).\nMaximum loan term: ${monthsUntilExpiry} month(s)\n\nPlease reduce the loan term or renew your membership first.`);
+                        return;
+                    }
+                }
+                
+                if (isNaN(principal) || principal < 100) {
+                    alert('❌ Minimum loan amount is R100');
+                    return;
+                }
+                
+                if (isNaN(term) || term < 1) {
+                    alert('❌ Loan term must be at least 1 month');
+                    return;
+                }
+                
+                // Calculate loan
+                let result;
+                if (isStockvelMember) {
+                    result = Calculations.calculateTieredStockvelInterest(principal, totalContributions);
+                    // Use stockvel calculation with tiered rates
+                    const schedule = generateStockvelSchedule(principal, term, totalContributions, monthlyContribution, startMonthIndex);
+                    result = {
+                        schedule: schedule,
+                        totalInterest: schedule.reduce((sum, m) => sum + m.interest_payment, 0),
+                        totalFees: schedule.reduce((sum, m) => sum + (m.admin_fee || 0) + (m.initiation_fee || 0), 0),
+                        initiationFee: schedule[0] ? schedule[0].initiation_fee * term : 0,
+                        monthlyPayment: schedule[0] ? schedule[0].monthly_payment : 0
+                    };
+                } else {
+                    result = Calculations.calculateStandardLoan(principal, term);
+                }
+                
+                // Store loan data
+                loanData = {
+                    firstName,
+                    lastName,
+                    accountNumber,
+                    principal,
+                    term,
+                    loanDate,
+                    startMonthIndex,
+                    isStockvelMember,
+                    totalContributions,
+                    monthlyContribution,
+                    membershipStartDate,
+                    membershipEndDate,
+                    accumulatedBonus,
+                    schedule: result.schedule,
+                    totalInterest: result.totalInterest,
+                    totalFees: result.totalFees,
+                    initiationFee: result.initiationFee || 0,
+                    monthlyPayment: result.monthlyPayment
+                };
+                
+                // Display results
+                displayResults();
+                
+            } catch (error) {
+                console.error('Calculation error:', error);
+                alert(`❌ Calculation error: ${error.message}`);
+            }
+        }
+        
+        /**
+         * Generate stockvel schedule with tiered rates
+         */
+        function generateStockvelSchedule(principal, term, totalContributions, monthlyContribution, startMonthIndex) {
+            const schedule = [];
+            let outstandingBalance = principal;
+            let currentSavings = totalContributions;
+            
+            // Calculate initiation fee
+            const initiationFee = principal <= totalContributions ? 0 : (principal - totalContributions) * 0.12;
+            const monthlyInitiationFee = initiationFee / term;
+            
+            // Calculate each month
+            const monthlyDetails = [];
+            for (let month = 1; month <= term; month++) {
+                if (month > 1) {
+                    currentSavings += monthlyContribution;
+                }
+                
+                const tieredResult = Calculations.calculateTieredStockvelInterest(outstandingBalance, currentSavings);
+                const principalPayment = principal / term;
+                const interestPayment = tieredResult.tiers1to4Interest * (principal / outstandingBalance);
+                const adminFee = 60 * (1 - (tieredResult.tiers1to4Interest / tieredResult.tier1to4Amount));
+                
+                monthlyDetails.push({
+                    month,
+                    principal_payment: principalPayment,
+                    interest_payment: Math.max(interestPayment, (principal / term) * 0.10),
+                    admin_fee: adminFee,
+                    initiation_fee: monthlyInitiationFee
+                });
+                
+                outstandingBalance -= principalPayment;
+            }
+            
+            // Calculate total and equal monthly payment
+            const totalCost = monthlyDetails.reduce((sum, m) => 
+                sum + m.principal_payment + m.interest_payment + m.admin_fee + m.initiation_fee, 0
+            );
+            const equalMonthlyPayment = totalCost / term;
+            
+            // Build final schedule
+            let balance = principal;
+            for (let i = 0; i < monthlyDetails.length; i++) {
+                const detail = monthlyDetails[i];
+                const dueDate = Calculations.calculateDueDate(currentYear, startMonthIndex, detail.month);
+                
+                schedule.push({
+                    payment_number: detail.month,
+                    due_date: dueDate,
+                    monthly_payment: equalMonthlyPayment,
+                    principal_payment: detail.principal_payment,
+                    interest_payment: detail.interest_payment,
+                    admin_fee: detail.admin_fee,
+                    initiation_fee: detail.initiation_fee,
+                    outstanding_balance: Math.max(0, balance - detail.principal_payment),
+                    bonus: detail.interest_payment * 0.1, // 10% of interest
+                    status: 'pending'
+                });
+                
+                balance -= detail.principal_payment;
+            }
+            
+            return schedule;
+        }
+        
+        /**
+         * Display calculation results
+         */
+        function displayResults() {
+            // Show results section
+            document.getElementById('results').classList.add('visible');
+            
+            // Scroll to results
+            document.getElementById('results').scrollIntoView({ behavior: 'smooth', block: 'start' });
+            
+            // Display client info
+            const clientInfo = `
+                <div style="background: #f8f9fa; padding: 15px; border-radius: 8px; margin-bottom: 20px;">
+                    <strong>Client:</strong> ${loanData.firstName} ${loanData.lastName} | 
+                    <strong>Account:</strong> ${loanData.accountNumber} | 
+                    <strong>Type:</strong> ${loanData.isStockvelMember ? 'Stockvel Member' : 'Standard Client'}
+                </div>
+            `;
+            document.getElementById('clientInfo').innerHTML = clientInfo;
+            
+            // Display summary
+            const totalCost = loanData.schedule.reduce((sum, p) => sum + p.monthly_payment, 0);
+            document.getElementById('monthlyPayment').textContent = Calculations.formatCurrency(loanData.monthlyPayment);
+            document.getElementById('totalCost').textContent = Calculations.formatCurrency(totalCost);
+            document.getElementById('numberOfPayments').textContent = loanData.term;
+            document.getElementById('totalInterest').textContent = Calculations.formatCurrency(loanData.totalInterest);
+            
+            // Show initiation fee card for stockvel
+            if (loanData.isStockvelMember) {
+                document.getElementById('stockvelSummaryCard').style.display = 'block';
+                document.getElementById('initiationFeeDisplay').textContent = Calculations.formatCurrency(loanData.initiationFee);
+                document.getElementById('breakdownTable').classList.add('stockvel-active');
+            } else {
+                document.getElementById('stockvelSummaryCard').style.display = 'none';
+                document.getElementById('breakdownTable').classList.remove('stockvel-active');
+            }
+            
+            // Display breakdown table
+            const tbody = document.getElementById('breakdownBody');
+            tbody.innerHTML = loanData.schedule.map(payment => `
+                <tr>
+                    <td>${Calculations.getMonthName(new Date(payment.due_date).getMonth())} ${new Date(payment.due_date).getFullYear()}</td>
+                    <td style="font-weight: 600;">${Calculations.formatCurrency(payment.monthly_payment)}</td>
+                    <td>${Calculations.formatCurrency(payment.principal_payment)}</td>
+                    <td>${Calculations.formatCurrency(payment.interest_payment)}</td>
+                    <td>${Calculations.formatCurrency(payment.initiation_fee || 0)}</td>
+                    <td>${Calculations.formatCurrency(payment.admin_fee || 0)}</td>
+                    <td>${Calculations.formatCurrency(payment.outstanding_balance)}</td>
+                    ${loanData.isStockvelMember ? `<td style="color: #f39c12; font-weight: 600;">${Calculations.formatCurrency(payment.bonus || 0)}</td>` : ''}
+                </tr>
+            `).join('');
+        }
+        
+        /**
+         * Generate PDF report
+         */
+        function generatePDF() {
+            if (!loanData) {
+                alert('❌ Please calculate a loan first');
+                return;
+            }
+            
+            const { jsPDF } = window.jspdf;
+            const doc = new jsPDF();
+            
+            // Add content
+            doc.setFontSize(20);
+            doc.text('TBFS Loan Schedule', 105, 20, { align: 'center' });
+            
+            doc.setFontSize(12);
+            doc.text(`Client: ${loanData.firstName} ${loanData.lastName}`, 20, 40);
+            doc.text(`Account: ${loanData.accountNumber}`, 20, 50);
+            doc.text(`Loan Amount: ${Calculations.formatCurrency(loanData.principal)}`, 20, 60);
+            doc.text(`Term: ${loanData.term} months`, 20, 70);
+            doc.text(`Monthly Payment: ${Calculations.formatCurrency(loanData.monthlyPayment)}`, 20, 80);
+            
+            // Save PDF
+            doc.save(`TBFS_Loan_Schedule_${loanData.accountNumber}_${Date.now()}.pdf`);
+            
+            document.getElementById('pdfStatus').innerHTML = '<p style="color: #27ae60; margin-top: 10px;">✅ PDF downloaded successfully!</p>';
+        }
+        
+        /**
+         * Export to Excel
+         */
+        function exportToExcel() {
+            if (!loanData) {
+                alert('❌ Please calculate a loan first');
+                return;
+            }
+            
+            const ws_data = [
+                ['TBFS Loan Schedule'],
+                [],
+                ['Client', `${loanData.firstName} ${loanData.lastName}`],
+                ['Account', loanData.accountNumber],
+                ['Loan Amount', loanData.principal],
+                ['Term', `${loanData.term} months`],
+                ['Monthly Payment', loanData.monthlyPayment],
+                [],
+                ['Month', 'Payment', 'Principal', 'Interest', 'Initiation Fee', 'Admin Fee', 'Balance']
+            ];
+            
+            loanData.schedule.forEach(payment => {
+                ws_data.push([
+                    `${Calculations.getMonthName(new Date(payment.due_date).getMonth())} ${new Date(payment.due_date).getFullYear()}`,
+                    payment.monthly_payment,
+                    payment.principal_payment,
+                    payment.interest_payment,
+                    payment.initiation_fee || 0,
+                    payment.admin_fee || 0,
+                    payment.outstanding_balance
+                ]);
+            });
+            
+            const ws = XLSX.utils.aoa_to_sheet(ws_data);
+            const wb = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(wb, ws, 'Loan Schedule');
+            XLSX.writeFile(wb, `TBFS_Loan_Schedule_${loanData.accountNumber}_${Date.now()}.xlsx`);
+            
+            alert('✅ Excel file downloaded!');
+        }
+        
+        /**
+         * Accept loan and add to system
+         */
+        function acceptLoan() {
+            if (!loanData) {
+                alert('❌ Please calculate a loan first before accepting it');
+                return;
+            }
+            
+            // Check available capital
+            const availableCapital = AppState.capital || 0;
+            if (loanData.principal > availableCapital) {
+                alert(`❌ Insufficient capital!\n\nLoan Amount: ${Calculations.formatCurrency(loanData.principal)}\nAvailable: ${Calculations.formatCurrency(availableCapital)}\n\nPlease reduce the loan amount or add more capital.`);
+                return;
+            }
+            
+            // Check if client exists
+            let client = (AppState.clients || []).find(c => c.account_number === loanData.accountNumber);
+            
+            if (client) {
+                if (client.status !== 'active') {
+                    alert(`⛔ SECURITY ALERT: Client ${loanData.accountNumber} is ${client.status.toUpperCase()}. Cannot approve loan for inactive clients.`);
+                    return;
+                }
+                client.total_loans = (client.total_loans || 0) + 1;
+            } else {
+                // Create new client
+                client = {
+                    account_number: loanData.accountNumber,
+                    first_name: loanData.firstName,
+                    last_name: loanData.lastName,
+                    phone_number: '',
+                    client_type: loanData.isStockvelMember ? 'stockvel' : 'standard',
+                    total_loans: 1,
+                    total_contributions: loanData.totalContributions || 0,
+                    total_repayment: 0,
+                    status: 'active'
+                };
+                if (!AppState.clients) AppState.clients = [];
+                AppState.clients.push(client);
+            }
+            
+            // Create loan record
+            const loan = {
+                loan_id: (AppState.loans || []).length + 1,
+                client_name: `${loanData.firstName} ${loanData.lastName}`,
+                account_number: loanData.accountNumber,
+                principal_amount: loanData.principal,
+                original_principal: loanData.principal,
+                remaining_principal: loanData.principal,
+                term_months: loanData.term,
+                monthly_payment: loanData.monthlyPayment,
+                total_interest: loanData.totalInterest,
+                total_cost: loanData.schedule.reduce((sum, p) => sum + p.monthly_payment, 0),
+                loan_type: loanData.isStockvelMember ? 'stockvel' : 'standard',
+                status: 'active',
+                created_at: new Date().toISOString(),
+                disbursement_date: loanData.loanDate,
+                schedule: loanData.schedule,
+                payments_made: 0,
+                total_contributions: loanData.totalContributions || 0,
+                monthly_contribution: loanData.monthlyContribution || 0,
+                accumulated_bonus: loanData.accumulatedBonus || 0
+            };
+            
+            // Add loan to state
+            if (!AppState.loans) AppState.loans = [];
+            AppState.loans.push(loan);
+            
+            // Update capital
+            AppState.capital = (AppState.capital || 0) - loanData.principal;
+            AppState.deployed = (AppState.deployed || 0) + loanData.principal;
+            
+            // Save state
+            AppStateManager.save(AppState);
+            
+            // Success message
+            alert(`✅ Loan Accepted Successfully!\n\nLoan ID: ${loan.loan_id}\nClient: ${loan.client_name}\nAmount: ${Calculations.formatCurrency(loan.principal_amount)}\n\nThe loan has been added to your system.`);
+            
+            // Clear form
+            document.getElementById('loanForm').reset();
+            document.getElementById('results').classList.remove('visible');
+            loanData = null;
+            
+            // Scroll to top
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+        }
+        
+        // Initialize on page load
+        document.addEventListener('DOMContentLoaded', init);
+    </script>
+</body>
+</html>
