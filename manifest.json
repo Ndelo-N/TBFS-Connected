@@ -101,10 +101,10 @@
       ]
     },
     {
-      "name": "Dashboard",
-      "short_name": "Dashboard",
-      "description": "View portfolio overview",
-      "url": "./index.html",
+      "name": "Business Reports",
+      "short_name": "Reports",
+      "description": "View analytics & reports",
+      "url": "./reports.html",
       "icons": [
         {
           "src": "icons/icon-96x96.png",
