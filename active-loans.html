@@ -14,6 +14,12 @@
     <!-- Shared Styles -->
     <link rel="stylesheet" href="shared/styles.css">
     
+    <!-- jsPDF for PDF generation -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    
+    <!-- SheetJS for Excel export -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    
     <!-- Page-Specific Styles -->
     <style>
         .loan-card {
@@ -204,6 +210,12 @@
                 <button class="btn btn-success" onclick="location.href='calculator.html'" style="margin-left: auto;">
                     ➕ New Loan
                 </button>
+            </div>
+            
+            <!-- Export Buttons -->
+            <div class="filter-section" style="margin-top: 15px; padding-top: 15px; border-top: 1px solid #e9ecef;">
+                <button class="btn btn-success" onclick="exportToExcel()">📊 Export to Excel</button>
+                <button class="btn btn-danger" onclick="exportToPDF()" style="margin-left: 10px;">📄 Export to PDF</button>
             </div>
             
             <!-- Loans List -->
@@ -641,6 +653,213 @@ ${loan.completion_date ? `✅ Completed: ${new Date(loan.completion_date).toLoca
             
             alert('✅ Loan marked as defaulted.');
             loadLoans();
+        }
+        
+        /**
+         * Export active loans to Excel
+         */
+        function exportToExcel() {
+            try {
+                // Get current filtered loans
+                const loansToExport = allLoans.length > 0 ? allLoans : AppState.loans || [];
+                
+                if (loansToExport.length === 0) {
+                    alert('⚠️ No loans to export');
+                    return;
+                }
+                
+                // Prepare data for Excel
+                const excelData = [
+                    // Header row
+                    ['TBFS Active Loans Report'],
+                    ['Generated: ' + new Date().toLocaleString()],
+                    [],
+                    ['Loan ID', 'Client Name', 'Account', 'Type', 'Principal', 'Monthly Payment', 'Payments Made', 'Total Payments', 'Outstanding Balance', 'Status', 'Disbursement Date', 'Next Due Date']
+                ];
+                
+                // Add loan data
+                loansToExport.forEach(loan => {
+                    const nextPayment = (loan.schedule || []).find(p => p.status === 'pending');
+                    const nextDueDate = nextPayment ? new Date(nextPayment.due_date).toLocaleDateString() : 'N/A';
+                    
+                    excelData.push([
+                        loan.loan_id,
+                        loan.client_name,
+                        loan.account_number,
+                        loan.loan_type === 'stockvel' ? 'Stockvel' : 'Standard',
+                        loan.principal_amount,
+                        loan.monthly_payment,
+                        loan.payments_made || 0,
+                        loan.term_months,
+                        loan.remaining_principal || loan.principal_amount,
+                        loan.status.charAt(0).toUpperCase() + loan.status.slice(1),
+                        new Date(loan.disbursement_date || loan.created_at).toLocaleDateString(),
+                        nextDueDate
+                    ]);
+                });
+                
+                // Add summary
+                const totalPrincipal = loansToExport.reduce((sum, l) => sum + l.principal_amount, 0);
+                const totalOutstanding = loansToExport.reduce((sum, l) => sum + (l.remaining_principal || l.principal_amount), 0);
+                
+                excelData.push([]);
+                excelData.push(['SUMMARY']);
+                excelData.push(['Total Loans', loansToExport.length]);
+                excelData.push(['Total Principal Disbursed', totalPrincipal]);
+                excelData.push(['Total Outstanding', totalOutstanding]);
+                
+                // Create worksheet
+                const ws = XLSX.utils.aoa_to_sheet(excelData);
+                
+                // Set column widths
+                ws['!cols'] = [
+                    { wch: 10 },  // Loan ID
+                    { wch: 25 },  // Client Name
+                    { wch: 15 },  // Account
+                    { wch: 10 },  // Type
+                    { wch: 12 },  // Principal
+                    { wch: 15 },  // Monthly Payment
+                    { wch: 15 },  // Payments Made
+                    { wch: 15 },  // Total Payments
+                    { wch: 18 },  // Outstanding
+                    { wch: 12 },  // Status
+                    { wch: 15 },  // Disbursement
+                    { wch: 15 }   // Next Due
+                ];
+                
+                // Create workbook
+                const wb = XLSX.utils.book_new();
+                XLSX.utils.book_append_sheet(wb, ws, 'Active Loans');
+                
+                // Download file
+                const fileName = `TBFS_Active_Loans_${new Date().toISOString().split('T')[0]}.xlsx`;
+                XLSX.writeFile(wb, fileName);
+                
+                alert('✅ Excel file downloaded successfully!\n\nFile: ' + fileName);
+            } catch (error) {
+                console.error('Excel export error:', error);
+                alert('❌ Error exporting to Excel: ' + error.message);
+            }
+        }
+        
+        /**
+         * Export active loans to PDF
+         */
+        function exportToPDF() {
+            try {
+                // Get current filtered loans
+                const loansToExport = allLoans.length > 0 ? allLoans : AppState.loans || [];
+                
+                if (loansToExport.length === 0) {
+                    alert('⚠️ No loans to export');
+                    return;
+                }
+                
+                const { jsPDF } = window.jspdf;
+                const doc = new jsPDF();
+                
+                let yPos = 20;
+                
+                // Title
+                doc.setFontSize(18);
+                doc.setFont(undefined, 'bold');
+                doc.text('TBFS Active Loans Report', 105, yPos, { align: 'center' });
+                yPos += 10;
+                
+                // Date
+                doc.setFontSize(10);
+                doc.setFont(undefined, 'normal');
+                doc.text('Generated: ' + new Date().toLocaleString(), 105, yPos, { align: 'center' });
+                yPos += 15;
+                
+                // Summary Stats
+                const totalPrincipal = loansToExport.reduce((sum, l) => sum + l.principal_amount, 0);
+                const totalOutstanding = loansToExport.reduce((sum, l) => sum + (l.remaining_principal || l.principal_amount), 0);
+                const activeCount = loansToExport.filter(l => l.status === 'active').length;
+                
+                doc.setFontSize(11);
+                doc.setFont(undefined, 'bold');
+                doc.text('Portfolio Summary:', 20, yPos);
+                yPos += 7;
+                
+                doc.setFont(undefined, 'normal');
+                doc.setFontSize(10);
+                doc.text(`Total Loans: ${loansToExport.length}`, 20, yPos);
+                doc.text(`Active Loans: ${activeCount}`, 80, yPos);
+                yPos += 5;
+                doc.text(`Total Principal: R ${totalPrincipal.toLocaleString('en-ZA', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, 20, yPos);
+                doc.text(`Total Outstanding: R ${totalOutstanding.toLocaleString('en-ZA', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, 80, yPos);
+                yPos += 15;
+                
+                // Loan Details
+                doc.setFontSize(12);
+                doc.setFont(undefined, 'bold');
+                doc.text('Loan Details:', 20, yPos);
+                yPos += 10;
+                
+                doc.setFontSize(9);
+                
+                loansToExport.forEach((loan, index) => {
+                    // Check if we need a new page
+                    if (yPos > 270) {
+                        doc.addPage();
+                        yPos = 20;
+                    }
+                    
+                    // Loan header
+                    doc.setFont(undefined, 'bold');
+                    doc.text(`Loan #${loan.loan_id} - ${loan.client_name}`, 20, yPos);
+                    yPos += 5;
+                    
+                    // Loan details
+                    doc.setFont(undefined, 'normal');
+                    const nextPayment = (loan.schedule || []).find(p => p.status === 'pending');
+                    const nextDueDate = nextPayment ? new Date(nextPayment.due_date).toLocaleDateString() : 'N/A';
+                    
+                    doc.text(`Account: ${loan.account_number}`, 25, yPos);
+                    doc.text(`Type: ${loan.loan_type === 'stockvel' ? 'Stockvel' : 'Standard'}`, 80, yPos);
+                    doc.text(`Status: ${loan.status.charAt(0).toUpperCase() + loan.status.slice(1)}`, 130, yPos);
+                    yPos += 5;
+                    
+                    doc.text(`Principal: R ${loan.principal_amount.toLocaleString('en-ZA', { minimumFractionDigits: 2 })}`, 25, yPos);
+                    doc.text(`Monthly: R ${loan.monthly_payment.toLocaleString('en-ZA', { minimumFractionDigits: 2 })}`, 80, yPos);
+                    yPos += 5;
+                    
+                    doc.text(`Progress: ${loan.payments_made || 0}/${loan.term_months} payments`, 25, yPos);
+                    doc.text(`Outstanding: R ${(loan.remaining_principal || loan.principal_amount).toLocaleString('en-ZA', { minimumFractionDigits: 2 })}`, 80, yPos);
+                    yPos += 5;
+                    
+                    doc.text(`Disbursed: ${new Date(loan.disbursement_date || loan.created_at).toLocaleDateString()}`, 25, yPos);
+                    doc.text(`Next Due: ${nextDueDate}`, 80, yPos);
+                    yPos += 8;
+                    
+                    // Separator line
+                    if (index < loansToExport.length - 1) {
+                        doc.setDrawColor(200, 200, 200);
+                        doc.line(20, yPos, 190, yPos);
+                        yPos += 5;
+                    }
+                });
+                
+                // Footer
+                const pageCount = doc.internal.getNumberOfPages();
+                for (let i = 1; i <= pageCount; i++) {
+                    doc.setPage(i);
+                    doc.setFontSize(8);
+                    doc.setFont(undefined, 'normal');
+                    doc.text(`Page ${i} of ${pageCount}`, 105, 290, { align: 'center' });
+                    doc.text('Thaba Bosiu Financial Services', 105, 285, { align: 'center' });
+                }
+                
+                // Save PDF
+                const fileName = `TBFS_Active_Loans_${new Date().toISOString().split('T')[0]}.pdf`;
+                doc.save(fileName);
+                
+                alert('✅ PDF downloaded successfully!\n\nFile: ' + fileName);
+            } catch (error) {
+                console.error('PDF export error:', error);
+                alert('❌ Error exporting to PDF: ' + error.message);
+            }
         }
         
         // Initialize on page load
