@@ -928,14 +928,15 @@
                     doc.text('Admin', 138, startY + 5);
                     doc.text('Balance', 160, startY + 5);
 
-                    // Table rows with month names
+                    // Table rows with month names - PAGE 1
                     doc.setTextColor(0, 0, 0);
                     let currentY = startY + rowHeight;
-                    const availableHeight = 280 - currentY;
-                    const maxRows = Math.floor(availableHeight / rowHeight);
-                    const rowsToShow = Math.min(maxRows, loanData.schedule.length);
+                    const page1AvailableHeight = 270 - currentY; // Leave room for footer
+                    const maxRowsPage1 = Math.floor(page1AvailableHeight / rowHeight);
                     
-                    for (let i = 0; i < rowsToShow; i++) {
+                    // Render rows for page 1
+                    let rowsRendered = 0;
+                    for (let i = 0; i < Math.min(maxRowsPage1, loanData.schedule.length); i++) {
                         const payment = loanData.schedule[i];
                         if (i % 2 === 0) {
                             doc.setFillColor(248, 249, 250);
@@ -956,20 +957,100 @@
                         doc.text(`R${payment.outstanding_balance.toFixed(2)}`, 160, currentY + 5);
                         
                         currentY += rowHeight;
-                    }
-                    
-                    if (rowsToShow < loanData.schedule.length) {
-                        doc.setFontSize(8);
-                        doc.setTextColor(100, 100, 100);
-                        doc.text(`Note: Showing ${rowsToShow} of ${loanData.schedule.length} months`, 20, currentY + 10);
+                        rowsRendered++;
                     }
 
-                    // Footer
+                    // Footer for page 1
                     const today = new Date().toLocaleDateString('en-ZA');
                     doc.setFontSize(8);
                     doc.setTextColor(100, 100, 100);
                     doc.text(`Generated on: ${today}`, 20, 280);
-                    doc.text('Thaba Bosiu Financial Services - Your Financial Refuge', 105, 285, { align: 'center' });
+                    
+                    if (rowsRendered < loanData.schedule.length) {
+                        doc.text('Thaba Bosiu Financial Services - Your Financial Refuge', 105, 285, { align: 'center' });
+                        doc.text('Page 1 of 2', 190, 280, { align: 'right' });
+                        
+                        // ADD PAGE 2 for remaining rows
+                        doc.addPage();
+                        
+                        // Page 2 Header with logo
+                        if (logoDataUrl) {
+                            doc.addImage(logoDataUrl, 'PNG', 85, 5, 40, 40);
+                        }
+                        doc.setFontSize(18);
+                        doc.setTextColor(44, 62, 80);
+                        doc.text('THABA BOSIU FINANCIAL SERVICES', 105, 50, { align: 'center' });
+                        doc.setFontSize(10);
+                        doc.setTextColor(100, 100, 100);
+                        doc.text('Your Financial Refuge', 105, 57, { align: 'center' });
+                        
+                        // Line separator
+                        doc.setDrawColor(102, 126, 234);
+                        doc.setLineWidth(0.5);
+                        doc.line(20, 62, 190, 62);
+                        
+                        // Client info reminder
+                        doc.setFontSize(10);
+                        doc.setTextColor(44, 62, 80);
+                        doc.text(`${loanData.firstName} ${loanData.lastName} - Account: ${loanData.accountNumber}`, 20, 70);
+                        doc.text('Payment Schedule (continued)', 20, 77);
+                        
+                        // Table header on page 2
+                        const page2StartY = 85;
+                        doc.setFontSize(8);
+                        doc.setFillColor(44, 62, 80);
+                        doc.setTextColor(255, 255, 255);
+                        doc.rect(20, page2StartY, 170, rowHeight, 'F');
+                        
+                        doc.text('Month', 25, page2StartY + 5);
+                        doc.text('Payment', 45, page2StartY + 5);
+                        doc.text('Principal', 68, page2StartY + 5);
+                        doc.text('Interest', 92, page2StartY + 5);
+                        doc.text('Init Fee', 115, page2StartY + 5);
+                        doc.text('Admin', 138, page2StartY + 5);
+                        doc.text('Balance', 160, page2StartY + 5);
+                        
+                        // Render remaining rows on page 2
+                        let page2Y = page2StartY + rowHeight;
+                        for (let i = rowsRendered; i < loanData.schedule.length; i++) {
+                            const payment = loanData.schedule[i];
+                            if ((i - rowsRendered) % 2 === 0) {
+                                doc.setFillColor(248, 249, 250);
+                                doc.rect(20, page2Y, 170, rowHeight, 'F');
+                            }
+                            doc.setTextColor(0, 0, 0);
+                            
+                            // Format month name from due date
+                            const dueDate = new Date(payment.due_date);
+                            const monthName = Calculations.getMonthName(dueDate.getMonth());
+                            
+                            doc.text(monthName, 25, page2Y + 5);
+                            doc.text(`R${payment.monthly_payment.toFixed(2)}`, 45, page2Y + 5);
+                            doc.text(`R${payment.principal_payment.toFixed(2)}`, 68, page2Y + 5);
+                            doc.text(`R${payment.interest_payment.toFixed(2)}`, 92, page2Y + 5);
+                            doc.text(`R${(payment.initiation_fee || 0).toFixed(2)}`, 115, page2Y + 5);
+                            doc.text(`R${payment.admin_fee.toFixed(2)}`, 138, page2Y + 5);
+                            doc.text(`R${payment.outstanding_balance.toFixed(2)}`, 160, page2Y + 5);
+                            
+                            page2Y += rowHeight;
+                            
+                            // Check if we need to stop (near bottom of page)
+                            if (page2Y > 270) {
+                                break;
+                            }
+                        }
+                        
+                        // Footer for page 2
+                        doc.setFontSize(8);
+                        doc.setTextColor(100, 100, 100);
+                        doc.text(`Generated on: ${today}`, 20, 280);
+                        doc.text('Thaba Bosiu Financial Services - Your Financial Refuge', 105, 285, { align: 'center' });
+                        doc.text('Page 2 of 2', 190, 280, { align: 'right' });
+                    } else {
+                        // All rows fit on page 1
+                        doc.text('Thaba Bosiu Financial Services - Your Financial Refuge', 105, 285, { align: 'center' });
+                        doc.text('Page 1 of 1', 190, 280, { align: 'right' });
+                    }
 
                     // Save PDF using mobile-friendly method
                     const filename = `TBFS_Loan_Schedule_${loanData.accountNumber}.pdf`;
