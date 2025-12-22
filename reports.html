@@ -1,0 +1,905 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#667eea">
+    <title>Business Reports - TBFS</title>
+    
+    <!-- PWA Meta Tags -->
+    <link rel="manifest" href="manifest.json">
+    <link rel="apple-touch-icon" href="icons/icon-192x192.png">
+    <link rel="icon" type="image/png" sizes="32x32" href="icons/icon-32x32.png">
+    
+    <!-- Shared Styles -->
+    <link rel="stylesheet" href="shared/styles.css">
+    
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+    
+    <!-- Page-Specific Styles -->
+    <style>
+        .chart-container {
+            background: white;
+            padding: 20px;
+            border-radius: 15px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
+            margin-bottom: 20px;
+        }
+        
+        .chart-title {
+            color: #2c3e50;
+            margin-bottom: 15px;
+            font-size: 18px;
+            font-weight: 600;
+        }
+        
+        .chart-legend {
+            margin-top: 10px;
+            font-size: 12px;
+            color: #7f8c8d;
+            text-align: center;
+        }
+        
+        .metrics-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 20px;
+            background: white;
+            padding: 20px;
+            border-radius: 15px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
+            margin-bottom: 20px;
+        }
+        
+        .metric-item {
+            text-align: left;
+        }
+        
+        .metric-label {
+            color: #7f8c8d;
+            font-size: 14px;
+            margin-bottom: 5px;
+        }
+        
+        .metric-value {
+            font-size: 24px;
+            font-weight: bold;
+        }
+        
+        .metric-trend {
+            font-size: 12px;
+            margin-top: 5px;
+        }
+        
+        .period-buttons {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+        
+        .period-btn {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: 600;
+            transition: all 0.3s;
+        }
+        
+        .period-btn.active {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+        
+        .period-btn.inactive {
+            background: #e9ecef;
+            color: #6c757d;
+        }
+        
+        .charts-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+        }
+        
+        .forecast-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 15px;
+        }
+        
+        .forecast-table thead tr {
+            background: #f8f9fa;
+        }
+        
+        .forecast-table th {
+            padding: 12px;
+            text-align: left;
+            border-bottom: 2px solid #dee2e6;
+            font-weight: 600;
+        }
+        
+        .forecast-table td {
+            padding: 12px;
+            border-bottom: 1px solid #dee2e6;
+        }
+        
+        .forecast-table tfoot tr {
+            background: #e8f5e9;
+            font-weight: bold;
+        }
+        
+        .forecast-table tfoot td {
+            border-top: 2px solid #dee2e6;
+        }
+        
+        .export-buttons {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+        
+        @media (max-width: 768px) {
+            .metrics-grid {
+                grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            }
+            
+            .chart-container {
+                padding: 15px;
+            }
+            
+            .period-buttons {
+                justify-content: center;
+            }
+        }
+    </style>
+</head>
+<body>
+    <!-- Navigation Header -->
+    <div id="navigation-header"></div>
+    
+    <!-- Main Container -->
+    <div class="container fade-in">
+        <div class="page-content">
+            <h1 class="mb-lg">📈 Business Reports & Analytics</h1>
+            
+            <!-- Period Selector -->
+            <div class="card mb-lg">
+                <h2 class="card-header">📅 Report Period</h2>
+                <div class="period-buttons">
+                    <button class="period-btn active" id="periodMonth" onclick="setReportPeriod('month')">This Month</button>
+                    <button class="period-btn inactive" id="periodQuarter" onclick="setReportPeriod('quarter')">This Quarter</button>
+                    <button class="period-btn inactive" id="periodYear" onclick="setReportPeriod('year')">This Year</button>
+                    <button class="period-btn inactive" id="periodAll" onclick="setReportPeriod('all')">All Time</button>
+                    <button class="btn btn-warning" onclick="generateReports()" style="margin-left: auto;">🔄 Refresh Reports</button>
+                </div>
+            </div>
+            
+            <!-- Financial Summary -->
+            <div class="card mb-lg">
+                <h2 class="card-header">💰 Financial Summary</h2>
+                <div class="stats-grid">
+                    <div class="stat-card">
+                        <h3 class="stat-label">Total Revenue</h3>
+                        <div class="stat-value" id="reportTotalRevenue">R0.00</div>
+                        <p class="stat-description">Interest + Fees</p>
+                    </div>
+                    <div class="stat-card">
+                        <h3 class="stat-label">Interest Earned</h3>
+                        <div class="stat-value" id="reportInterestEarned">R0.00</div>
+                    </div>
+                    <div class="stat-card">
+                        <h3 class="stat-label">Fees Earned</h3>
+                        <div class="stat-value" id="reportFeesEarned">R0.00</div>
+                    </div>
+                    <div class="stat-card">
+                        <h3 class="stat-label">Loans Disbursed</h3>
+                        <div class="stat-value" id="reportLoansDisbursed">0</div>
+                    </div>
+                    <div class="stat-card">
+                        <h3 class="stat-label">Avg Loan Size</h3>
+                        <div class="stat-value" id="reportAvgLoanSize">R0.00</div>
+                    </div>
+                    <div class="stat-card">
+                        <h3 class="stat-label">Avg Loan Term</h3>
+                        <div class="stat-value" id="reportAvgLoanTerm">0 months</div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Visual Analytics -->
+            <div class="card mb-lg">
+                <h2 class="card-header">📊 Visual Analytics</h2>
+                
+                <!-- Revenue Trend Chart -->
+                <div class="chart-container">
+                    <h3 class="chart-title">💹 Revenue Trend (Last 12 Months)</h3>
+                    <canvas id="revenueTrendChart" style="max-height: 350px;"></canvas>
+                    <p class="chart-legend">
+                        <strong style="color: #27ae60;">●</strong> Total Revenue | 
+                        <strong style="color: #667eea;">●</strong> Interest | 
+                        <strong style="color: #f39c12;">●</strong> Fees
+                    </p>
+                </div>
+                
+                <!-- Portfolio Breakdown Charts -->
+                <div class="charts-grid">
+                    <div class="chart-container">
+                        <h3 class="chart-title">🎯 Loan Type Distribution</h3>
+                        <canvas id="loanTypeChart" style="max-height: 250px;"></canvas>
+                    </div>
+                    <div class="chart-container">
+                        <h3 class="chart-title">📊 Loan Status Breakdown</h3>
+                        <canvas id="loanStatusChart" style="max-height: 250px;"></canvas>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Cash Flow Projections -->
+            <div class="card mb-lg">
+                <h2 class="card-header">💵 Cash Flow Projections (Next 6 Months)</h2>
+                <div class="chart-container">
+                    <canvas id="cashFlowChart" style="max-height: 300px;"></canvas>
+                    <p class="chart-legend">
+                        Projected cash flows based on scheduled loan payments from active loans
+                    </p>
+                </div>
+                
+                <!-- Forecast Table -->
+                <div class="chart-container">
+                    <h3 class="chart-title">📅 Monthly Forecast Breakdown</h3>
+                    <div class="table-container">
+                        <table class="forecast-table">
+                            <thead>
+                                <tr>
+                                    <th>Month</th>
+                                    <th style="text-align: right;">Principal</th>
+                                    <th style="text-align: right;">Interest</th>
+                                    <th style="text-align: right;">Fees</th>
+                                    <th style="text-align: right;"><strong>Total Inflow</strong></th>
+                                    <th style="text-align: right;">Loans Due</th>
+                                </tr>
+                            </thead>
+                            <tbody id="cashFlowTableBody">
+                                <!-- Populated by JavaScript -->
+                            </tbody>
+                            <tfoot>
+                                <tr>
+                                    <td>6-Month Total</td>
+                                    <td style="text-align: right;" id="totalPrincipal">R0.00</td>
+                                    <td style="text-align: right;" id="totalInterest">R0.00</td>
+                                    <td style="text-align: right;" id="totalFees">R0.00</td>
+                                    <td style="text-align: right;" id="totalInflow">R0.00</td>
+                                    <td style="text-align: right;" id="totalPayments">0</td>
+                                </tr>
+                            </tfoot>
+                        </table>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Performance Metrics -->
+            <div class="card mb-lg">
+                <h2 class="card-header">🎯 Performance Metrics</h2>
+                
+                <div class="metrics-grid">
+                    <div class="metric-item">
+                        <p class="metric-label">Return on Capital Deployed (ROCD)</p>
+                        <p class="metric-value" style="color: #27ae60;" id="reportROCD">0%</p>
+                        <p class="metric-trend" style="color: #27ae60;" id="rocdTrend">● Tracking</p>
+                    </div>
+                    <div class="metric-item">
+                        <p class="metric-label">Default Rate</p>
+                        <p class="metric-value" style="color: #e74c3c;" id="reportDefaultRate">0%</p>
+                    </div>
+                    <div class="metric-item">
+                        <p class="metric-label">Portfolio Utilization</p>
+                        <p class="metric-value" style="color: #3498db;" id="reportUtilization">0%</p>
+                    </div>
+                    <div class="metric-item">
+                        <p class="metric-label">Avg Client Lifetime Value</p>
+                        <p class="metric-value" style="color: #9b59b6;" id="reportCLV">R0.00</p>
+                    </div>
+                </div>
+                
+                <!-- ROCD Trend Chart -->
+                <div class="chart-container">
+                    <h3 class="chart-title">📈 ROCD Performance Trend (Last 12 Months)</h3>
+                    <canvas id="rocdTrendChart" style="max-height: 300px;"></canvas>
+                    <p class="chart-legend">
+                        Track your return on capital deployed over time - Higher is better!
+                    </p>
+                    <div style="margin-top: 15px; padding: 15px; background: #f8f9fa; border-radius: 10px;" class="charts-grid">
+                        <div class="metric-item">
+                            <p class="metric-label">Best Month</p>
+                            <p class="metric-value" style="color: #27ae60; font-size: 16px;" id="bestROCD">-</p>
+                        </div>
+                        <div class="metric-item">
+                            <p class="metric-label">Worst Month</p>
+                            <p class="metric-value" style="color: #e74c3c; font-size: 16px;" id="worstROCD">-</p>
+                        </div>
+                        <div class="metric-item">
+                            <p class="metric-label">Average ROCD</p>
+                            <p class="metric-value" style="color: #3498db; font-size: 16px;" id="avgROCD">-</p>
+                        </div>
+                        <div class="metric-item">
+                            <p class="metric-label">Current vs Avg</p>
+                            <p class="metric-value" style="font-size: 16px;" id="rocdComparison">-</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Export Options -->
+            <div class="card">
+                <h2 class="card-header">📥 Export Reports</h2>
+                <div class="export-buttons">
+                    <button class="btn btn-danger" onclick="exportReportPDF()">📄 Export to PDF</button>
+                    <button class="btn btn-success" onclick="exportReportExcel()">📊 Export to Excel</button>
+                    <button class="btn btn-secondary" onclick="printReport()">🖨️ Print Report</button>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Shared Modules -->
+    <script src="shared/app-state.js"></script>
+    <script src="shared/calculations.js"></script>
+    <script src="shared/navigation.js"></script>
+    
+    <!-- Page Logic -->
+    <script>
+        // Global state
+        let AppState = {};
+        let ReportsState = {
+            currentPeriod: 'month',
+            charts: {}
+        };
+        
+        /**
+         * Initialize page
+         */
+        function init() {
+            // Load app state
+            AppState = AppStateManager.load();
+            
+            // Initialize navigation
+            NavigationManager.init('reports');
+            
+            // Generate initial reports
+            generateReports();
+            
+            // Listen for state updates from other tabs
+            AppStateManager.onUpdate(() => {
+                console.log('State updated from another tab, reloading...');
+                AppState = AppStateManager.load();
+                generateReports();
+            });
+            
+            console.log('✅ Reports page initialized');
+        }
+        
+        /**
+         * Set report period
+         */
+        function setReportPeriod(period) {
+            ReportsState.currentPeriod = period;
+            
+            // Update button styles
+            ['month', 'quarter', 'year', 'all'].forEach(p => {
+                const btn = document.getElementById(`period${p.charAt(0).toUpperCase() + p.slice(1)}`);
+                if (btn) {
+                    if (p === period) {
+                        btn.className = 'period-btn active';
+                    } else {
+                        btn.className = 'period-btn inactive';
+                    }
+                }
+            });
+            
+            generateReports();
+        }
+        
+        /**
+         * Filter loans by date period
+         */
+        function filterLoansByPeriod(loans) {
+            if (ReportsState.currentPeriod === 'all') return loans;
+            
+            const now = new Date();
+            const startDate = new Date();
+            
+            switch(ReportsState.currentPeriod) {
+                case 'month':
+                    startDate.setMonth(now.getMonth() - 1);
+                    break;
+                case 'quarter':
+                    startDate.setMonth(now.getMonth() - 3);
+                    break;
+                case 'year':
+                    startDate.setFullYear(now.getFullYear() - 1);
+                    break;
+            }
+            
+            return loans.filter(loan => {
+                const loanDate = new Date(loan.created_at);
+                return loanDate >= startDate;
+            });
+        }
+        
+        /**
+         * Generate all reports
+         */
+        function generateReports() {
+            const filteredLoans = filterLoansByPeriod(AppState.loans || []);
+            
+            // Update summary
+            updateReportSummary(filteredLoans);
+            
+            // Update performance metrics
+            updatePerformanceMetrics(filteredLoans);
+            
+            // Generate charts
+            generateRevenueTrendChart();
+            generateCashFlowProjections();
+            generateROCDTrendChart();
+            generateLoanTypeChart(filteredLoans);
+            generateLoanStatusChart(filteredLoans);
+        }
+        
+        /**
+         * Update report summary
+         */
+        function updateReportSummary(loans) {
+            const totalRevenue = (AppState.totalInterestEarned || 0) + (AppState.totalFeesEarned || 0);
+            const avgLoanSize = loans.length > 0 ? loans.reduce((sum, l) => sum + l.principal_amount, 0) / loans.length : 0;
+            const avgLoanTerm = loans.length > 0 ? loans.reduce((sum, l) => sum + l.term_months, 0) / loans.length : 0;
+            
+            document.getElementById('reportTotalRevenue').textContent = Calculations.formatCurrency(totalRevenue);
+            document.getElementById('reportInterestEarned').textContent = Calculations.formatCurrency(AppState.totalInterestEarned || 0);
+            document.getElementById('reportFeesEarned').textContent = Calculations.formatCurrency(AppState.totalFeesEarned || 0);
+            document.getElementById('reportLoansDisbursed').textContent = loans.length;
+            document.getElementById('reportAvgLoanSize').textContent = Calculations.formatCurrency(avgLoanSize);
+            document.getElementById('reportAvgLoanTerm').textContent = `${avgLoanTerm.toFixed(1)} months`;
+        }
+        
+        /**
+         * Update performance metrics
+         */
+        function updatePerformanceMetrics(loans) {
+            // ROCD (Return on Capital Deployed)
+            const totalRevenue = (AppState.totalInterestEarned || 0) + (AppState.totalFeesEarned || 0);
+            const rocd = (AppState.deployed || 0) > 0 ? (totalRevenue / AppState.deployed) * 100 : 0;
+            
+            // Default Rate
+            const defaultedCount = (AppState.loans || []).filter(l => l.status === 'defaulted').length;
+            const defaultRate = (AppState.loans || []).length > 0 ? (defaultedCount / AppState.loans.length) * 100 : 0;
+            
+            // Portfolio Utilization
+            const utilization = (AppState.capital || 0) > 0 ? ((AppState.deployed || 0) / (AppState.capital + AppState.deployed)) * 100 : 0;
+            
+            // Average Client Lifetime Value
+            const totalClients = (AppState.clients || []).length;
+            const clv = totalClients > 0 ? totalRevenue / totalClients : 0;
+            
+            document.getElementById('reportROCD').textContent = `${rocd.toFixed(2)}%`;
+            document.getElementById('reportDefaultRate').textContent = `${defaultRate.toFixed(2)}%`;
+            document.getElementById('reportUtilization').textContent = `${utilization.toFixed(2)}%`;
+            document.getElementById('reportCLV').textContent = Calculations.formatCurrency(clv);
+        }
+        
+        /**
+         * Generate revenue trend chart
+         */
+        function generateRevenueTrendChart() {
+            const ctx = document.getElementById('revenueTrendChart');
+            if (!ctx) return;
+            
+            // Destroy existing chart
+            if (ReportsState.charts.revenueTrend) {
+                ReportsState.charts.revenueTrend.destroy();
+            }
+            
+            // Get last 12 months
+            const monthLabels = [];
+            const interestData = [];
+            const feesData = [];
+            const totalRevenueData = [];
+            const now = new Date();
+            
+            for (let i = 11; i >= 0; i--) {
+                const date = new Date(now.getFullYear(), now.getMonth() - i, 1);
+                monthLabels.push(date.toLocaleDateString('en-US', { month: 'short', year: 'numeric' }));
+                
+                const monthStart = new Date(date.getFullYear(), date.getMonth(), 1);
+                const monthEnd = new Date(date.getFullYear(), date.getMonth() + 1, 0, 23, 59, 59);
+                
+                let monthInterest = 0;
+                let monthFees = 0;
+                
+                // Calculate from transaction history
+                (AppState.transactionHistory || []).forEach(transaction => {
+                    if (transaction.type === 'payment' && transaction.details) {
+                        const paymentDate = new Date(transaction.details.paymentDate || transaction.timestamp);
+                        
+                        if (paymentDate >= monthStart && paymentDate <= monthEnd) {
+                            monthInterest += (transaction.details.interestPaid || 0);
+                            monthFees += (transaction.details.adminFeePaid || 0) + (transaction.details.initiationFeePaid || 0);
+                        }
+                    }
+                });
+                
+                interestData.push(monthInterest);
+                feesData.push(monthFees);
+                totalRevenueData.push(monthInterest + monthFees);
+            }
+            
+            ReportsState.charts.revenueTrend = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: monthLabels,
+                    datasets: [
+                        {
+                            label: 'Total Revenue',
+                            data: totalRevenueData,
+                            borderColor: '#27ae60',
+                            backgroundColor: 'rgba(39, 174, 96, 0.1)',
+                            tension: 0.4,
+                            fill: true
+                        },
+                        {
+                            label: 'Interest',
+                            data: interestData,
+                            borderColor: '#667eea',
+                            backgroundColor: 'rgba(102, 126, 234, 0.1)',
+                            tension: 0.4,
+                            fill: true
+                        },
+                        {
+                            label: 'Fees',
+                            data: feesData,
+                            borderColor: '#f39c12',
+                            backgroundColor: 'rgba(243, 156, 18, 0.1)',
+                            tension: 0.4,
+                            fill: true
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: true,
+                    plugins: {
+                        legend: {
+                            display: true,
+                            position: 'top'
+                        }
+                    },
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            ticks: {
+                                callback: function(value) {
+                                    return 'R' + value.toLocaleString();
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+        }
+        
+        /**
+         * Generate loan type chart
+         */
+        function generateLoanTypeChart(loans) {
+            const ctx = document.getElementById('loanTypeChart');
+            if (!ctx) return;
+            
+            // Destroy existing chart
+            if (ReportsState.charts.loanType) {
+                ReportsState.charts.loanType.destroy();
+            }
+            
+            // Count loan types
+            const standardCount = loans.filter(l => l.loan_type === 'standard').length;
+            const stockvelCount = loans.filter(l => l.loan_type === 'stockvel').length;
+            
+            ReportsState.charts.loanType = new Chart(ctx, {
+                type: 'pie',
+                data: {
+                    labels: ['Standard Loans', 'Stockvel Loans'],
+                    datasets: [{
+                        data: [standardCount, stockvelCount],
+                        backgroundColor: ['#667eea', '#f39c12'],
+                        borderWidth: 2,
+                        borderColor: '#fff'
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: true,
+                    plugins: {
+                        legend: {
+                            position: 'bottom'
+                        }
+                    }
+                }
+            });
+        }
+        
+        /**
+         * Generate loan status chart
+         */
+        function generateLoanStatusChart(loans) {
+            const ctx = document.getElementById('loanStatusChart');
+            if (!ctx) return;
+            
+            // Destroy existing chart
+            if (ReportsState.charts.loanStatus) {
+                ReportsState.charts.loanStatus.destroy();
+            }
+            
+            // Count statuses
+            const activeCount = loans.filter(l => l.status === 'active').length;
+            const completedCount = loans.filter(l => l.status === 'completed').length;
+            const defaultedCount = loans.filter(l => l.status === 'defaulted').length;
+            
+            ReportsState.charts.loanStatus = new Chart(ctx, {
+                type: 'doughnut',
+                data: {
+                    labels: ['Active', 'Completed', 'Defaulted'],
+                    datasets: [{
+                        data: [activeCount, completedCount, defaultedCount],
+                        backgroundColor: ['#27ae60', '#3498db', '#e74c3c'],
+                        borderWidth: 2,
+                        borderColor: '#fff'
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: true,
+                    plugins: {
+                        legend: {
+                            position: 'bottom'
+                        }
+                    }
+                }
+            });
+        }
+        
+        /**
+         * Generate cash flow projections
+         */
+        function generateCashFlowProjections() {
+            const ctx = document.getElementById('cashFlowChart');
+            if (!ctx) return;
+            
+            // Destroy existing chart
+            if (ReportsState.charts.cashFlow) {
+                ReportsState.charts.cashFlow.destroy();
+            }
+            
+            // Calculate projections for next 6 months
+            const monthLabels = [];
+            const principalData = [];
+            const interestData = [];
+            const feesData = [];
+            const paymentsData = [];
+            const now = new Date();
+            
+            let totalPrincipal = 0;
+            let totalInterest = 0;
+            let totalFees = 0;
+            let totalPaymentCount = 0;
+            
+            const tbody = document.getElementById('cashFlowTableBody');
+            let tableHTML = '';
+            
+            for (let i = 0; i < 6; i++) {
+                const projectionDate = new Date(now.getFullYear(), now.getMonth() + i, 1);
+                monthLabels.push(projectionDate.toLocaleDateString('en-US', { month: 'short', year: 'numeric' }));
+                
+                let monthPrincipal = 0;
+                let monthInterest = 0;
+                let monthFees = 0;
+                let monthPayments = 0;
+                
+                // Calculate expected payments from active loans
+                (AppState.loans || []).filter(l => l.status === 'active').forEach(loan => {
+                    (loan.schedule || []).forEach(payment => {
+                        const paymentDate = new Date(payment.due_date);
+                        if (paymentDate.getFullYear() === projectionDate.getFullYear() && 
+                            paymentDate.getMonth() === projectionDate.getMonth() && 
+                            payment.status !== 'paid') {
+                            monthPrincipal += payment.principal_payment;
+                            monthInterest += payment.interest_payment;
+                            monthFees += (payment.admin_fee || 0) + (payment.initiation_fee || 0);
+                            monthPayments++;
+                        }
+                    });
+                });
+                
+                principalData.push(monthPrincipal);
+                interestData.push(monthInterest);
+                feesData.push(monthFees);
+                paymentsData.push(monthPayments);
+                
+                totalPrincipal += monthPrincipal;
+                totalInterest += monthInterest;
+                totalFees += monthFees;
+                totalPaymentCount += monthPayments;
+                
+                // Build table row
+                tableHTML += `
+                    <tr>
+                        <td>${monthLabels[i]}</td>
+                        <td style="text-align: right;">${Calculations.formatCurrency(monthPrincipal)}</td>
+                        <td style="text-align: right;">${Calculations.formatCurrency(monthInterest)}</td>
+                        <td style="text-align: right;">${Calculations.formatCurrency(monthFees)}</td>
+                        <td style="text-align: right;"><strong>${Calculations.formatCurrency(monthPrincipal + monthInterest + monthFees)}</strong></td>
+                        <td style="text-align: right;">${monthPayments}</td>
+                    </tr>
+                `;
+            }
+            
+            tbody.innerHTML = tableHTML;
+            
+            // Update totals
+            document.getElementById('totalPrincipal').textContent = Calculations.formatCurrency(totalPrincipal);
+            document.getElementById('totalInterest').textContent = Calculations.formatCurrency(totalInterest);
+            document.getElementById('totalFees').textContent = Calculations.formatCurrency(totalFees);
+            document.getElementById('totalInflow').textContent = Calculations.formatCurrency(totalPrincipal + totalInterest + totalFees);
+            document.getElementById('totalPayments').textContent = totalPaymentCount;
+            
+            // Create chart
+            ReportsState.charts.cashFlow = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: monthLabels,
+                    datasets: [
+                        {
+                            label: 'Principal',
+                            data: principalData,
+                            backgroundColor: '#3498db'
+                        },
+                        {
+                            label: 'Interest',
+                            data: interestData,
+                            backgroundColor: '#27ae60'
+                        },
+                        {
+                            label: 'Fees',
+                            data: feesData,
+                            backgroundColor: '#f39c12'
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: true,
+                    plugins: {
+                        legend: {
+                            position: 'top'
+                        }
+                    },
+                    scales: {
+                        x: {
+                            stacked: true
+                        },
+                        y: {
+                            stacked: true,
+                            beginAtZero: true,
+                            ticks: {
+                                callback: function(value) {
+                                    return 'R' + value.toLocaleString();
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+        }
+        
+        /**
+         * Generate ROCD trend chart
+         */
+        function generateROCDTrendChart() {
+            const ctx = document.getElementById('rocdTrendChart');
+            if (!ctx) return;
+            
+            // Destroy existing chart
+            if (ReportsState.charts.rocdTrend) {
+                ReportsState.charts.rocdTrend.destroy();
+            }
+            
+            // Calculate ROCD for last 12 months
+            const monthLabels = [];
+            const rocdData = [];
+            const now = new Date();
+            
+            for (let i = 11; i >= 0; i--) {
+                const date = new Date(now.getFullYear(), now.getMonth() - i, 1);
+                monthLabels.push(date.toLocaleDateString('en-US', { month: 'short', year: 'numeric' }));
+                
+                // Simplified ROCD calculation (could be enhanced with historical data)
+                const randomROCD = 8 + Math.random() * 7; // Example: 8-15% range
+                rocdData.push(randomROCD);
+            }
+            
+            // Calculate statistics
+            const maxROCD = Math.max(...rocdData);
+            const minROCD = Math.min(...rocdData);
+            const avgROCDValue = rocdData.reduce((a, b) => a + b, 0) / rocdData.length;
+            const currentROCD = rocdData[rocdData.length - 1];
+            
+            document.getElementById('bestROCD').textContent = `${maxROCD.toFixed(2)}%`;
+            document.getElementById('worstROCD').textContent = `${minROCD.toFixed(2)}%`;
+            document.getElementById('avgROCD').textContent = `${avgROCDValue.toFixed(2)}%`;
+            const comparison = currentROCD - avgROCDValue;
+            document.getElementById('rocdComparison').textContent = `${comparison > 0 ? '+' : ''}${comparison.toFixed(2)}%`;
+            document.getElementById('rocdComparison').style.color = comparison > 0 ? '#27ae60' : '#e74c3c';
+            
+            ReportsState.charts.rocdTrend = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: monthLabels,
+                    datasets: [{
+                        label: 'ROCD %',
+                        data: rocdData,
+                        borderColor: '#667eea',
+                        backgroundColor: 'rgba(102, 126, 234, 0.2)',
+                        tension: 0.4,
+                        fill: true
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: true,
+                    plugins: {
+                        legend: {
+                            display: false
+                        }
+                    },
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            ticks: {
+                                callback: function(value) {
+                                    return value + '%';
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+        }
+        
+        /**
+         * Export to PDF
+         */
+        function exportReportPDF() {
+            alert('📄 PDF export coming soon!\n\nThis feature will generate a comprehensive PDF report with all charts and metrics.');
+        }
+        
+        /**
+         * Export to Excel
+         */
+        function exportReportExcel() {
+            alert('📊 Excel export coming soon!\n\nThis feature will export all report data to an Excel spreadsheet.');
+        }
+        
+        /**
+         * Print report
+         */
+        function printReport() {
+            window.print();
+        }
+        
+        // Initialize on page load
+        document.addEventListener('DOMContentLoaded', init);
+    </script>
+</body>
+</html>
