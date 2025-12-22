@@ -517,20 +517,40 @@
                 return;
             }
             
-            // Initialize remaining_principal if not set
+            // Initialize tracking fields if not set
             if (!loan.remaining_principal) {
                 loan.remaining_principal = loan.principal_amount || loan.principal || 0;
             }
+            if (!loan.initiation_fee_paid) {
+                loan.initiation_fee_paid = 0;
+            }
+            if (!loan.total_initiation_fee) {
+                // Calculate total initiation fee
+                const principal = loan.principal_amount || loan.principal || 0;
+                if (loan.loan_type === 'stockvel' && loan.total_contributions) {
+                    // Stockvel: 0% if principal <= contributions, 12% on excess
+                    loan.total_initiation_fee = principal <= loan.total_contributions ? 0 : (principal - loan.total_contributions) * 0.12;
+                } else {
+                    // Standard: 12% of principal
+                    loan.total_initiation_fee = principal * 0.12;
+                }
+            }
+            
+            // Calculate remaining initiation fee
+            const remainingInitiationFee = Math.max(0, loan.total_initiation_fee - loan.initiation_fee_paid);
             
             // Get payment amount
             const expectedPayment = loan.monthly_payment || 0;
             const remainingPrincipal = loan.remaining_principal;
+            const paymentsRemaining = loan.term_months - (loan.payments_made || 0);
             
             const paymentAmount = prompt(
                 `💰 Enter payment amount for Loan #${loanId}\n\n` +
                 `Expected Monthly Payment: ${Calculations.formatCurrency(expectedPayment)}\n` +
                 `Remaining Principal: ${Calculations.formatCurrency(remainingPrincipal)}\n` +
-                `Payments Made: ${loan.payments_made || 0}/${loan.term_months}`
+                `Remaining Initiation Fee: ${Calculations.formatCurrency(remainingInitiationFee)}\n` +
+                `Payments Made: ${loan.payments_made || 0}/${loan.term_months}\n\n` +
+                `💡 You can make partial or overpayments`
             );
             
             if (!paymentAmount || isNaN(paymentAmount) || parseFloat(paymentAmount) <= 0) {
@@ -540,20 +560,78 @@
             
             const amount = parseFloat(paymentAmount);
             
-            // Calculate principal payment (equal installments)
-            const principalPayment = (loan.principal_amount || loan.principal) / loan.term_months;
+            // Allocate payment properly
+            let remainingAmount = amount;
+            let principalPaid = 0;
+            let interestPaid = 0;
+            let adminFeePaid = 0;
+            let initiationFeePaid = 0;
             
-            // Update loan counters
-            loan.payments_made = (loan.payments_made || 0) + 1;
+            // Get next pending payment from schedule
+            const nextPayment = (loan.schedule || []).find(p => p.status === 'pending');
             
-            // Update remaining principal
-            loan.remaining_principal = Math.max(0, loan.remaining_principal - principalPayment);
+            if (nextPayment) {
+                // Pay in order: Initiation Fee → Admin Fee → Interest → Principal
+                
+                // 1. Pay initiation fee (monthly portion)
+                const initiationDue = nextPayment.initiation_fee || 0;
+                if (remainingAmount > 0 && initiationDue > 0) {
+                    initiationFeePaid = Math.min(remainingAmount, initiationDue);
+                    remainingAmount -= initiationFeePaid;
+                }
+                
+                // 2. Pay admin fee
+                const adminDue = nextPayment.admin_fee || 0;
+                if (remainingAmount > 0 && adminDue > 0) {
+                    adminFeePaid = Math.min(remainingAmount, adminDue);
+                    remainingAmount -= adminFeePaid;
+                }
+                
+                // 3. Pay interest
+                const interestDue = nextPayment.interest_payment || 0;
+                if (remainingAmount > 0 && interestDue > 0) {
+                    interestPaid = Math.min(remainingAmount, interestDue);
+                    remainingAmount -= interestPaid;
+                }
+                
+                // 4. Pay principal
+                const principalDue = nextPayment.principal_payment || 0;
+                if (remainingAmount > 0 && principalDue > 0) {
+                    principalPaid = Math.min(remainingAmount, principalDue, loan.remaining_principal);
+                    remainingAmount -= principalPaid;
+                }
+                
+                // 5. Handle overpayment - apply to next principal payment
+                if (remainingAmount > 0 && loan.remaining_principal > principalPaid) {
+                    const additionalPrincipal = Math.min(remainingAmount, loan.remaining_principal - principalPaid);
+                    principalPaid += additionalPrincipal;
+                    remainingAmount -= additionalPrincipal;
+                }
+                
+                // Check if this payment completes the current installment
+                const totalDue = initiationDue + adminDue + interestDue + principalDue;
+                const totalPaid = initiationFeePaid + adminFeePaid + interestPaid + principalPaid;
+                
+                if (totalPaid >= totalDue - 0.01) {
+                    // Full payment made - mark as paid and increment counter
+                    nextPayment.status = 'paid';
+                    nextPayment.payment_date = new Date().toISOString();
+                    nextPayment.amount_paid = amount;
+                    loan.payments_made = (loan.payments_made || 0) + 1;
+                } else {
+                    // Partial payment - update schedule but don't increment counter
+                    nextPayment.partial_payment = (nextPayment.partial_payment || 0) + amount;
+                }
+            } else {
+                // No schedule - use simple allocation
+                const principalPerMonth = (loan.principal_amount || loan.principal) / loan.term_months;
+                principalPaid = Math.min(remainingAmount, principalPerMonth, loan.remaining_principal);
+            }
             
-            // Process payment using shared calculation module
-            const allocation = Calculations.allocatePayment(amount, loan);
-            
-            loan.total_interest_charged = (loan.total_interest_charged || 0) + (allocation.interestPaid || 0);
-            loan.initiation_fee_paid = (loan.initiation_fee_paid || 0) + (allocation.initiationPaid || 0);
+            // Update loan totals
+            loan.remaining_principal = Math.max(0, loan.remaining_principal - principalPaid);
+            loan.initiation_fee_paid = (loan.initiation_fee_paid || 0) + initiationFeePaid;
+            loan.total_interest_charged = (loan.total_interest_charged || 0) + interestPaid;
             
             // Check if loan is paid off
             if (loan.remaining_principal <= 0.01 || loan.payments_made >= loan.term_months) {
@@ -562,36 +640,30 @@
                 loan.remaining_principal = 0;
             }
             
-            // Update schedule status
-            if (loan.schedule && loan.schedule.length > 0) {
-                const nextPending = loan.schedule.find(p => p.status === 'pending');
-                if (nextPending) {
-                    nextPending.status = 'paid';
-                    nextPending.payment_date = new Date().toISOString();
-                    nextPending.amount_paid = amount;
-                }
-            }
-            
             // Update AppState
             AppState.capital = (AppState.capital || 0) + amount;
-            AppState.deployed = Math.max(0, (AppState.deployed || 0) - principalPayment);
-            AppState.totalInterestEarned = (AppState.totalInterestEarned || 0) + (allocation.interestPaid || 0);
-            AppState.totalFeesEarned = (AppState.totalFeesEarned || 0) + (allocation.adminPaid || 0) + (allocation.initiationPaid || 0);
+            AppState.deployed = Math.max(0, (AppState.deployed || 0) - principalPaid);
+            AppState.totalInterestEarned = (AppState.totalInterestEarned || 0) + interestPaid;
+            AppState.totalFeesEarned = (AppState.totalFeesEarned || 0) + adminFeePaid + initiationFeePaid;
             
             // Log transaction
-            if (!AppState.transactions) AppState.transactions = [];
-            AppState.transactions.push({
-                id: Date.now(),
+            if (!AppState.transactionHistory) AppState.transactionHistory = [];
+            AppState.transactionHistory.push({
                 type: 'payment',
-                date: new Date().toISOString(),
-                description: `Payment: ${Calculations.formatCurrency(amount)} for Loan #${loanId}`,
-                amount: amount,
-                data: {
+                timestamp: new Date().toISOString(),
+                details: {
                     loanId: loanId,
-                    principalPaid: allocation.principalPaid,
-                    interestPaid: allocation.interestPaid,
-                    adminFeePaid: allocation.adminPaid,
-                    initiationFeePaid: allocation.initiationPaid
+                    clientName: loan.client_name,
+                    paymentAmount: amount,
+                    principalPaid: principalPaid,
+                    interestPaid: interestPaid,
+                    adminFeePaid: adminFeePaid,
+                    initiationFeePaid: initiationFeePaid,
+                    overpayment: remainingAmount,
+                    remainingPrincipal: loan.remaining_principal,
+                    remainingInitiationFee: Math.max(0, loan.total_initiation_fee - loan.initiation_fee_paid),
+                    paymentNumber: loan.payments_made,
+                    paymentDate: new Date().toISOString()
                 }
             });
             
@@ -600,16 +672,20 @@
             
             // Show success message
             const completionMsg = loan.status === 'completed' ? '\n\n🎉 LOAN FULLY PAID!' : '';
+            const overpaymentMsg = remainingAmount > 0.01 ? `\n💡 Overpayment: ${Calculations.formatCurrency(remainingAmount)} (credited to account)` : '';
+            const partialMsg = nextPayment && nextPayment.partial_payment ? '\n⚠️ Partial payment recorded - installment not yet complete' : '';
+            
             alert(
-                `✅ Payment Processed Successfully!${completionMsg}\n\n` +
+                `✅ Payment Processed Successfully!${completionMsg}${partialMsg}\n\n` +
                 `💰 Total Paid: ${Calculations.formatCurrency(amount)}\n\n` +
                 `📊 Breakdown:\n` +
-                `• Principal: ${Calculations.formatCurrency(principalPayment)}\n` +
-                `• Interest: ${Calculations.formatCurrency(allocation.interestPaid || 0)}\n` +
-                `• Admin Fee: ${Calculations.formatCurrency(allocation.adminPaid || 0)}\n` +
-                `• Initiation Fee: ${Calculations.formatCurrency(allocation.initiationPaid || 0)}\n\n` +
+                `• Principal: ${Calculations.formatCurrency(principalPaid)}\n` +
+                `• Interest: ${Calculations.formatCurrency(interestPaid)}\n` +
+                `• Admin Fee: ${Calculations.formatCurrency(adminFeePaid)}\n` +
+                `• Initiation Fee: ${Calculations.formatCurrency(initiationFeePaid)}${overpaymentMsg}\n\n` +
                 `📊 Progress: ${loan.payments_made}/${loan.term_months} payments\n` +
-                `💵 Remaining Principal: ${Calculations.formatCurrency(loan.remaining_principal)}`
+                `💵 Remaining Principal: ${Calculations.formatCurrency(loan.remaining_principal)}\n` +
+                `💵 Remaining Initiation Fee: ${Calculations.formatCurrency(Math.max(0, loan.total_initiation_fee - loan.initiation_fee_paid))}`
             );
             
             // Reload loans
