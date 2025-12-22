@@ -481,18 +481,51 @@
                 // Calculate loan
                 let result;
                 if (isStockvelMember) {
-                    result = Calculations.calculateTieredStockvelInterest(principal, totalContributions);
                     // Use stockvel calculation with tiered rates
                     const schedule = generateStockvelSchedule(principal, term, totalContributions, monthlyContribution, startMonthIndex);
+                    
+                    if (!schedule || schedule.length === 0) {
+                        throw new Error('Failed to generate stockvel loan schedule');
+                    }
+                    
                     result = {
                         schedule: schedule,
-                        totalInterest: schedule.reduce((sum, m) => sum + m.interest_payment, 0),
+                        totalInterest: schedule.reduce((sum, m) => sum + (m.interest_payment || 0), 0),
                         totalFees: schedule.reduce((sum, m) => sum + (m.admin_fee || 0) + (m.initiation_fee || 0), 0),
-                        initiationFee: schedule[0] ? schedule[0].initiation_fee * term : 0,
+                        initiationFee: schedule[0] ? (schedule[0].initiation_fee || 0) * term : 0,
                         monthlyPayment: schedule[0] ? schedule[0].monthly_payment : 0
                     };
                 } else {
-                    result = Calculations.calculateStandardLoan(principal, term);
+                    // Standard loan calculation
+                    const standardResult = Calculations.calculateStandardLoan(principal, term);
+                    
+                    if (!standardResult || !standardResult.breakdown) {
+                        throw new Error('Failed to calculate standard loan');
+                    }
+                    
+                    // Transform breakdown into schedule format
+                    const schedule = standardResult.breakdown.map((item, index) => {
+                        const dueDate = Calculations.calculateDueDate(currentYear, startMonthIndex, item.month);
+                        return {
+                            payment_number: item.month,
+                            due_date: dueDate,
+                            monthly_payment: item.totalPayment || standardResult.monthlyPayment,
+                            principal_payment: item.principal,
+                            interest_payment: item.interest,
+                            admin_fee: item.adminFee,
+                            initiation_fee: item.initiationFee,
+                            outstanding_balance: item.outstandingBalance,
+                            status: 'pending'
+                        };
+                    });
+                    
+                    result = {
+                        schedule: schedule,
+                        totalInterest: standardResult.totalInterest,
+                        totalFees: standardResult.totalAdminFees + standardResult.totalInitiationFee,
+                        initiationFee: standardResult.totalInitiationFee,
+                        monthlyPayment: standardResult.monthlyPayment
+                    };
                 }
                 
                 // Store loan data
@@ -530,66 +563,89 @@
          * Generate stockvel schedule with tiered rates
          */
         function generateStockvelSchedule(principal, term, totalContributions, monthlyContribution, startMonthIndex) {
-            const schedule = [];
-            let outstandingBalance = principal;
-            let currentSavings = totalContributions;
-            
-            // Calculate initiation fee
-            const initiationFee = principal <= totalContributions ? 0 : (principal - totalContributions) * 0.12;
-            const monthlyInitiationFee = initiationFee / term;
-            
-            // Calculate each month
-            const monthlyDetails = [];
-            for (let month = 1; month <= term; month++) {
-                if (month > 1) {
-                    currentSavings += monthlyContribution;
+            try {
+                const schedule = [];
+                let outstandingBalance = principal;
+                let currentSavings = totalContributions || 0;
+                
+                // Calculate initiation fee
+                const initiationFee = principal <= currentSavings ? 0 : (principal - currentSavings) * 0.12;
+                const monthlyInitiationFee = initiationFee / term;
+                
+                // Calculate each month
+                const monthlyDetails = [];
+                for (let month = 1; month <= term; month++) {
+                    if (month > 1) {
+                        currentSavings += (monthlyContribution || 0);
+                    }
+                    
+                    // Calculate tiered interest
+                    const tieredResult = Calculations.calculateTieredStockvelInterest(outstandingBalance, currentSavings);
+                    const principalPayment = principal / term;
+                    
+                    // Calculate interest payment with 10% minimum
+                    let interestPayment = 0;
+                    if (tieredResult && tieredResult.tiers1to4Interest !== undefined) {
+                        const tieredInterest = tieredResult.tiers1to4Interest * (principal / outstandingBalance);
+                        const minimumInterest = (principal / term) * 0.10;
+                        interestPayment = Math.max(tieredInterest, minimumInterest);
+                    } else {
+                        // Fallback: 10% minimum
+                        interestPayment = (principal / term) * 0.10;
+                    }
+                    
+                    // Calculate admin fee
+                    let adminFee = 60; // Default R60
+                    if (tieredResult && tieredResult.tier1to4Amount > 0) {
+                        const effectiveRate = tieredResult.tiers1to4Interest / tieredResult.tier1to4Amount;
+                        adminFee = 60 * (1 - effectiveRate);
+                    }
+                    adminFee = Math.max(0, adminFee); // Ensure non-negative
+                    
+                    monthlyDetails.push({
+                        month,
+                        principal_payment: principalPayment,
+                        interest_payment: interestPayment,
+                        admin_fee: adminFee,
+                        initiation_fee: monthlyInitiationFee
+                    });
+                    
+                    outstandingBalance -= principalPayment;
                 }
                 
-                const tieredResult = Calculations.calculateTieredStockvelInterest(outstandingBalance, currentSavings);
-                const principalPayment = principal / term;
-                const interestPayment = tieredResult.tiers1to4Interest * (principal / outstandingBalance);
-                const adminFee = 60 * (1 - (tieredResult.tiers1to4Interest / tieredResult.tier1to4Amount));
+                // Calculate total and equal monthly payment
+                const totalCost = monthlyDetails.reduce((sum, m) => 
+                    sum + (m.principal_payment || 0) + (m.interest_payment || 0) + (m.admin_fee || 0) + (m.initiation_fee || 0), 0
+                );
+                const equalMonthlyPayment = totalCost / term;
                 
-                monthlyDetails.push({
-                    month,
-                    principal_payment: principalPayment,
-                    interest_payment: Math.max(interestPayment, (principal / term) * 0.10),
-                    admin_fee: adminFee,
-                    initiation_fee: monthlyInitiationFee
-                });
+                // Build final schedule
+                let balance = principal;
+                for (let i = 0; i < monthlyDetails.length; i++) {
+                    const detail = monthlyDetails[i];
+                    const dueDate = Calculations.calculateDueDate(currentYear, startMonthIndex, detail.month);
+                    
+                    schedule.push({
+                        payment_number: detail.month,
+                        due_date: dueDate,
+                        monthly_payment: equalMonthlyPayment,
+                        principal_payment: detail.principal_payment || 0,
+                        interest_payment: detail.interest_payment || 0,
+                        admin_fee: detail.admin_fee || 0,
+                        initiation_fee: detail.initiation_fee || 0,
+                        outstanding_balance: Math.max(0, balance - (detail.principal_payment || 0)),
+                        bonus: (detail.interest_payment || 0) * 0.1, // 10% of interest
+                        status: 'pending'
+                    });
+                    
+                    balance -= (detail.principal_payment || 0);
+                }
                 
-                outstandingBalance -= principalPayment;
+                return schedule;
+            } catch (error) {
+                console.error('Error generating stockvel schedule:', error);
+                throw new Error('Failed to generate stockvel schedule: ' + error.message);
             }
-            
-            // Calculate total and equal monthly payment
-            const totalCost = monthlyDetails.reduce((sum, m) => 
-                sum + m.principal_payment + m.interest_payment + m.admin_fee + m.initiation_fee, 0
-            );
-            const equalMonthlyPayment = totalCost / term;
-            
-            // Build final schedule
-            let balance = principal;
-            for (let i = 0; i < monthlyDetails.length; i++) {
-                const detail = monthlyDetails[i];
-                const dueDate = Calculations.calculateDueDate(currentYear, startMonthIndex, detail.month);
-                
-                schedule.push({
-                    payment_number: detail.month,
-                    due_date: dueDate,
-                    monthly_payment: equalMonthlyPayment,
-                    principal_payment: detail.principal_payment,
-                    interest_payment: detail.interest_payment,
-                    admin_fee: detail.admin_fee,
-                    initiation_fee: detail.initiation_fee,
-                    outstanding_balance: Math.max(0, balance - detail.principal_payment),
-                    bonus: detail.interest_payment * 0.1, // 10% of interest
-                    status: 'pending'
-                });
-                
-                balance -= detail.principal_payment;
-            }
-            
-            return schedule;
         }
         
         /**
