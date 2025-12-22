@@ -117,35 +117,114 @@ const Calculations = {
     },
     
     /**
+     * Calculate interest period for long-term loans
+     * Rule: Math.ceil(term/2) with minimum 3 months, capped at actual term
+     * This prevents excessive interest on long-term loans while ensuring revenue
+     */
+    calculateInterestPeriod(term) {
+        const calculatedMonths = Math.ceil(term / 2) >= 3 ? Math.ceil(term / 2) : 3;
+        const interestMonths = Math.min(calculatedMonths, term);
+        
+        console.log(`Interest Period Calculation: term=${term} months → interest period=${interestMonths} months`);
+        
+        return {
+            interestMonths,
+            calculatedMonths,
+            description: term <= 2 ? 
+                `Short-term: Full ${term} month interest` :
+                term <= 6 ?
+                `Medium-term: ${interestMonths} months (min 3)` :
+                `Long-term: ${interestMonths} months (half term)`
+        };
+    },
+    
+    /**
+     * Add interest cap fields to a loan object
+     * Call this when creating ANY loan to ensure consistent interest tracking
+     * 
+     * @param {object} loanData - Loan data with principal, term, totalInterest
+     * @returns {object} - Interest cap fields to merge into loan object
+     */
+    addInterestCapFields(loanData) {
+        const { principal, term, totalInterest } = loanData;
+        
+        // Calculate interest period
+        const interestPeriod = this.calculateInterestPeriod(term);
+        
+        // Return fields to add to loan object
+        return {
+            // Interest Calculation Period
+            interest_calculation_months: interestPeriod.interestMonths,
+            
+            // Interest Cap (100% of principal maximum)
+            max_interest_allowed: Math.min(totalInterest, principal),
+            
+            // Expected monthly interest (equalized)
+            expected_monthly_interest: totalInterest / term,
+            
+            // Tracking fields
+            total_interest_charged: 0,
+            interest_paid: 0,
+            
+            // Original values for reference
+            original_principal: principal,
+            
+            // Description for logging
+            _interest_cap_description: interestPeriod.description
+        };
+    },
+    
+    /**
      * Calculate standard loan using 30% Income Table method
-     * Returns equal monthly installments
+     * Returns equal monthly installments with interest cap
      */
     calculateStandardLoan(principal, term) {
         console.log(`\n=== STANDARD LOAN CALCULATION (30% Income Table) ===`);
         console.log(`Principal: R${principal.toFixed(2)}`);
         console.log(`Term: ${term} months`);
         
+        // Calculate interest period (long-term loan protection)
+        const interestPeriod = this.calculateInterestPeriod(term);
+        const interestMonths = interestPeriod.interestMonths;
+        console.log(`Interest Calculation Period: ${interestMonths} months (${interestPeriod.description})`);
+        
         const basePrincipalPayment = principal / term;
         let outstandingBalance = principal;
-        let totalInterest = 0;
+        let totalInterestForPeriod = 0;
         const monthlyDetails = [];
         
-        // First pass: Calculate total TBFS income on declining balance
-        for (let month = 1; month <= term; month++) {
-            const tbfsIncome = outstandingBalance * 0.30;
+        // First pass: Calculate interest for the interest period ONLY (declining balance)
+        let balance = principal;
+        for (let month = 1; month <= interestMonths; month++) {
+            const tbfsIncome = balance * 0.30;
             const adminFee = 60;
-            const initiationFee = (principal * 0.12) / term;
+            const initiationFee = (principal * 0.12) / term; // Still spread across full term
             const monthlyInterest = tbfsIncome - adminFee - initiationFee;
             
-            totalInterest += monthlyInterest;
+            totalInterestForPeriod += monthlyInterest;
+            balance -= basePrincipalPayment;
+        }
+        
+        // Interest is capped at the calculated period, then spread equally across ALL months
+        const totalInterest = totalInterestForPeriod;
+        const equalizedMonthlyInterest = totalInterest / term;
+        
+        console.log(`Interest calculated for ${interestMonths} months: R${totalInterestForPeriod.toFixed(2)}`);
+        console.log(`Equalized monthly interest (spread over ${term} months): R${equalizedMonthlyInterest.toFixed(2)}`);
+        
+        // Build monthly breakdown with equalized interest
+        outstandingBalance = principal;
+        for (let month = 1; month <= term; month++) {
+            const adminFee = 60;
+            const initiationFee = (principal * 0.12) / term;
             
             monthlyDetails.push({
                 month,
                 outstandingBalance,
-                tbfsIncome,
+                tbfsIncome: equalizedMonthlyInterest + adminFee + initiationFee, // Reconstructed for display
                 adminFee,
                 initiationFee,
-                monthlyInterest
+                monthlyInterest: equalizedMonthlyInterest
             });
             
             outstandingBalance -= basePrincipalPayment;
@@ -184,6 +263,9 @@ const Calculations = {
             totalAdminFees: this.round(totalAdminFees),
             totalCost: this.round(totalCostStandard),
             monthlyPayment: this.round(equalMonthlyPayment),
+            interestMonths: interestMonths, // NEW: Interest calculation period
+            maxInterestAllowed: this.round(totalInterest), // NEW: Interest cap
+            expectedMonthlyInterest: this.round(equalizedMonthlyInterest), // NEW: Equalized interest
             breakdown
         };
     },
