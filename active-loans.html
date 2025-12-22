@@ -524,8 +524,12 @@
             if (!loan.initiation_fee_paid) {
                 loan.initiation_fee_paid = 0;
             }
+            if (!loan.interest_paid) {
+                loan.interest_paid = 0;
+            }
+            
+            // Calculate total initiation fee if not set
             if (!loan.total_initiation_fee) {
-                // Calculate total initiation fee
                 const principal = loan.principal_amount || loan.principal || 0;
                 if (loan.loan_type === 'stockvel' && loan.total_contributions) {
                     // Stockvel: 0% if principal <= contributions, 12% on excess
@@ -536,8 +540,26 @@
                 }
             }
             
-            // Calculate remaining initiation fee
+            // Calculate total interest if not set
+            if (!loan.total_interest) {
+                if (loan.schedule && loan.schedule.length > 0) {
+                    // Sum interest from schedule
+                    loan.total_interest = loan.schedule.reduce((sum, payment) => {
+                        return sum + (payment.interest_payment || 0);
+                    }, 0);
+                } else {
+                    // Estimate from monthly payment
+                    const principal = loan.principal_amount || loan.principal || 0;
+                    const monthlyPayment = loan.monthly_payment || 0;
+                    const totalPayments = monthlyPayment * loan.term_months;
+                    const totalFees = loan.total_initiation_fee + (60 * loan.term_months); // Admin fees
+                    loan.total_interest = Math.max(0, totalPayments - principal - totalFees);
+                }
+            }
+            
+            // Calculate remaining amounts
             const remainingInitiationFee = Math.max(0, loan.total_initiation_fee - loan.initiation_fee_paid);
+            const remainingInterest = Math.max(0, loan.total_interest - loan.interest_paid);
             
             // Get payment amount
             const expectedPayment = loan.monthly_payment || 0;
@@ -548,6 +570,7 @@
                 `💰 Enter payment amount for Loan #${loanId}\n\n` +
                 `Expected Monthly Payment: ${Calculations.formatCurrency(expectedPayment)}\n` +
                 `Remaining Principal: ${Calculations.formatCurrency(remainingPrincipal)}\n` +
+                `Remaining Interest: ${Calculations.formatCurrency(remainingInterest)}\n` +
                 `Remaining Initiation Fee: ${Calculations.formatCurrency(remainingInitiationFee)}\n` +
                 `Payments Made: ${loan.payments_made || 0}/${loan.term_months}\n\n` +
                 `💡 You can make partial or overpayments`
@@ -631,7 +654,10 @@
             // Update loan totals
             loan.remaining_principal = Math.max(0, loan.remaining_principal - principalPaid);
             loan.initiation_fee_paid = (loan.initiation_fee_paid || 0) + initiationFeePaid;
-            loan.total_interest_charged = (loan.total_interest_charged || 0) + interestPaid;
+            loan.interest_paid = (loan.interest_paid || 0) + interestPaid;
+            
+            // Also update legacy field for backward compatibility
+            loan.total_interest_charged = loan.interest_paid;
             
             // Check if loan is paid off
             if (loan.remaining_principal <= 0.01 || loan.payments_made >= loan.term_months) {
@@ -661,6 +687,7 @@
                     initiationFeePaid: initiationFeePaid,
                     overpayment: remainingAmount,
                     remainingPrincipal: loan.remaining_principal,
+                    remainingInterest: Math.max(0, loan.total_interest - loan.interest_paid),
                     remainingInitiationFee: Math.max(0, loan.total_initiation_fee - loan.initiation_fee_paid),
                     paymentNumber: loan.payments_made,
                     paymentDate: new Date().toISOString()
@@ -670,6 +697,10 @@
             // Save state
             AppStateManager.save(AppState);
             
+            // Calculate remaining amounts for display
+            const newRemainingInitiationFee = Math.max(0, loan.total_initiation_fee - loan.initiation_fee_paid);
+            const newRemainingInterest = Math.max(0, loan.total_interest - loan.interest_paid);
+            
             // Show success message
             const completionMsg = loan.status === 'completed' ? '\n\n🎉 LOAN FULLY PAID!' : '';
             const overpaymentMsg = remainingAmount > 0.01 ? `\n💡 Overpayment: ${Calculations.formatCurrency(remainingAmount)} (credited to account)` : '';
@@ -678,14 +709,16 @@
             alert(
                 `✅ Payment Processed Successfully!${completionMsg}${partialMsg}\n\n` +
                 `💰 Total Paid: ${Calculations.formatCurrency(amount)}\n\n` +
-                `📊 Breakdown:\n` +
+                `📊 Payment Breakdown:\n` +
                 `• Principal: ${Calculations.formatCurrency(principalPaid)}\n` +
                 `• Interest: ${Calculations.formatCurrency(interestPaid)}\n` +
                 `• Admin Fee: ${Calculations.formatCurrency(adminFeePaid)}\n` +
                 `• Initiation Fee: ${Calculations.formatCurrency(initiationFeePaid)}${overpaymentMsg}\n\n` +
-                `📊 Progress: ${loan.payments_made}/${loan.term_months} payments\n` +
-                `💵 Remaining Principal: ${Calculations.formatCurrency(loan.remaining_principal)}\n` +
-                `💵 Remaining Initiation Fee: ${Calculations.formatCurrency(Math.max(0, loan.total_initiation_fee - loan.initiation_fee_paid))}`
+                `📊 Loan Progress: ${loan.payments_made}/${loan.term_months} payments\n\n` +
+                `💵 Remaining Balances:\n` +
+                `• Principal: ${Calculations.formatCurrency(loan.remaining_principal)}\n` +
+                `• Interest: ${Calculations.formatCurrency(newRemainingInterest)}\n` +
+                `• Initiation Fee: ${Calculations.formatCurrency(newRemainingInitiationFee)}`
             );
             
             // Reload loans
