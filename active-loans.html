@@ -22,6 +22,23 @@
     
     <!-- Page-Specific Styles -->
     <style>
+        .btn-info {
+            background: linear-gradient(135deg, #3498db 0%, #2980b9 100%);
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: all 0.3s ease;
+        }
+        
+        .btn-info:hover {
+            background: linear-gradient(135deg, #2980b9 0%, #21618c 100%);
+            transform: translateY(-2px);
+            box-shadow: 0 4px 8px rgba(52, 152, 219, 0.3);
+        }
+        
         .loan-card {
             background: white;
             padding: 20px;
@@ -475,6 +492,10 @@
                                             onclick="makePayment(${loan.loan_id})">
                                         💰 Make Payment
                                     </button>
+                                    <button class="btn btn-info" style="padding: 8px 12px; font-size: 13px;"
+                                            onclick="calculateEarlyPayoff(${loan.loan_id})">
+                                        🎯 Early Payoff
+                                    </button>
                                     <button class="btn btn-warning" style="padding: 8px 12px; font-size: 13px;"
                                             onclick="viewLoanDetails(${loan.loan_id})">
                                         👁️ View Details
@@ -500,6 +521,187 @@
                     </div>
                 `;
             }).join('');
+        }
+        
+        /**
+         * Calculate early payoff quote for a loan
+         */
+        function calculateEarlyPayoff(loanId) {
+            const loan = allLoans.find(l => l.loan_id === loanId);
+            if (!loan) {
+                alert('❌ Loan not found!');
+                return;
+            }
+            
+            if (loan.status !== 'active') {
+                alert('⚠️ Only active loans can be paid off early!');
+                return;
+            }
+            
+            // Ask for payoff month
+            const currentMonth = (loan.payments_made || 0) + 1;
+            const maxMonth = loan.term_months;
+            
+            const payoffMonth = prompt(
+                `🎯 Early Payoff Calculator\n\n` +
+                `Loan #${loanId} - ${loan.client_name}\n` +
+                `Original Term: ${loan.term_months} months\n` +
+                `Payments Made: ${loan.payments_made || 0}\n\n` +
+                `Enter the month you want to pay off the loan:\n` +
+                `(Must be between ${currentMonth} and ${maxMonth})`
+            );
+            
+            if (!payoffMonth) return;
+            
+            const month = parseInt(payoffMonth);
+            
+            // Validate
+            if (isNaN(month) || month < currentMonth || month > maxMonth) {
+                alert(`❌ Invalid month!\n\nMust be between ${currentMonth} and ${maxMonth}`);
+                return;
+            }
+            
+            try {
+                // Calculate early payoff
+                const payoff = Calculations.calculateEarlyPayoff(loan, month);
+                
+                // Format the display
+                const breakdown = payoff.formatted.breakdown.map(item => 
+                    `${item.label}: ${item.amount}`
+                ).join('\n');
+                
+                // Show detailed quote
+                const quote = `
+🎯 EARLY PAYOFF QUOTE - LOAN #${loanId}
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+📋 Loan Details:
+Client: ${loan.client_name}
+Original Term: ${loan.term_months} months
+Payoff Month: ${month}
+Payments Made: ${loan.payments_made || 0}
+
+💰 Payoff Breakdown:
+${breakdown}
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+TOTAL PAYOFF: ${payoff.formatted.totalPayoff}
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+📊 Financial Summary:
+Already Paid: ${Calculations.formatCurrency(payoff.totalPaidSoFar)}
+Payoff Amount: ${payoff.formatted.totalPayoff}
+Total Cost: ${Calculations.formatCurrency(payoff.totalWithPayoff)}
+
+vs Full Term: ${Calculations.formatCurrency(payoff.originalTotalCost)}
+YOU SAVE: ${payoff.formatted.savings} (${payoff.savingsPercentage.toFixed(2)}%)
+
+⏰ You'll finish ${payoff.monthsSaved} months early!
+
+💡 Interest Calculated for ${payoff.monthsInterestCalculated} months
+   (min of payoff month ${month} and interest period ${loan.interest_calculation_months})
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Would you like to proceed with early payoff?
+Click "OK" to process payment or "Cancel" to go back.
+                `.trim();
+                
+                const proceed = confirm(quote);
+                
+                if (proceed) {
+                    // Process early payoff
+                    processEarlyPayoff(loan, month, payoff);
+                }
+                
+            } catch (error) {
+                console.error('Early payoff calculation error:', error);
+                alert(`❌ Error calculating early payoff:\n\n${error.message}`);
+            }
+        }
+        
+        /**
+         * Process early payoff payment
+         */
+        function processEarlyPayoff(loan, payoffMonth, payoffData) {
+            try {
+                const totalPayoff = payoffData.totalPayoff;
+                
+                // Confirm final amount
+                const finalConfirm = confirm(
+                    `💰 Final Confirmation\n\n` +
+                    `You are about to pay off Loan #${loan.loan_id}\n\n` +
+                    `Total Amount: ${Calculations.formatCurrency(totalPayoff)}\n` +
+                    `Savings: ${payoffData.formatted.savings}\n\n` +
+                    `This action cannot be undone.\n` +
+                    `Proceed with payment?`
+                );
+                
+                if (!finalConfirm) {
+                    alert('⏸️ Early payoff cancelled.');
+                    return;
+                }
+                
+                // Update loan record
+                loan.status = 'completed';
+                loan.completion_date = new Date().toISOString();
+                loan.remaining_principal = 0;
+                loan.interest_paid = (loan.interest_paid || 0) + payoffData.interestOwed;
+                loan.initiation_fee_paid = loan.total_initiation_fee || 0;
+                loan.early_payoff = true;
+                loan.payoff_month = payoffMonth;
+                loan.payoff_date = new Date().toISOString();
+                loan.payoff_amount = totalPayoff;
+                loan.savings_from_early_payoff = payoffData.savings;
+                
+                // Update AppState
+                AppState.capital = (AppState.capital || 0) + totalPayoff;
+                AppState.deployed = Math.max(0, (AppState.deployed || 0) - loan.principal_amount);
+                AppState.totalInterestEarned = (AppState.totalInterestEarned || 0) + payoffData.interestOwed;
+                AppState.totalFeesEarned = (AppState.totalFeesEarned || 0) + payoffData.initiationFeeOwed + payoffData.adminFeesOwed;
+                
+                // Log transaction
+                if (!AppState.transactionHistory) AppState.transactionHistory = [];
+                AppState.transactionHistory.push({
+                    type: 'early_payoff',
+                    timestamp: new Date().toISOString(),
+                    details: {
+                        loanId: loan.loan_id,
+                        clientName: loan.client_name,
+                        originalTerm: loan.term_months,
+                        payoffMonth: payoffMonth,
+                        paymentsMade: loan.payments_made || 0,
+                        payoffAmount: totalPayoff,
+                        remainingPrincipal: payoffData.remainingPrincipal,
+                        interestOwed: payoffData.interestOwed,
+                        initiationFeeOwed: payoffData.initiationFeeOwed,
+                        adminFeesOwed: payoffData.adminFeesOwed,
+                        savings: payoffData.savings,
+                        savingsPercentage: payoffData.savingsPercentage,
+                        monthsSaved: payoffData.monthsSaved
+                    }
+                });
+                
+                // Save state
+                AppStateManager.save(AppState);
+                
+                // Show success message
+                alert(
+                    `✅ LOAN PAID OFF SUCCESSFULLY!\n\n` +
+                    `🎉 Congratulations!\n\n` +
+                    `Loan #${loan.loan_id} has been fully paid off.\n\n` +
+                    `💰 Total Paid: ${Calculations.formatCurrency(totalPayoff)}\n` +
+                    `💵 You Saved: ${payoffData.formatted.savings}\n` +
+                    `⏰ Finished ${payoffData.monthsSaved} months early!\n\n` +
+                    `Thank you for your business! 🌟`
+                );
+                
+                // Refresh display
+                loadLoans();
+                
+            } catch (error) {
+                console.error('Error processing early payoff:', error);
+                alert(`❌ Error processing early payoff:\n\n${error.message}`);
+            }
         }
         
         /**
