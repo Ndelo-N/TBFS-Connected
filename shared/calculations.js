@@ -626,30 +626,10 @@ const Calculations = {
         const penalty = outstandingBalance * dailyRate * effectiveDays;
         
         return this.round(penalty);
-    },
-    
-    /**
-     * Calculate early payoff amount (20% discount on remaining interest)
-     */
-    calculateEarlyPayoff(loan) {
-        const remainingPrincipal = loan.remaining_principal;
-        const maxInterest = loan.principal * 1.00; // 100% cap
-        const remainingInterest = maxInterest - loan.total_interest_charged;
-        const discountedInterest = remainingInterest * 0.80; // 20% discount
-        
-        const remainingFees = (loan.initiation_fee - loan.initiation_fee_paid) +
-                             (60 * (loan.term_months - loan.payments_made));
-        
-        const totalPayoff = remainingPrincipal + discountedInterest + remainingFees;
-        
-        return {
-            principal: this.round(remainingPrincipal),
-            interest: this.round(discountedInterest),
-            fees: this.round(remainingFees),
-            total: this.round(totalPayoff),
-            discount: this.round(remainingInterest * 0.20)
-        };
     }
+    
+    // NOTE: calculateEarlyPayoff is defined earlier (line ~187) with full functionality
+    // The old duplicate function has been removed
 };
 
 // Make globally available
