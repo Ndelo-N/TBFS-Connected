@@ -175,6 +175,191 @@ const Calculations = {
     },
     
     /**
+     * Calculate early payoff amount for a loan
+     * 
+     * Prorates interest based on payoff month vs interest calculation period
+     * Ensures full initiation fee is paid
+     * 
+     * @param {object} loan - Loan object with all tracking fields
+     * @param {number} payoffMonth - Month number when paying off (1-based)
+     * @returns {object} - Detailed payoff breakdown
+     */
+    calculateEarlyPayoff(loan, payoffMonth) {
+        console.log(`\n=== EARLY PAYOFF CALCULATION ===`);
+        console.log(`Loan ID: ${loan.loan_id}`);
+        console.log(`Original Term: ${loan.term_months} months`);
+        console.log(`Payoff Month: ${payoffMonth}`);
+        console.log(`Payments Made: ${loan.payments_made || 0}`);
+        
+        // Validate inputs
+        if (payoffMonth > loan.term_months) {
+            throw new Error('Payoff month cannot exceed loan term');
+        }
+        
+        if (payoffMonth <= (loan.payments_made || 0)) {
+            throw new Error('Payoff month must be after last payment made');
+        }
+        
+        // Get loan details
+        const originalPrincipal = loan.original_principal || loan.principal_amount;
+        const remainingPrincipal = loan.remaining_principal || loan.principal_amount;
+        const interestPeriod = loan.interest_calculation_months || this.calculateInterestPeriod(loan.term_months).interestMonths;
+        const totalInitiationFee = loan.total_initiation_fee || (originalPrincipal * 0.12);
+        const initiationFeePaid = loan.initiation_fee_paid || 0;
+        const interestPaid = loan.interest_paid || 0;
+        
+        console.log(`\nLoan Details:`);
+        console.log(`Original Principal: R${originalPrincipal.toFixed(2)}`);
+        console.log(`Remaining Principal: R${remainingPrincipal.toFixed(2)}`);
+        console.log(`Interest Calculation Period: ${interestPeriod} months`);
+        console.log(`Interest Already Paid: R${interestPaid.toFixed(2)}`);
+        
+        // STEP 1: Calculate prorated interest owed
+        // Interest should be calculated for the LESSER of:
+        // - Payoff month
+        // - Interest calculation period
+        const monthsToCalculateInterest = Math.min(payoffMonth, interestPeriod);
+        
+        console.log(`\nInterest Calculation:`);
+        console.log(`Months to calculate: ${monthsToCalculateInterest} (min of payoff month ${payoffMonth} and interest period ${interestPeriod})`);
+        
+        // Calculate interest for the prorated period using declining balance
+        let proratedInterest = 0;
+        let balance = originalPrincipal;
+        const principalPerMonth = originalPrincipal / loan.term_months;
+        
+        // Check if this is a stockvel loan with tiered rates
+        const isStockvel = loan.loan_type === 'stockvel' || loan.isStockvelLoan;
+        
+        if (isStockvel && loan.total_contributions) {
+            // Stockvel loan - use tiered calculation
+            console.log(`Stockvel loan detected - using tiered rates`);
+            let currentSavings = loan.total_contributions || 0;
+            const monthlyContribution = loan.monthly_contribution || 0;
+            
+            for (let month = 1; month <= monthsToCalculateInterest; month++) {
+                // Update savings
+                if (month > 1) {
+                    currentSavings += monthlyContribution;
+                }
+                
+                // Calculate tiered interest
+                const tieredResult = this.calculateTieredStockvelInterest(balance, currentSavings);
+                const tieredInterest = tieredResult.tiers1to4Interest;
+                
+                // Apply 10% minimum
+                const minimumInterest = balance * 0.10;
+                const monthInterest = Math.max(tieredInterest, minimumInterest);
+                
+                proratedInterest += monthInterest;
+                console.log(`  Month ${month}: Balance R${balance.toFixed(2)}, Savings R${currentSavings.toFixed(2)}, Interest R${monthInterest.toFixed(2)}`);
+                
+                balance -= principalPerMonth;
+            }
+        } else {
+            // Standard loan - use 30% income table
+            for (let month = 1; month <= monthsToCalculateInterest; month++) {
+                const tbfsIncome = balance * 0.30;
+                const adminFee = 60;
+                const initiationFee = totalInitiationFee / loan.term_months;
+                const monthInterest = tbfsIncome - adminFee - initiationFee;
+                
+                proratedInterest += monthInterest;
+                console.log(`  Month ${month}: Balance R${balance.toFixed(2)}, Interest R${monthInterest.toFixed(2)}`);
+                
+                balance -= principalPerMonth;
+            }
+        }
+        
+        console.log(`Total prorated interest for ${monthsToCalculateInterest} months: R${proratedInterest.toFixed(2)}`);
+        console.log(`Interest already paid: R${interestPaid.toFixed(2)}`);
+        
+        // Interest owed = Prorated interest - Interest already paid
+        const interestOwed = Math.max(0, proratedInterest - interestPaid);
+        console.log(`Interest still owed: R${interestOwed.toFixed(2)}`);
+        
+        // STEP 2: Calculate remaining initiation fee (must be paid in full)
+        const initiationFeeOwed = Math.max(0, totalInitiationFee - initiationFeePaid);
+        console.log(`\nInitiation Fee:`);
+        console.log(`Total: R${totalInitiationFee.toFixed(2)}`);
+        console.log(`Paid: R${initiationFeePaid.toFixed(2)}`);
+        console.log(`Owed: R${initiationFeeOwed.toFixed(2)}`);
+        
+        // STEP 3: Calculate remaining admin fees
+        // Admin fees are for actual months only (not the full term)
+        const adminFeePerMonth = isStockvel ? 
+            (loan.schedule ? loan.schedule[0].admin_fee : 60) : 
+            60;
+        const adminFeesPaid = (loan.payments_made || 0) * adminFeePerMonth;
+        const adminFeesForPayoffMonth = payoffMonth * adminFeePerMonth;
+        const adminFeesOwed = Math.max(0, adminFeesForPayoffMonth - adminFeesPaid);
+        
+        console.log(`\nAdmin Fees:`);
+        console.log(`Per month: R${adminFeePerMonth.toFixed(2)}`);
+        console.log(`For ${payoffMonth} months: R${adminFeesForPayoffMonth.toFixed(2)}`);
+        console.log(`Already paid: R${adminFeesPaid.toFixed(2)}`);
+        console.log(`Still owed: R${adminFeesOwed.toFixed(2)}`);
+        
+        // STEP 4: Total payoff amount
+        const totalPayoff = remainingPrincipal + interestOwed + initiationFeeOwed + adminFeesOwed;
+        
+        // STEP 5: Calculate savings
+        const originalTotalCost = loan.total_cost || (originalPrincipal + loan.total_interest + totalInitiationFee + (60 * loan.term_months));
+        const totalPaid = (loan.payments_made || 0) * (loan.monthly_payment || 0);
+        const totalWithPayoff = totalPaid + totalPayoff;
+        const savings = originalTotalCost - totalWithPayoff;
+        const savingsPercentage = (savings / originalTotalCost) * 100;
+        
+        console.log(`\n=== PAYOFF SUMMARY ===`);
+        console.log(`Remaining Principal: R${remainingPrincipal.toFixed(2)}`);
+        console.log(`Interest Owed: R${interestOwed.toFixed(2)}`);
+        console.log(`Initiation Fee Owed: R${initiationFeeOwed.toFixed(2)}`);
+        console.log(`Admin Fees Owed: R${adminFeesOwed.toFixed(2)}`);
+        console.log(`───────────────────────────────`);
+        console.log(`TOTAL PAYOFF: R${totalPayoff.toFixed(2)}`);
+        console.log(`\nSavings: R${savings.toFixed(2)} (${savingsPercentage.toFixed(2)}%)`);
+        
+        return {
+            // Payoff amount breakdown
+            remainingPrincipal: this.round(remainingPrincipal),
+            interestOwed: this.round(interestOwed),
+            initiationFeeOwed: this.round(initiationFeeOwed),
+            adminFeesOwed: this.round(adminFeesOwed),
+            totalPayoff: this.round(totalPayoff),
+            
+            // Interest calculation details
+            monthsInterestCalculated: monthsToCalculateInterest,
+            proratedInterest: this.round(proratedInterest),
+            interestAlreadyPaid: this.round(interestPaid),
+            
+            // Savings calculation
+            originalTotalCost: this.round(originalTotalCost),
+            totalPaidSoFar: this.round(totalPaid),
+            totalWithPayoff: this.round(totalWithPayoff),
+            savings: this.round(savings),
+            savingsPercentage: this.round(savingsPercentage),
+            
+            // Metadata
+            payoffMonth: payoffMonth,
+            paymentsAlreadyMade: loan.payments_made || 0,
+            originalTerm: loan.term_months,
+            monthsSaved: loan.term_months - payoffMonth,
+            
+            // Formatted strings for display
+            formatted: {
+                totalPayoff: this.formatCurrency(totalPayoff),
+                savings: this.formatCurrency(savings),
+                breakdown: [
+                    { label: 'Remaining Principal', amount: this.formatCurrency(remainingPrincipal) },
+                    { label: 'Interest Owed', amount: this.formatCurrency(interestOwed) },
+                    { label: 'Initiation Fee Balance', amount: this.formatCurrency(initiationFeeOwed) },
+                    { label: 'Admin Fees Balance', amount: this.formatCurrency(adminFeesOwed) }
+                ]
+            }
+        };
+    },
+    
+    /**
      * Calculate standard loan using 30% Income Table method
      * Returns equal monthly installments with interest cap
      */
