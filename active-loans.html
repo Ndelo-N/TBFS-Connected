@@ -792,6 +792,9 @@ Click "OK" to process payment or "Cancel" to go back.
             let adminFeePaid = 0;
             let initiationFeePaid = 0;
             
+            // Track principal before payment for recalculation check
+            const principalBeforePayment = loan.remaining_principal;
+            
             // Get next pending payment from schedule
             const nextPayment = (loan.schedule || []).find(p => p.status === 'pending');
             
@@ -826,37 +829,147 @@ Click "OK" to process payment or "Cancel" to go back.
                     remainingAmount -= principalPaid;
                 }
                 
-                // 5. Handle overpayment - apply to next principal payment
+                // 5. Handle overpayment
                 if (remainingAmount > 0 && loan.remaining_principal > principalPaid) {
-                    const additionalPrincipal = Math.min(remainingAmount, loan.remaining_principal - principalPaid);
-                    principalPaid += additionalPrincipal;
-                    remainingAmount -= additionalPrincipal;
+                    // Check if we're in first half of loan period
+                    const halfwayPoint = Math.ceil(loan.term_months / 2);
+                    const principalPerMonth = (loan.original_principal || loan.principal_amount) / loan.term_months;
+                    const currentPaymentNumber = Math.floor((loan.original_principal - loan.remaining_principal) / principalPerMonth) + 1;
+                    
+                    if (currentPaymentNumber <= halfwayPoint) {
+                        // FIRST HALF: Apply extra to principal (will trigger interest recalculation)
+                        const additionalPrincipal = Math.min(remainingAmount, loan.remaining_principal - principalPaid);
+                        principalPaid += additionalPrincipal;
+                        remainingAmount -= additionalPrincipal;
+                        
+                        console.log(`💡 Overpayment in first half (month ${currentPaymentNumber}/${halfwayPoint})`);
+                        console.log(`Extra principal paid: R${additionalPrincipal.toFixed(2)}`);
+                        console.log(`Interest will be recalculated on reduced balance`);
+                    } else {
+                        // SECOND HALF: Apply to remaining fees/interest first, then principal
+                        console.log(`📊 Overpayment in second half (month ${currentPaymentNumber}/${halfwayPoint})`);
+                        
+                        // Apply to remaining initiation fee balance
+                        const remainingInitiationFee = Math.max(0, (loan.total_initiation_fee || 0) - (loan.initiation_fee_paid || 0));
+                        if (remainingAmount > 0 && remainingInitiationFee > 0) {
+                            const extraInitiation = Math.min(remainingAmount, remainingInitiationFee);
+                            initiationFeePaid += extraInitiation;
+                            remainingAmount -= extraInitiation;
+                            console.log(`Applied R${extraInitiation.toFixed(2)} to initiation fee balance`);
+                        }
+                        
+                        // Apply to remaining interest balance
+                        const remainingInterest = Math.max(0, (loan.total_interest || 0) - (loan.interest_paid || 0));
+                        if (remainingAmount > 0 && remainingInterest > 0) {
+                            const extraInterest = Math.min(remainingAmount, remainingInterest);
+                            interestPaid += extraInterest;
+                            remainingAmount -= extraInterest;
+                            console.log(`Applied R${extraInterest.toFixed(2)} to interest balance`);
+                        }
+                        
+                        // Finally apply to principal
+                        if (remainingAmount > 0) {
+                            const additionalPrincipal = Math.min(remainingAmount, loan.remaining_principal - principalPaid);
+                            principalPaid += additionalPrincipal;
+                            remainingAmount -= additionalPrincipal;
+                            console.log(`Applied R${additionalPrincipal.toFixed(2)} to principal`);
+                        }
+                    }
                 }
                 
-                // Check if this payment completes the current installment
-                const totalDue = initiationDue + adminDue + interestDue + principalDue;
-                const totalPaid = initiationFeePaid + adminFeePaid + interestPaid + principalPaid;
-                
-                if (totalPaid >= totalDue - 0.01) {
-                    // Full payment made - mark as paid and increment counter
-                    nextPayment.status = 'paid';
-                    nextPayment.payment_date = new Date().toISOString();
-                    nextPayment.amount_paid = amount;
-                    loan.payments_made = (loan.payments_made || 0) + 1;
-                } else {
-                    // Partial payment - update schedule but don't increment counter
-                    nextPayment.partial_payment = (nextPayment.partial_payment || 0) + amount;
-                }
+                // Mark payment as paid (don't increment counter here - will be calculated)
+                nextPayment.status = 'paid';
+                nextPayment.payment_date = new Date().toISOString();
+                nextPayment.amount_paid = amount;
             } else {
                 // No schedule - use simple allocation
                 const principalPerMonth = (loan.principal_amount || loan.principal) / loan.term_months;
                 principalPaid = Math.min(remainingAmount, principalPerMonth, loan.remaining_principal);
             }
             
+            // Track total principal received (not just this payment)
+            if (!loan.total_principal_received) {
+                loan.total_principal_received = 0;
+            }
+            loan.total_principal_received += principalPaid;
+            
             // Update loan totals
             loan.remaining_principal = Math.max(0, loan.remaining_principal - principalPaid);
             loan.initiation_fee_paid = (loan.initiation_fee_paid || 0) + initiationFeePaid;
             loan.interest_paid = (loan.interest_paid || 0) + interestPaid;
+            
+            // Calculate payments_made based on principal received
+            const principalPerMonth = (loan.original_principal || loan.principal_amount) / loan.term_months;
+            loan.payments_made = Math.floor(loan.total_principal_received / principalPerMonth);
+            
+            console.log(`💰 Principal Tracking:`);
+            console.log(`Total Principal Received: R${loan.total_principal_received.toFixed(2)}`);
+            console.log(`Principal Per Month: R${principalPerMonth.toFixed(2)}`);
+            console.log(`Payments Made (calculated): ${loan.payments_made}/${loan.term_months}`);
+            
+            // Check for interest recalculation (if overpayment in first half)
+            const halfwayPoint = Math.ceil(loan.term_months / 2);
+            const interestPeriod = loan.interest_calculation_months || Calculations.calculateInterestPeriod(loan.term_months).interestMonths;
+            
+            if (loan.payments_made <= halfwayPoint && principalPaid > principalPerMonth * 1.1) {
+                // Significant overpayment in first half - recalculate interest
+                console.log(`\n🔄 RECALCULATING INTEREST (Overpayment in first half)`);
+                console.log(`Previous Principal: R${principalBeforePayment.toFixed(2)}`);
+                console.log(`New Principal: R${loan.remaining_principal.toFixed(2)}`);
+                
+                try {
+                    // Recalculate interest on new reduced principal
+                    const isStockvel = loan.loan_type === 'stockvel' || loan.isStockvelLoan;
+                    let newInterestCalculation = 0;
+                    
+                    if (isStockvel && loan.total_contributions) {
+                        // Stockvel: Use tiered rates on new balance
+                        let balance = loan.remaining_principal;
+                        let currentSavings = loan.total_contributions + ((loan.monthly_contribution || 0) * loan.payments_made);
+                        const remainingMonths = interestPeriod - loan.payments_made;
+                        
+                        for (let i = 0; i < remainingMonths; i++) {
+                            const tieredResult = Calculations.calculateTieredStockvelInterest(balance, currentSavings);
+                            const minimumInterest = balance * 0.10;
+                            const monthInterest = Math.max(tieredResult.tiers1to4Interest, minimumInterest);
+                            newInterestCalculation += monthInterest;
+                            balance -= principalPerMonth;
+                            currentSavings += (loan.monthly_contribution || 0);
+                        }
+                    } else {
+                        // Standard: Use 30% income table on new balance
+                        let balance = loan.remaining_principal;
+                        const remainingMonths = interestPeriod - loan.payments_made;
+                        
+                        for (let i = 0; i < remainingMonths; i++) {
+                            const tbfsIncome = balance * 0.30;
+                            const adminFee = 60;
+                            const initiationFee = (loan.total_initiation_fee || 0) / loan.term_months;
+                            const monthInterest = tbfsIncome - adminFee - initiationFee;
+                            newInterestCalculation += monthInterest;
+                            balance -= principalPerMonth;
+                        }
+                    }
+                    
+                    // Update interest tracking
+                    const previousMaxInterest = loan.max_interest_allowed || 0;
+                    const newMaxInterest = loan.interest_paid + newInterestCalculation;
+                    loan.max_interest_allowed = newMaxInterest;
+                    loan.expected_monthly_interest = newMaxInterest / loan.term_months;
+                    
+                    console.log(`Previous Max Interest: R${previousMaxInterest.toFixed(2)}`);
+                    console.log(`New Max Interest: R${newMaxInterest.toFixed(2)}`);
+                    console.log(`Interest Reduction: R${(previousMaxInterest - newMaxInterest).toFixed(2)}`);
+                    console.log(`✅ Interest recalculated successfully!`);
+                    
+                    // Flag for display
+                    loan.interest_recalculated = true;
+                    loan.last_recalculation_date = new Date().toISOString();
+                    
+                } catch (error) {
+                    console.error('Error recalculating interest:', error);
+                }
+            }
             
             // Also update legacy field for backward compatibility
             loan.total_interest_charged = loan.interest_paid;
@@ -892,6 +1005,9 @@ Click "OK" to process payment or "Cancel" to go back.
                     remainingInterest: Math.max(0, loan.total_interest - loan.interest_paid),
                     remainingInitiationFee: Math.max(0, loan.total_initiation_fee - loan.initiation_fee_paid),
                     paymentNumber: loan.payments_made,
+                    totalPrincipalReceived: loan.total_principal_received,
+                    interestRecalculated: loan.interest_recalculated || false,
+                    newMaxInterest: loan.interest_recalculated ? loan.max_interest_allowed : null,
                     paymentDate: new Date().toISOString()
                 }
             });
@@ -907,16 +1023,19 @@ Click "OK" to process payment or "Cancel" to go back.
             const completionMsg = loan.status === 'completed' ? '\n\n🎉 LOAN FULLY PAID!' : '';
             const overpaymentMsg = remainingAmount > 0.01 ? `\n💡 Overpayment: ${Calculations.formatCurrency(remainingAmount)} (credited to account)` : '';
             const partialMsg = nextPayment && nextPayment.partial_payment ? '\n⚠️ Partial payment recorded - installment not yet complete' : '';
+            const recalcMsg = loan.interest_recalculated ? `\n\n🔄 INTEREST RECALCULATED!\nYour overpayment in the first half reduced future interest.\nNew Max Interest: ${Calculations.formatCurrency(loan.max_interest_allowed)}` : '';
             
             alert(
-                `✅ Payment Processed Successfully!${completionMsg}${partialMsg}\n\n` +
+                `✅ Payment Processed Successfully!${completionMsg}${partialMsg}${recalcMsg}\n\n` +
                 `💰 Total Paid: ${Calculations.formatCurrency(amount)}\n\n` +
                 `📊 Payment Breakdown:\n` +
                 `• Principal: ${Calculations.formatCurrency(principalPaid)}\n` +
                 `• Interest: ${Calculations.formatCurrency(interestPaid)}\n` +
                 `• Admin Fee: ${Calculations.formatCurrency(adminFeePaid)}\n` +
                 `• Initiation Fee: ${Calculations.formatCurrency(initiationFeePaid)}${overpaymentMsg}\n\n` +
-                `📊 Loan Progress: ${loan.payments_made}/${loan.term_months} payments\n\n` +
+                `📈 Progress:\n` +
+                `• Payments Made: ${loan.payments_made}/${loan.term_months}\n` +
+                `• Total Principal Received: ${Calculations.formatCurrency(loan.total_principal_received)}\n\n` +
                 `💵 Remaining Balances:\n` +
                 `• Principal: ${Calculations.formatCurrency(loan.remaining_principal)}\n` +
                 `• Interest: ${Calculations.formatCurrency(newRemainingInterest)}\n` +
