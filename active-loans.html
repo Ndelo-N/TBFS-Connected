@@ -514,6 +514,10 @@
                                             onclick="viewLoanDetails(${loan.loan_id})">
                                         👁️ View Details
                                     </button>
+                                    <button class="btn" style="padding: 8px 12px; font-size: 13px; background: #9b59b6; color: white;"
+                                            onclick="downloadLoanStatementPDF(${loan.loan_id})">
+                                        📥 Download PDF
+                                    </button>
                                     <button class="btn btn-danger" style="padding: 8px 12px; font-size: 13px;"
                                             onclick="markAsDefaulted(${loan.loan_id})">
                                         ⚠️ Mark Default
@@ -522,6 +526,10 @@
                                     <button class="btn btn-secondary" style="padding: 8px 12px; font-size: 13px;"
                                             onclick="viewLoanDetails(${loan.loan_id})">
                                         👁️ View Details
+                                    </button>
+                                    <button class="btn" style="padding: 8px 12px; font-size: 13px; background: #9b59b6; color: white;"
+                                            onclick="downloadLoanStatementPDF(${loan.loan_id})">
+                                        📥 Download PDF
                                     </button>
                                     ${loan.status === 'completed' ? `
                                         <button class="btn" style="padding: 8px 12px; font-size: 13px; background: #27ae60;"
@@ -1125,6 +1133,436 @@ Click "OK" to process payment or "Cancel" to go back.
         }
         
         /**
+         * Download loan statement as PDF
+         */
+        function downloadLoanStatementPDF(loanId) {
+            const loan = allLoans.find(l => l.loan_id === loanId);
+            if (!loan) {
+                alert('❌ Loan not found!');
+                return;
+            }
+            
+            try {
+                const { jsPDF } = window.jspdf;
+                const doc = new jsPDF();
+                
+                // Page settings
+                const pageWidth = doc.internal.pageSize.width;
+                const pageHeight = doc.internal.pageSize.height;
+                const margin = 20;
+                const contentWidth = pageWidth - (2 * margin);
+                let yPos = 20;
+                
+                // Helper function to check if we need a new page
+                function checkPageBreak(neededSpace) {
+                    if (yPos + neededSpace > pageHeight - 20) {
+                        doc.addPage();
+                        yPos = 20;
+                        return true;
+                    }
+                    return false;
+                }
+                
+                // Helper function to add text with word wrap
+                function addText(text, x, y, options = {}) {
+                    const fontSize = options.fontSize || 10;
+                    const maxWidth = options.maxWidth || contentWidth;
+                    const align = options.align || 'left';
+                    
+                    doc.setFontSize(fontSize);
+                    if (options.bold) doc.setFont('helvetica', 'bold');
+                    else doc.setFont('helvetica', 'normal');
+                    
+                    const lines = doc.splitTextToSize(text, maxWidth);
+                    lines.forEach((line, index) => {
+                        checkPageBreak(fontSize * 0.5);
+                        doc.text(line, x, y + (index * fontSize * 0.5), { align: align });
+                    });
+                    
+                    return y + (lines.length * fontSize * 0.5);
+                }
+                
+                // ============================================
+                // HEADER
+                // ============================================
+                doc.setFillColor(41, 128, 185);
+                doc.rect(0, 0, pageWidth, 40, 'F');
+                
+                doc.setTextColor(255, 255, 255);
+                doc.setFontSize(22);
+                doc.setFont('helvetica', 'bold');
+                doc.text('TBFS LOAN STATEMENT', pageWidth / 2, 18, { align: 'center' });
+                
+                doc.setFontSize(12);
+                doc.setFont('helvetica', 'normal');
+                doc.text(`Loan #${loan.loan_id} - ${loan.client_name}`, pageWidth / 2, 30, { align: 'center' });
+                
+                doc.setTextColor(0, 0, 0);
+                yPos = 50;
+                
+                // ============================================
+                // LOAN SUMMARY
+                // ============================================
+                checkPageBreak(40);
+                doc.setFillColor(236, 240, 241);
+                doc.rect(margin, yPos, contentWidth, 8, 'F');
+                doc.setFontSize(14);
+                doc.setFont('helvetica', 'bold');
+                doc.text('LOAN SUMMARY', margin + 2, yPos + 5.5);
+                yPos += 12;
+                
+                const principal = loan.original_principal || loan.principal_amount || loan.principal || 0;
+                const loanType = loan.loan_type === 'stockvel' ? 'Stockvel Member' : 'Standard';
+                const createdDate = new Date(loan.created_at || Date.now()).toLocaleDateString('en-ZA');
+                
+                doc.setFontSize(10);
+                doc.setFont('helvetica', 'normal');
+                
+                const summaryData = [
+                    ['Loan Type:', loanType],
+                    ['Original Principal:', Calculations.formatCurrency(principal)],
+                    ['Term:', `${loan.term_months} months`],
+                    ['Monthly Payment:', Calculations.formatCurrency(loan.monthly_payment || 0)],
+                    ['Status:', loan.status.toUpperCase()],
+                    ['Created:', createdDate]
+                ];
+                
+                if (loan.completion_date) {
+                    summaryData.push(['Completed:', new Date(loan.completion_date).toLocaleDateString('en-ZA')]);
+                }
+                
+                if (loan.early_payoff) {
+                    summaryData.push(['Early Payoff:', `YES (Month ${loan.payoff_month})`]);
+                    summaryData.push(['Savings:', Calculations.formatCurrency(loan.savings_from_early_payoff || 0)]);
+                }
+                
+                summaryData.forEach(([label, value]) => {
+                    checkPageBreak(6);
+                    doc.setFont('helvetica', 'bold');
+                    doc.text(label, margin + 5, yPos);
+                    doc.setFont('helvetica', 'normal');
+                    doc.text(value, margin + 60, yPos);
+                    yPos += 6;
+                });
+                
+                yPos += 5;
+                
+                // ============================================
+                // FINANCIAL BREAKDOWN
+                // ============================================
+                checkPageBreak(50);
+                doc.setFillColor(236, 240, 241);
+                doc.rect(margin, yPos, contentWidth, 8, 'F');
+                doc.setFontSize(14);
+                doc.setFont('helvetica', 'bold');
+                doc.text('FINANCIAL BREAKDOWN', margin + 2, yPos + 5.5);
+                yPos += 12;
+                
+                const totalInterest = loan.total_interest || 0;
+                const totalInitiationFee = loan.total_initiation_fee || 0;
+                const totalAdminFees = (loan.term_months || 0) * 60;
+                const totalCost = principal + totalInterest + totalInitiationFee + totalAdminFees;
+                
+                doc.setFontSize(10);
+                doc.setFont('helvetica', 'normal');
+                
+                const financialData = [
+                    ['Original Principal:', Calculations.formatCurrency(principal)],
+                    ['Total Interest:', Calculations.formatCurrency(totalInterest)],
+                    ['Initiation Fee:', Calculations.formatCurrency(totalInitiationFee)],
+                    ['Admin Fees:', Calculations.formatCurrency(totalAdminFees)]
+                ];
+                
+                financialData.forEach(([label, value]) => {
+                    checkPageBreak(6);
+                    doc.setFont('helvetica', 'normal');
+                    doc.text(label, margin + 5, yPos);
+                    doc.text(value, margin + 60, yPos);
+                    yPos += 6;
+                });
+                
+                // Total line
+                checkPageBreak(8);
+                doc.setDrawColor(0, 0, 0);
+                doc.line(margin + 55, yPos, margin + contentWidth - 5, yPos);
+                yPos += 5;
+                doc.setFont('helvetica', 'bold');
+                doc.text('TOTAL LOAN COST:', margin + 5, yPos);
+                doc.text(Calculations.formatCurrency(totalCost), margin + 60, yPos);
+                yPos += 10;
+                
+                if (loan.interest_calculation_months) {
+                    checkPageBreak(6);
+                    doc.setFont('helvetica', 'normal');
+                    doc.setFontSize(9);
+                    doc.text(`Interest Period: ${loan.interest_calculation_months} months`, margin + 5, yPos);
+                    yPos += 5;
+                    
+                    if (loan.interest_recalculated) {
+                        doc.setTextColor(231, 76, 60);
+                        doc.text('⚠ Interest Recalculated due to early overpayment', margin + 5, yPos);
+                        yPos += 5;
+                        doc.setFont('helvetica', 'bold');
+                        doc.text(`New Max Interest: ${Calculations.formatCurrency(loan.max_interest_allowed || 0)}`, margin + 5, yPos);
+                        doc.setTextColor(0, 0, 0);
+                        yPos += 5;
+                    }
+                }
+                
+                yPos += 5;
+                
+                // ============================================
+                // CURRENT POSITION
+                // ============================================
+                checkPageBreak(80);
+                doc.setFillColor(236, 240, 241);
+                doc.rect(margin, yPos, contentWidth, 8, 'F');
+                doc.setFontSize(14);
+                doc.setFont('helvetica', 'bold');
+                doc.text('CURRENT POSITION', margin + 2, yPos + 5.5);
+                yPos += 12;
+                
+                const remainingPrincipal = loan.remaining_principal || 0;
+                const interestPaid = loan.interest_paid || 0;
+                const interestRemaining = Math.max(0, totalInterest - interestPaid);
+                const initiationFeePaid = loan.initiation_fee_paid || 0;
+                const initiationFeeRemaining = Math.max(0, totalInitiationFee - initiationFeePaid);
+                const paymentsMade = loan.payments_made || 0;
+                const paymentsRemaining = (loan.term_months || 0) - paymentsMade;
+                const totalPrincipalReceived = loan.total_principal_received || 0;
+                const progress = ((paymentsMade / (loan.term_months || 1)) * 100).toFixed(1);
+                
+                doc.setFontSize(10);
+                doc.setFont('helvetica', 'normal');
+                
+                const positionData = [
+                    ['Payments Made:', `${paymentsMade} of ${loan.term_months}`],
+                    ['Payments Remaining:', `${paymentsRemaining}`],
+                    ['Progress:', `${progress}%`],
+                    ['', ''],
+                    ['Principal Paid:', Calculations.formatCurrency(totalPrincipalReceived)],
+                    ['Principal Remaining:', Calculations.formatCurrency(remainingPrincipal)],
+                    ['', ''],
+                    ['Interest Paid:', Calculations.formatCurrency(interestPaid)],
+                    ['Interest Remaining:', Calculations.formatCurrency(interestRemaining)],
+                    ['', ''],
+                    ['Initiation Fee Paid:', Calculations.formatCurrency(initiationFeePaid)],
+                    ['Initiation Fee Remaining:', Calculations.formatCurrency(initiationFeeRemaining)],
+                    ['', ''],
+                    ['Admin Fees Paid:', Calculations.formatCurrency(paymentsMade * 60)],
+                    ['Admin Fees Remaining:', Calculations.formatCurrency(paymentsRemaining * 60)]
+                ];
+                
+                positionData.forEach(([label, value]) => {
+                    if (label === '') {
+                        yPos += 3;
+                        return;
+                    }
+                    checkPageBreak(6);
+                    doc.text(label, margin + 5, yPos);
+                    doc.text(value, margin + 70, yPos);
+                    yPos += 6;
+                });
+                
+                // Totals
+                checkPageBreak(10);
+                const totalPaid = totalPrincipalReceived + interestPaid + initiationFeePaid + (paymentsMade * 60);
+                const totalRemaining = remainingPrincipal + interestRemaining + initiationFeeRemaining + (paymentsRemaining * 60);
+                
+                doc.line(margin + 65, yPos, margin + contentWidth - 5, yPos);
+                yPos += 5;
+                doc.setFont('helvetica', 'bold');
+                doc.text('TOTAL PAID:', margin + 5, yPos);
+                doc.text(Calculations.formatCurrency(totalPaid), margin + 70, yPos);
+                yPos += 6;
+                doc.text('TOTAL REMAINING:', margin + 5, yPos);
+                doc.text(Calculations.formatCurrency(totalRemaining), margin + 70, yPos);
+                yPos += 10;
+                
+                // ============================================
+                // ACTIVITY HISTORY
+                // ============================================
+                checkPageBreak(30);
+                doc.setFillColor(236, 240, 241);
+                doc.rect(margin, yPos, contentWidth, 8, 'F');
+                doc.setFontSize(14);
+                doc.setFont('helvetica', 'bold');
+                doc.text('ACTIVITY HISTORY', margin + 2, yPos + 5.5);
+                yPos += 12;
+                
+                // Build activities
+                const activities = [];
+                
+                activities.push({
+                    date: new Date(loan.created_at || Date.now()),
+                    type: 'creation',
+                    description: 'Loan created and disbursed',
+                    amount: principal
+                });
+                
+                if (loan.payment_history && loan.payment_history.length > 0) {
+                    loan.payment_history.forEach((payment, index) => {
+                        const paymentNum = index + 1;
+                        let description = `Payment #${paymentNum}: `;
+                        const parts = [];
+                        
+                        if (payment.principal > 0) parts.push(`Principal: ${Calculations.formatCurrency(payment.principal)}`);
+                        if (payment.interest > 0) parts.push(`Interest: ${Calculations.formatCurrency(payment.interest)}`);
+                        if (payment.initiation_fee > 0) parts.push(`Init Fee: ${Calculations.formatCurrency(payment.initiation_fee)}`);
+                        if (payment.admin_fee > 0) parts.push(`Admin: ${Calculations.formatCurrency(payment.admin_fee)}`);
+                        
+                        description += parts.join(', ');
+                        
+                        activities.push({
+                            date: new Date(payment.date),
+                            type: 'payment',
+                            description: description,
+                            subDescription: `Balance after: ${Calculations.formatCurrency(payment.remaining_principal_after)} | Payments: ${payment.payments_made_after}/${loan.term_months}`,
+                            amount: payment.amount,
+                            recalculated: payment.interest_recalculated,
+                            newMaxInterest: payment.new_max_interest
+                        });
+                    });
+                }
+                
+                if (loan.early_payoff && loan.payoff_date) {
+                    activities.push({
+                        date: new Date(loan.payoff_date),
+                        type: 'early_payoff',
+                        description: `Early payoff in month ${loan.payoff_month}`,
+                        subDescription: `Saved: ${Calculations.formatCurrency(loan.savings_from_early_payoff || 0)}`,
+                        amount: loan.payoff_amount || 0
+                    });
+                }
+                
+                if (loan.status === 'completed' && loan.completion_date) {
+                    activities.push({
+                        date: new Date(loan.completion_date),
+                        type: 'completion',
+                        description: 'Loan fully paid and completed',
+                        amount: 0
+                    });
+                }
+                
+                if (loan.status === 'defaulted' && loan.default_date) {
+                    activities.push({
+                        date: new Date(loan.default_date),
+                        type: 'default',
+                        description: 'Loan marked as DEFAULTED',
+                        amount: 0
+                    });
+                }
+                
+                activities.sort((a, b) => a.date - b.date);
+                
+                doc.setFontSize(9);
+                doc.setFont('helvetica', 'normal');
+                
+                if (activities.length === 0) {
+                    doc.text('No activity recorded yet.', margin + 5, yPos);
+                    yPos += 6;
+                } else {
+                    activities.forEach((activity) => {
+                        checkPageBreak(20);
+                        
+                        const dateStr = activity.date.toLocaleDateString('en-ZA', {
+                            year: 'numeric', month: 'short', day: 'numeric'
+                        });
+                        const timeStr = activity.date.toLocaleTimeString('en-ZA', {
+                            hour: '2-digit', minute: '2-digit'
+                        });
+                        
+                        // Date and time
+                        doc.setFont('helvetica', 'bold');
+                        doc.text(`${dateStr} ${timeStr}`, margin + 5, yPos);
+                        yPos += 5;
+                        
+                        // Description
+                        doc.setFont('helvetica', 'normal');
+                        const descLines = doc.splitTextToSize(activity.description, contentWidth - 15);
+                        descLines.forEach(line => {
+                            checkPageBreak(5);
+                            doc.text(line, margin + 10, yPos);
+                            yPos += 4;
+                        });
+                        
+                        // Sub-description
+                        if (activity.subDescription) {
+                            doc.setFontSize(8);
+                            doc.setTextColor(100, 100, 100);
+                            const subLines = doc.splitTextToSize(activity.subDescription, contentWidth - 15);
+                            subLines.forEach(line => {
+                                checkPageBreak(5);
+                                doc.text(line, margin + 10, yPos);
+                                yPos += 4;
+                            });
+                            doc.setFontSize(9);
+                            doc.setTextColor(0, 0, 0);
+                        }
+                        
+                        // Amount
+                        if (activity.amount > 0) {
+                            doc.setFont('helvetica', 'bold');
+                            doc.text(`Amount: ${Calculations.formatCurrency(activity.amount)}`, margin + 10, yPos);
+                            doc.setFont('helvetica', 'normal');
+                            yPos += 4;
+                        }
+                        
+                        // Recalculation note
+                        if (activity.recalculated) {
+                            doc.setTextColor(231, 76, 60);
+                            doc.setFont('helvetica', 'bold');
+                            doc.text(`⚠ Interest recalculated! New max: ${Calculations.formatCurrency(activity.newMaxInterest)}`, margin + 10, yPos);
+                            doc.setFont('helvetica', 'normal');
+                            doc.setTextColor(0, 0, 0);
+                            yPos += 4;
+                        }
+                        
+                        yPos += 3;
+                    });
+                }
+                
+                // ============================================
+                // FOOTER on each page
+                // ============================================
+                const pageCount = doc.internal.getNumberOfPages();
+                for (let i = 1; i <= pageCount; i++) {
+                    doc.setPage(i);
+                    doc.setFontSize(8);
+                    doc.setFont('helvetica', 'normal');
+                    doc.setTextColor(128, 128, 128);
+                    doc.text(`Generated: ${new Date().toLocaleString('en-ZA')}`, margin, pageHeight - 10);
+                    doc.text(`Page ${i} of ${pageCount}`, pageWidth - margin, pageHeight - 10, { align: 'right' });
+                    doc.text('TBFS - Transparent, Fair, Simple', pageWidth / 2, pageHeight - 10, { align: 'center' });
+                }
+                
+                // Download
+                const filename = `TBFS_Loan_Statement_${loan.loan_id}_${loan.client_name.replace(/\s+/g, '_')}_${new Date().toISOString().split('T')[0]}.pdf`;
+                
+                // Mobile-friendly download
+                if (/Android|webOS|iPhone|iPad|iPod/i.test(navigator.userAgent)) {
+                    const blob = doc.output('blob');
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = filename;
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
+                    URL.revokeObjectURL(url);
+                } else {
+                    doc.save(filename);
+                }
+                
+                alert(`✅ Loan statement downloaded!\n\nFile: ${filename}`);
+                
+            } catch (error) {
+                console.error('Error generating PDF:', error);
+                alert(`❌ Error generating PDF:\n\n${error.message}`);
+            }
+        }
+        
+        /**
          * View comprehensive loan statement with full activity history
          */
         function viewLoanDetails(loanId) {
@@ -1396,8 +1834,17 @@ TBFS - Transparent, Fair, Simple
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 `;
             
-            // Display in alert (for now, could be modal later)
-            alert(statement);
+            // Display in alert with option to download PDF
+            const choice = confirm(
+                statement + 
+                '\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n' +
+                '📥 Would you like to download this statement as PDF?\n\n' +
+                'Click OK to download PDF, or Cancel to close.'
+            );
+            
+            if (choice) {
+                downloadLoanStatementPDF(loanId);
+            }
         }
         
         /**
