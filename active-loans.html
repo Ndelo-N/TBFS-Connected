@@ -1125,7 +1125,7 @@ Click "OK" to process payment or "Cancel" to go back.
         }
         
         /**
-         * View loan details
+         * View comprehensive loan statement with full activity history
          */
         function viewLoanDetails(loanId) {
             const loan = allLoans.find(l => l.loan_id === loanId);
@@ -1134,21 +1134,270 @@ Click "OK" to process payment or "Cancel" to go back.
                 return;
             }
             
-            const details = `
-📋 Loan #${loan.loan_id} - Details
-
-👤 Client: ${loan.client_name}
-💰 Principal: ${Calculations.formatCurrency(loan.principal || 0)}
-📅 Term: ${loan.term_months} months
-💳 Monthly Payment: ${Calculations.formatCurrency(loan.monthly_payment || 0)}
-📊 Payments Made: ${loan.payments_made || 0}/${loan.term_months}
-💵 Remaining Principal: ${Calculations.formatCurrency(loan.remaining_principal || 0)}
-📋 Status: ${loan.status}
-📅 Created: ${new Date(loan.created_at).toLocaleDateString('en-ZA')}
-${loan.completion_date ? `✅ Completed: ${new Date(loan.completion_date).toLocaleDateString('en-ZA')}` : ''}
-            `.trim();
+            // Build comprehensive loan statement
+            let statement = '';
             
-            alert(details);
+            // ============================================
+            // HEADER - Loan Summary
+            // ============================================
+            statement += `
+╔════════════════════════════════════════════════╗
+║        TBFS LOAN STATEMENT                     ║
+║        Loan #${loan.loan_id} - ${loan.client_name.padEnd(28, ' ')}║
+╚════════════════════════════════════════════════╝
+
+📋 LOAN SUMMARY
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+`;
+            
+            const principal = loan.original_principal || loan.principal_amount || loan.principal || 0;
+            const loanType = loan.loan_type === 'stockvel' ? '🌟 Stockvel Member' : '📄 Standard';
+            const createdDate = new Date(loan.created_at || Date.now()).toLocaleDateString('en-ZA', {
+                year: 'numeric', month: 'short', day: 'numeric'
+            });
+            
+            statement += `
+Loan Type:              ${loanType}
+Original Principal:     ${Calculations.formatCurrency(principal)}
+Term:                   ${loan.term_months} months
+Monthly Payment:        ${Calculations.formatCurrency(loan.monthly_payment || 0)}
+Status:                 ${loan.status.toUpperCase()}
+Created:                ${createdDate}
+`;
+            
+            if (loan.completion_date) {
+                const completedDate = new Date(loan.completion_date).toLocaleDateString('en-ZA', {
+                    year: 'numeric', month: 'short', day: 'numeric'
+                });
+                statement += `Completed:              ${completedDate}\n`;
+            }
+            
+            if (loan.early_payoff) {
+                statement += `Early Payoff:           ✅ YES (Month ${loan.payoff_month})\n`;
+                statement += `Savings from Early:     ${Calculations.formatCurrency(loan.savings_from_early_payoff || 0)}\n`;
+            }
+            
+            // ============================================
+            // FINANCIAL BREAKDOWN
+            // ============================================
+            statement += `
+\n💰 FINANCIAL BREAKDOWN
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+`;
+            
+            const totalInterest = loan.total_interest || 0;
+            const totalInitiationFee = loan.total_initiation_fee || 0;
+            const totalAdminFees = (loan.term_months || 0) * 60;
+            const totalCost = principal + totalInterest + totalInitiationFee + totalAdminFees;
+            
+            statement += `
+Original Principal:     ${Calculations.formatCurrency(principal)}
+Total Interest:         ${Calculations.formatCurrency(totalInterest)}
+Initiation Fee:         ${Calculations.formatCurrency(totalInitiationFee)}
+Admin Fees:             ${Calculations.formatCurrency(totalAdminFees)}
+                        ────────────────────
+TOTAL LOAN COST:        ${Calculations.formatCurrency(totalCost)}
+`;
+            
+            // Interest calculation details
+            if (loan.interest_calculation_months) {
+                statement += `\n📊 Interest Period:     ${loan.interest_calculation_months} months\n`;
+                if (loan.interest_recalculated) {
+                    statement += `⚠️  Interest Recalculated: YES (due to early overpayment)\n`;
+                    statement += `   New Max Interest:    ${Calculations.formatCurrency(loan.max_interest_allowed || 0)}\n`;
+                }
+            }
+            
+            // ============================================
+            // CURRENT POSITION
+            // ============================================
+            statement += `
+\n📈 CURRENT POSITION
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+`;
+            
+            const remainingPrincipal = loan.remaining_principal || 0;
+            const interestPaid = loan.interest_paid || 0;
+            const interestRemaining = Math.max(0, totalInterest - interestPaid);
+            const initiationFeePaid = loan.initiation_fee_paid || 0;
+            const initiationFeeRemaining = Math.max(0, totalInitiationFee - initiationFeePaid);
+            const paymentsMade = loan.payments_made || 0;
+            const paymentsRemaining = (loan.term_months || 0) - paymentsMade;
+            const totalPrincipalReceived = loan.total_principal_received || 0;
+            
+            statement += `
+Payments Made:          ${paymentsMade} of ${loan.term_months}
+Payments Remaining:     ${paymentsRemaining}
+Progress:               ${((paymentsMade / (loan.term_months || 1)) * 100).toFixed(1)}%
+
+Principal Paid:         ${Calculations.formatCurrency(totalPrincipalReceived)}
+Principal Remaining:    ${Calculations.formatCurrency(remainingPrincipal)}
+
+Interest Paid:          ${Calculations.formatCurrency(interestPaid)}
+Interest Remaining:     ${Calculations.formatCurrency(interestRemaining)}
+
+Initiation Fee Paid:    ${Calculations.formatCurrency(initiationFeePaid)}
+Initiation Fee Remaining: ${Calculations.formatCurrency(initiationFeeRemaining)}
+
+Admin Fees Paid:        ${Calculations.formatCurrency((paymentsMade * 60))}
+Admin Fees Remaining:   ${Calculations.formatCurrency((paymentsRemaining * 60))}
+`;
+            
+            const totalPaid = totalPrincipalReceived + interestPaid + initiationFeePaid + (paymentsMade * 60);
+            const totalRemaining = remainingPrincipal + interestRemaining + initiationFeeRemaining + (paymentsRemaining * 60);
+            
+            statement += `
+                        ────────────────────
+TOTAL PAID:             ${Calculations.formatCurrency(totalPaid)}
+TOTAL REMAINING:        ${Calculations.formatCurrency(totalRemaining)}
+`;
+            
+            // ============================================
+            // PAYMENT HISTORY / ACTIVITY LOG
+            // ============================================
+            statement += `
+\n📜 ACTIVITY HISTORY
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+`;
+            
+            // Build activity timeline
+            const activities = [];
+            
+            // 1. Loan Creation
+            activities.push({
+                date: new Date(loan.created_at || Date.now()),
+                type: 'creation',
+                description: 'Loan created and disbursed',
+                amount: principal,
+                icon: '🆕'
+            });
+            
+            // 2. Payment History
+            if (loan.payment_history && loan.payment_history.length > 0) {
+                loan.payment_history.forEach((payment, index) => {
+                    const paymentNum = index + 1;
+                    let description = `Payment #${paymentNum}: `;
+                    description += `Principal: ${Calculations.formatCurrency(payment.principal)}`;
+                    
+                    if (payment.interest > 0) {
+                        description += `, Interest: ${Calculations.formatCurrency(payment.interest)}`;
+                    }
+                    if (payment.initiation_fee > 0) {
+                        description += `, Init Fee: ${Calculations.formatCurrency(payment.initiation_fee)}`;
+                    }
+                    if (payment.admin_fee > 0) {
+                        description += `, Admin: ${Calculations.formatCurrency(payment.admin_fee)}`;
+                    }
+                    
+                    description += `\n   → Balance after: ${Calculations.formatCurrency(payment.remaining_principal_after)}`;
+                    description += ` | Payments: ${payment.payments_made_after}/${loan.term_months}`;
+                    
+                    if (payment.interest_recalculated) {
+                        description += `\n   🔄 Interest recalculated! New max: ${Calculations.formatCurrency(payment.new_max_interest)}`;
+                    }
+                    
+                    activities.push({
+                        date: new Date(payment.date),
+                        type: 'payment',
+                        description: description,
+                        amount: payment.amount,
+                        icon: '💰'
+                    });
+                });
+            }
+            
+            // 3. Interest Recalculation Events
+            if (loan.interest_recalculated && loan.last_recalculation_date) {
+                // Check if not already shown in payment
+                const recalcAlreadyShown = activities.some(a => 
+                    a.type === 'payment' && 
+                    a.date.toISOString() === new Date(loan.last_recalculation_date).toISOString()
+                );
+                
+                if (!recalcAlreadyShown) {
+                    activities.push({
+                        date: new Date(loan.last_recalculation_date),
+                        type: 'recalculation',
+                        description: `Interest recalculated due to overpayment\n   → New max interest: ${Calculations.formatCurrency(loan.max_interest_allowed)}`,
+                        amount: 0,
+                        icon: '🔄'
+                    });
+                }
+            }
+            
+            // 4. Early Payoff
+            if (loan.early_payoff && loan.payoff_date) {
+                activities.push({
+                    date: new Date(loan.payoff_date),
+                    type: 'early_payoff',
+                    description: `Early payoff in month ${loan.payoff_month}\n   → Saved: ${Calculations.formatCurrency(loan.savings_from_early_payoff || 0)}`,
+                    amount: loan.payoff_amount || 0,
+                    icon: '🎯'
+                });
+            }
+            
+            // 5. Completion
+            if (loan.status === 'completed' && loan.completion_date) {
+                activities.push({
+                    date: new Date(loan.completion_date),
+                    type: 'completion',
+                    description: 'Loan fully paid and completed',
+                    amount: 0,
+                    icon: '✅'
+                });
+            }
+            
+            // 6. Default
+            if (loan.status === 'defaulted' && loan.default_date) {
+                activities.push({
+                    date: new Date(loan.default_date),
+                    type: 'default',
+                    description: 'Loan marked as DEFAULTED',
+                    amount: 0,
+                    icon: '⚠️'
+                });
+            }
+            
+            // Sort activities by date (oldest first)
+            activities.sort((a, b) => a.date - b.date);
+            
+            // Display activities
+            if (activities.length === 0) {
+                statement += `\nNo activity recorded yet.\n`;
+            } else {
+                activities.forEach((activity, index) => {
+                    const dateStr = activity.date.toLocaleDateString('en-ZA', {
+                        year: 'numeric',
+                        month: 'short',
+                        day: 'numeric'
+                    });
+                    
+                    const timeStr = activity.date.toLocaleTimeString('en-ZA', {
+                        hour: '2-digit',
+                        minute: '2-digit'
+                    });
+                    
+                    statement += `\n${activity.icon} ${dateStr} ${timeStr}\n`;
+                    statement += `   ${activity.description}\n`;
+                    
+                    if (activity.amount > 0) {
+                        statement += `   Amount: ${Calculations.formatCurrency(activity.amount)}\n`;
+                    }
+                });
+            }
+            
+            // ============================================
+            // FOOTER
+            // ============================================
+            statement += `
+\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Generated: ${new Date().toLocaleString('en-ZA')}
+TBFS - Transparent, Fair, Simple
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+`;
+            
+            // Display in alert (for now, could be modal later)
+            alert(statement);
         }
         
         /**
