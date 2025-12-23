@@ -450,6 +450,20 @@
                             <strong style="color: #7f8c8d;">${loanDateStr}</strong>
                         </div>
                         
+                        ${loan.payment_history && loan.payment_history.length > 0 ? `
+                        <div class="info-row">
+                            <span>💳 Last Payment:</span>
+                            <strong style="color: #27ae60;">
+                                ${new Date(loan.payment_history[loan.payment_history.length - 1].date).toLocaleDateString('en-ZA', {
+                                    year: 'numeric',
+                                    month: 'short',
+                                    day: 'numeric'
+                                })}
+                                (${Calculations.formatCurrency(loan.payment_history[loan.payment_history.length - 1].amount)})
+                            </strong>
+                        </div>
+                        ` : ''}
+                        
                         ${loan.status === 'active' ? `
                         <div class="info-row">
                             <span>📆 Next Payment Due:</span>
@@ -785,6 +799,34 @@ Click "OK" to process payment or "Cancel" to go back.
             
             const amount = parseFloat(paymentAmount);
             
+            // Get payment date
+            const today = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
+            const paymentDateInput = prompt(
+                `📅 Enter payment date for Loan #${loanId}\n\n` +
+                `Amount: ${Calculations.formatCurrency(amount)}\n\n` +
+                `Enter date (YYYY-MM-DD):\n` +
+                `💡 Press OK for today (${today}) or enter a different date`
+            , today);
+            
+            if (!paymentDateInput) {
+                alert('❌ Payment cancelled!');
+                return;
+            }
+            
+            // Validate and parse date
+            let paymentDate;
+            try {
+                paymentDate = new Date(paymentDateInput);
+                if (isNaN(paymentDate.getTime())) {
+                    throw new Error('Invalid date');
+                }
+                // Convert to ISO string for consistent storage
+                paymentDate = paymentDate.toISOString();
+            } catch (error) {
+                alert(`❌ Invalid date format!\n\nPlease use YYYY-MM-DD format (e.g., ${today})`);
+                return;
+            }
+            
             // Allocate payment properly
             let remainingAmount = amount;
             let principalPaid = 0;
@@ -879,7 +921,7 @@ Click "OK" to process payment or "Cancel" to go back.
                 
                 // Mark payment as paid (don't increment counter here - will be calculated)
                 nextPayment.status = 'paid';
-                nextPayment.payment_date = new Date().toISOString();
+                nextPayment.payment_date = paymentDate;
                 nextPayment.amount_paid = amount;
             } else {
                 // No schedule - use simple allocation
@@ -893,6 +935,24 @@ Click "OK" to process payment or "Cancel" to go back.
             }
             loan.total_principal_received += principalPaid;
             
+            // Initialize payment history if not exists
+            if (!loan.payment_history) {
+                loan.payment_history = [];
+            }
+            
+            // Add this payment to history
+            loan.payment_history.push({
+                date: paymentDate,
+                amount: amount,
+                principal: principalPaid,
+                interest: interestPaid,
+                admin_fee: adminFeePaid,
+                initiation_fee: initiationFeePaid,
+                payments_made_after: 0, // Will be updated below
+                remaining_principal_after: 0, // Will be updated below
+                interest_recalculated: false // Will be updated if recalc happens
+            });
+            
             // Update loan totals
             loan.remaining_principal = Math.max(0, loan.remaining_principal - principalPaid);
             loan.initiation_fee_paid = (loan.initiation_fee_paid || 0) + initiationFeePaid;
@@ -901,6 +961,11 @@ Click "OK" to process payment or "Cancel" to go back.
             // Calculate payments_made based on principal received
             const principalPerMonth = (loan.original_principal || loan.principal_amount) / loan.term_months;
             loan.payments_made = Math.floor(loan.total_principal_received / principalPerMonth);
+            
+            // Update the payment history entry with calculated values
+            const lastPayment = loan.payment_history[loan.payment_history.length - 1];
+            lastPayment.payments_made_after = loan.payments_made;
+            lastPayment.remaining_principal_after = loan.remaining_principal;
             
             console.log(`💰 Principal Tracking:`);
             console.log(`Total Principal Received: R${loan.total_principal_received.toFixed(2)}`);
@@ -964,7 +1029,12 @@ Click "OK" to process payment or "Cancel" to go back.
                     
                     // Flag for display
                     loan.interest_recalculated = true;
-                    loan.last_recalculation_date = new Date().toISOString();
+                    loan.last_recalculation_date = paymentDate;
+                    
+                    // Update payment history entry
+                    const lastPayment = loan.payment_history[loan.payment_history.length - 1];
+                    lastPayment.interest_recalculated = true;
+                    lastPayment.new_max_interest = newMaxInterest;
                     
                 } catch (error) {
                     console.error('Error recalculating interest:', error);
@@ -991,7 +1061,8 @@ Click "OK" to process payment or "Cancel" to go back.
             if (!AppState.transactionHistory) AppState.transactionHistory = [];
             AppState.transactionHistory.push({
                 type: 'payment',
-                timestamp: new Date().toISOString(),
+                timestamp: new Date().toISOString(), // When transaction was recorded
+                paymentDate: paymentDate, // When payment was actually received
                 details: {
                     loanId: loanId,
                     clientName: loan.client_name,
@@ -1007,8 +1078,7 @@ Click "OK" to process payment or "Cancel" to go back.
                     paymentNumber: loan.payments_made,
                     totalPrincipalReceived: loan.total_principal_received,
                     interestRecalculated: loan.interest_recalculated || false,
-                    newMaxInterest: loan.interest_recalculated ? loan.max_interest_allowed : null,
-                    paymentDate: new Date().toISOString()
+                    newMaxInterest: loan.interest_recalculated ? loan.max_interest_allowed : null
                 }
             });
             
@@ -1025,8 +1095,16 @@ Click "OK" to process payment or "Cancel" to go back.
             const partialMsg = nextPayment && nextPayment.partial_payment ? '\n⚠️ Partial payment recorded - installment not yet complete' : '';
             const recalcMsg = loan.interest_recalculated ? `\n\n🔄 INTEREST RECALCULATED!\nYour overpayment in the first half reduced future interest.\nNew Max Interest: ${Calculations.formatCurrency(loan.max_interest_allowed)}` : '';
             
+            // Format payment date for display
+            const paymentDateFormatted = new Date(paymentDate).toLocaleDateString('en-ZA', {
+                year: 'numeric',
+                month: 'short',
+                day: 'numeric'
+            });
+            
             alert(
                 `✅ Payment Processed Successfully!${completionMsg}${partialMsg}${recalcMsg}\n\n` +
+                `📅 Payment Date: ${paymentDateFormatted}\n` +
                 `💰 Total Paid: ${Calculations.formatCurrency(amount)}\n\n` +
                 `📊 Payment Breakdown:\n` +
                 `• Principal: ${Calculations.formatCurrency(principalPaid)}\n` +
