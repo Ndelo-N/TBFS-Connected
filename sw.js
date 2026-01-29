@@ -1,7 +1,15 @@
-const CACHE_NAME = 'tbfs-loan-manager-v33'; // v1.7.5 - Fix: Standard loan equal installments calculation
+const CACHE_NAME = 'tbfs-loan-manager-v36'; // v1.7.8 - Phase 5: Add Calculator module
 const urlsToCache = [
   './',
   './index.html',
+  './active-loans.html',
+  './stockvel.html',
+  './reports.html',
+  './calculator.html',
+  './shared/app-state.js',
+  './shared/navigation.js',
+  './shared/calculations.js',
+  './shared/styles.css',
   './manifest.json',
   'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js',
   'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js',

@@ -77,22 +77,10 @@
   ],
   "shortcuts": [
     {
-      "name": "New Loan",
-      "short_name": "New Loan",
-      "description": "Calculate a new loan",
-      "url": "./?tab=calculator",
-      "icons": [
-        {
-          "src": "icons/icon-96x96.png",
-          "sizes": "96x96"
-        }
-      ]
-    },
-    {
-      "name": "Dashboard",
-      "short_name": "Dashboard",
-      "description": "View portfolio overview",
-      "url": "./?tab=dashboard",
+      "name": "Loan Calculator",
+      "short_name": "Calculator",
+      "description": "Calculate new loans",
+      "url": "./calculator.html",
       "icons": [
         {
           "src": "icons/icon-96x96.png",
@@ -104,7 +92,19 @@
       "name": "Active Loans",
       "short_name": "Loans",
       "description": "Manage active loans",
-      "url": "./?tab=loans",
+      "url": "./active-loans.html",
+      "icons": [
+        {
+          "src": "icons/icon-96x96.png",
+          "sizes": "96x96"
+        }
+      ]
+    },
+    {
+      "name": "Stockvel Members",
+      "short_name": "Stockvel",
+      "description": "Manage stockvel members",
+      "url": "./stockvel.html",
       "icons": [
         {
           "src": "icons/icon-96x96.png",
