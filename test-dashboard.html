@@ -201,14 +201,14 @@
         <p class="subtitle">Testing Dashboard - December 22, 2025</p>
         
         <div class="progress-bar">
-            <div class="progress-fill">20% Complete</div>
+            <div class="progress-fill" style="width: 60%;">60% Complete</div>
         </div>
         
         <div class="info-box">
             <h4>📋 Current Status</h4>
-            <p><strong>Phase 1:</strong> ✅ Complete - Foundation modules created</p>
-            <p><strong>Phase 5:</strong> ⏳ Ready for Testing - Calculator Module extracted</p>
-            <p><strong>Next:</strong> Phase 6 - Clients Module (after Phase 5 testing)</p>
+            <p><strong>Phase 1–5:</strong> ✅ Complete - Foundation, Active Loans, Stockvel, Reports, Calculator</p>
+            <p><strong>Phase 6:</strong> ✅ Complete - Clients Module extracted</p>
+            <p><strong>Next:</strong> Phase 7 - Settings Module</p>
         </div>
         
         <!-- Phases Grid -->
@@ -227,22 +227,22 @@
                     <p style="font-size: 13px; color: #555;">Active Loans, Stockvel, Reports</p>
                 </div>
                 
-                <div class="phase-card testing">
-                    <div class="phase-status testing">⏳ Testing</div>
+                <div class="phase-card completed">
+                    <div class="phase-status completed">✅ Completed</div>
                     <div class="phase-title">Phase 5: Calculator</div>
-                    <p style="font-size: 13px; color: #555;">Extracted & ready to test (55KB)</p>
+                    <p style="font-size: 13px; color: #555;">Extracted & integrated</p>
+                </div>
+                
+                <div class="phase-card completed">
+                    <div class="phase-status completed">✅ Completed</div>
+                    <div class="phase-title">Phase 6: Clients</div>
+                    <p style="font-size: 13px; color: #555;">Client management module (NEW)</p>
                 </div>
                 
                 <div class="phase-card pending">
                     <div class="phase-status pending">⏸️ Pending</div>
-                    <div class="phase-title">Phase 6-10</div>
-                    <p style="font-size: 13px; color: #555;">Remaining modules + testing</p>
-                </div>
-                
-                <div class="phase-card pending">
-                    <div class="phase-status pending">⏸️ Pending</div>
-                    <div class="phase-title">Phases 4-10</div>
-                    <p style="font-size: 13px; color: #555;">Remaining modules + testing</p>
+                    <div class="phase-title">Phase 7–10</div>
+                    <p style="font-size: 13px; color: #555;">Settings, Dashboard, SW, Final testing</p>
                 </div>
             </div>
         </div>
@@ -278,6 +278,13 @@
                         <span class="badge new">Phase 4 ✓</span>
                     </span>
                     <a href="reports.html" class="btn success">Test Now</a>
+                </li>
+                <li>
+                    <span>
+                        <strong>Clients</strong>
+                        <span class="badge new">Phase 6 ✓</span>
+                    </span>
+                    <a href="clients.html" class="btn success">Test Now</a>
                 </li>
                 <li>
                     <span>
@@ -374,18 +381,17 @@
         <div class="info-box" style="background: #fff3cd; border-left-color: #f39c12; margin-top: 30px;">
             <h4 style="color: #856404;">🎯 Next Steps for Lindelo</h4>
             <ol style="margin-left: 20px; color: #856404;">
-                <li style="margin-bottom: 5px;">Click "<strong>Test Now</strong>" button above to open active-loans.html</li>
-                <li style="margin-bottom: 5px;">Follow the Phase 2 Testing Guide</li>
-                <li style="margin-bottom: 5px;">Test all functionality (display, filtering, payments)</li>
-                <li style="margin-bottom: 5px;">Report any issues found</li>
-                <li style="margin-bottom: 5px;">Once testing passes, we'll move to Phase 3!</li>
+                <li style="margin-bottom: 5px;">Click "<strong>Test Now</strong>" on <strong>Clients</strong> to open clients.html (Phase 6)</li>
+                <li style="margin-bottom: 5px;">Test Add Client, filter/sort, status updates (Activate, Mark Default, Blacklist)</li>
+                <li style="margin-bottom: 5px;">Verify data syncs with Calculator and Active Loans (same AppState)</li>
+                <li style="margin-bottom: 5px;">Report any issues; next up is Phase 7 (Settings)</li>
             </ol>
         </div>
         
         <div style="text-align: center; margin-top: 30px; padding-top: 20px; border-top: 2px solid #e9ecef;">
             <p style="color: #7f8c8d; font-size: 14px;">
-                <strong>TBFS Modularization Project</strong> | December 22, 2025<br>
-                Pair Programming with Lindelo | Phase 2/10 Complete
+                <strong>TBFS Modularization Project</strong> | Phase 6 Complete<br>
+                Pair Programming with Lindelo | 6/10 Phases Complete
             </p>
         </div>
     </div>

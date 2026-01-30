@@ -236,6 +236,7 @@
                                 <th>Total Contributions</th>
                                 <th>Accumulated Bonus</th>
                                 <th>Monthly Amount</th>
+                                <th>Loans</th>
                                 <th>Status</th>
                                 <th>Expires</th>
                                 <th>Actions</th>
@@ -243,7 +244,7 @@
                         </thead>
                         <tbody id="memberRegistryBody">
                             <tr>
-                                <td colspan="9" style="text-align: center; color: #7f8c8d; padding: 40px;">
+                                <td colspan="10" style="text-align: center; color: #7f8c8d; padding: 40px;">
                                     No members registered yet. Register your first member above!
                                 </td>
                             </tr>
@@ -432,11 +433,18 @@
         
         /**
          * Load stockvel dashboard
+         * Unified Model: Filter clients[] by stockvel type and join with stockvelMembers[]
          */
         function loadStockvelDashboard() {
+            // Unified Model: Get stockvel clients from clients[] array
+            const stockvelClients = (AppState.clients || []).filter(c => 
+                (c.client_type || 'standard') === 'stockvel'
+            );
+            
+            // Get stockvel members registry
             const stockvelMembers = AppState.stockvelMembers || [];
             
-            // Populate member selects
+            // Populate member selects (from stockvelMembers registry)
             const receiptSelect = document.getElementById('receiptMember');
             const historySelect = document.getElementById('historyMemberSelect');
             
@@ -447,8 +455,8 @@
             receiptSelect.innerHTML = '<option value="">-- Select Stockvel Member --</option>' + memberOptions;
             historySelect.innerHTML = '<option value="">-- All Members --</option>' + memberOptions;
             
-            // Update stats
-            document.getElementById('totalStockvelMembers').textContent = stockvelMembers.length;
+            // Update stats - Unified Model: Show clients count and members count
+            document.getElementById('totalStockvelMembers').textContent = `${stockvelClients.length} clients (${stockvelMembers.length} in registry)`;
             
             const totalContributions = stockvelMembers.reduce((sum, m) => sum + (m.totalContributions || 0), 0);
             document.getElementById('totalStockvelContributions').textContent = Calculations.formatCurrency(totalContributions);
@@ -475,6 +483,7 @@
         
         /**
          * Register new member
+         * Unified Model: Also creates/updates client entry in clients[]
          */
         function registerNewMember() {
             const name = document.getElementById('newMemberName').value.trim();
@@ -489,9 +498,10 @@
                 return;
             }
             
-            // Ensure stockvelMembers array exists
+            // Ensure arrays exist
             if (!AppState.stockvelMembers) AppState.stockvelMembers = [];
             if (!AppState.stockvelReceipts) AppState.stockvelReceipts = [];
+            if (!AppState.clients) AppState.clients = [];
             if (!AppState.nextMemberNumber) AppState.nextMemberNumber = 1001;
             
             // Generate member number
@@ -500,12 +510,46 @@
             // Calculate membership end date (12 months from start)
             const endDate = Calculations.calculateMembershipEndDate(startDate);
             
-            // Create member object
+            // Split name into first/last
+            const nameParts = name.split(' ');
+            const firstName = nameParts[0] || '';
+            const lastName = nameParts.slice(1).join(' ') || '';
+            
+            // Unified Model: Check if client already exists
+            let existingClient = AppState.clients.find(c => 
+                c.account_number === phone || 
+                (c.memberNumber === memberNumber)
+            );
+            
+            // Create/update client entry
+            if (!existingClient) {
+                // Create new client
+                existingClient = {
+                    account_number: phone,
+                    first_name: firstName,
+                    last_name: lastName,
+                    phone_number: phone,
+                    client_type: 'stockvel',
+                    memberNumber: memberNumber,
+                    total_loans: 0,
+                    total_repayment: 0,
+                    status: 'active'
+                };
+                AppState.clients.push(existingClient);
+            } else {
+                // Update existing client to stockvel type
+                existingClient.client_type = 'stockvel';
+                existingClient.memberNumber = memberNumber;
+                if (!existingClient.phone_number) existingClient.phone_number = phone;
+            }
+            
+            // Create member object (extended data)
             const newMember = {
                 memberNumber: memberNumber,
                 name: name,
                 phone: phone,
                 email: email,
+                account_number: phone, // Link to client
                 membershipStartDate: startDate,
                 membershipEndDate: endDate,
                 monthlyContribution: monthlyContrib,
@@ -515,7 +559,7 @@
                 status: 'active'
             };
             
-            // Add to state
+            // Add to stockvelMembers registry
             AppState.stockvelMembers.push(newMember);
             
             // If initial contribution > 0, create receipt
@@ -538,7 +582,7 @@
             AppStateManager.save(AppState);
             
             // Success message
-            alert(`✅ Member Registered Successfully!\n\nMember #: ${memberNumber}\nName: ${name}\nMembership expires: ${new Date(endDate).toLocaleDateString()}`);
+            alert(`✅ Member Registered Successfully!\n\nMember #: ${memberNumber}\nName: ${name}\nMembership expires: ${new Date(endDate).toLocaleDateString()}\n\n✅ Also added to Clients database.`);
             
             // Clear form
             document.getElementById('registerMemberForm').reset();
@@ -550,17 +594,39 @@
         
         /**
          * Refresh member registry
+         * Unified Model: Join stockvelMembers[] with clients[] to show loan counts
          */
         function refreshMemberRegistry() {
             const tbody = document.getElementById('memberRegistryBody');
             
             if (!AppState.stockvelMembers || AppState.stockvelMembers.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="9" style="text-align: center; color: #7f8c8d; padding: 40px;">No members registered yet. Register your first member above!</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="10" style="text-align: center; color: #7f8c8d; padding: 40px;">No members registered yet. Register your first member above!</td></tr>';
                 return;
             }
             
+            // Unified Model: Get stockvel clients to join with members
+            const stockvelClients = (AppState.clients || []).filter(c => 
+                (c.client_type || 'standard') === 'stockvel'
+            );
+            const loans = AppState.loans || [];
+            
             const today = new Date();
             tbody.innerHTML = AppState.stockvelMembers.map(member => {
+                // Find corresponding client
+                const client = stockvelClients.find(c => 
+                    c.memberNumber === member.memberNumber || 
+                    c.account_number === member.phone ||
+                    c.account_number === member.account_number
+                );
+                
+                // Get loan count for this member
+                const memberLoans = loans.filter(l => 
+                    l.account_number === (client?.account_number || member.phone) ||
+                    l.memberNumber === member.memberNumber
+                );
+                const loanCount = memberLoans.length;
+                const totalBorrowed = memberLoans.reduce((sum, l) => sum + (l.principal_amount || 0), 0);
+                
                 const endDate = new Date(member.membershipEndDate);
                 const daysUntilExpiry = Math.ceil((endDate - today) / (1000 * 60 * 60 * 24));
                 
@@ -575,6 +641,11 @@
                     statusBadge = '<span class="status-badge-active">✅ Active</span>';
                 }
                 
+                // Client link badge
+                const clientLink = client 
+                    ? `<a href="clients.html" style="color: #667eea; text-decoration: none; font-size: 11px;">👤 View Client</a>`
+                    : '<span style="color: #95a5a6; font-size: 11px;">No client entry</span>';
+                
                 return `
                     <tr>
                         <td><strong>${member.memberNumber}</strong></td>
@@ -583,11 +654,13 @@
                         <td style="color: #27ae60; font-weight: 600;">${Calculations.formatCurrency(member.totalContributions || 0)}</td>
                         <td style="color: #f39c12; font-weight: 600;">${Calculations.formatCurrency(member.accumulatedBonus || 0)}</td>
                         <td>${Calculations.formatCurrency(member.monthlyContribution || 0)}</td>
+                        <td><strong>${loanCount}</strong> <small style="color: #7f8c8d;">(${Calculations.formatCurrency(totalBorrowed)})</small></td>
                         <td>${statusBadge}</td>
                         <td>${endDate.toLocaleDateString()}</td>
                         <td>
-                            <button onclick="viewMemberDetails(${member.memberNumber})" class="btn btn-secondary" style="padding: 6px 12px; font-size: 12px;">👁️ View</button>
-                            <button onclick="renewMembership(${member.memberNumber})" class="btn btn-success" style="padding: 6px 12px; font-size: 12px;">🔄 Renew</button>
+                            ${clientLink}<br>
+                            <button onclick="viewMemberDetails(${member.memberNumber})" class="btn btn-secondary" style="padding: 6px 12px; font-size: 12px; margin-top: 5px;">👁️ View</button>
+                            <button onclick="renewMembership(${member.memberNumber})" class="btn btn-success" style="padding: 6px 12px; font-size: 12px; margin-top: 5px;">🔄 Renew</button>
                         </td>
                     </tr>
                 `;

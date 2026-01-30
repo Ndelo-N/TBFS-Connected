@@ -1,0 +1,642 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#667eea">
+    <title>Clients - TBFS</title>
+    
+    <!-- PWA Meta Tags -->
+    <link rel="manifest" href="manifest.json">
+    <link rel="apple-touch-icon" href="icons/icon-192x192.png">
+    <link rel="icon" type="image/png" sizes="32x32" href="icons/icon-32x32.png">
+    
+    <!-- Shared Styles -->
+    <link rel="stylesheet" href="shared/styles.css">
+    
+    <!-- SheetJS for Excel export -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    
+    <!-- Page-Specific Styles -->
+    <style>
+        .client-card {
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            margin-bottom: 20px;
+        }
+        
+        .client-card h4 {
+            color: #2c3e50;
+            margin-bottom: 15px;
+            font-size: 18px;
+        }
+        
+        .info-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 8px 0;
+            border-bottom: 1px solid #f0f0f0;
+        }
+        
+        .info-row:last-child {
+            border-bottom: none;
+        }
+        
+        .status-badge {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 600;
+            text-transform: uppercase;
+        }
+        
+        .status-active {
+            background: #d4edda;
+            color: #155724;
+        }
+        
+        .status-defaulted {
+            background: #f8d7da;
+            color: #721c24;
+        }
+        
+        .status-blacklisted {
+            background: #212529;
+            color: white;
+        }
+        
+        .client-type-badge {
+            display: inline-block;
+            padding: 3px 8px;
+            border-radius: 12px;
+            font-size: 11px;
+            font-weight: 600;
+            margin-left: 8px;
+        }
+        
+        .client-type-standard {
+            background: #e3f2fd;
+            color: #1976d2;
+        }
+        
+        .client-type-stockvel {
+            background: #fff3e0;
+            color: #e65100;
+        }
+        
+        .empty-state {
+            text-align: center;
+            padding: 60px 20px;
+            color: #7f8c8d;
+        }
+        
+        .empty-state-icon {
+            font-size: 64px;
+            margin-bottom: 20px;
+            opacity: 0.3;
+        }
+        
+        .filter-section {
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+            display: flex;
+            gap: 15px;
+            flex-wrap: wrap;
+            align-items: center;
+        }
+        
+        .filter-section select {
+            padding: 10px 15px;
+            border: 2px solid #e9ecef;
+            border-radius: 8px;
+            font-size: 14px;
+        }
+        
+        .stats-summary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 20px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+        }
+        
+        .stats-summary h3 {
+            margin-bottom: 15px;
+        }
+        
+        .stats-row {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 15px;
+        }
+        
+        .stat-item {
+            background: rgba(255, 255, 255, 0.1);
+            padding: 15px;
+            border-radius: 8px;
+        }
+        
+        .stat-label {
+            font-size: 12px;
+            opacity: 0.9;
+            margin-bottom: 5px;
+        }
+        
+        .stat-value {
+            font-size: 24px;
+            font-weight: bold;
+        }
+        
+        .add-client-section {
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            margin-bottom: 20px;
+            border: 2px solid #e9ecef;
+        }
+        
+        .add-client-section h3 {
+            color: #2c3e50;
+            margin-bottom: 15px;
+        }
+        
+        @media (max-width: 768px) {
+            .client-card {
+                padding: 15px;
+            }
+            
+            .info-row {
+                flex-direction: column;
+                align-items: flex-start;
+                gap: 5px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <!-- Navigation Header -->
+    <div id="navigation-header"></div>
+    
+    <!-- Main Container -->
+    <div class="container fade-in">
+        <div class="page-content">
+            <h1 class="mb-lg">👥 Client Management</h1>
+            
+            <!-- Stats Summary -->
+            <div class="stats-summary">
+                <h3>📊 Client Overview</h3>
+                <div class="stats-row">
+                    <div class="stat-item">
+                        <div class="stat-label">Total Clients</div>
+                        <div class="stat-value" id="totalClients">0</div>
+                    </div>
+                    <div class="stat-item">
+                        <div class="stat-label">Active</div>
+                        <div class="stat-value" id="activeClients">0</div>
+                    </div>
+                    <div class="stat-item">
+                        <div class="stat-label">Blacklisted</div>
+                        <div class="stat-value" id="blacklistedClients">0</div>
+                    </div>
+                    <div class="stat-item">
+                        <div class="stat-label">Defaulted</div>
+                        <div class="stat-value" id="defaultedClients">0</div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Add Client (optional - pre-register before loan) -->
+            <div class="add-client-section">
+                <h3>➕ Add New Client</h3>
+                <p class="form-hint mb-md">Pre-register a client before they take a loan. Clients are also added automatically when you accept a loan from the Calculator.</p>
+                <form id="addClientForm" class="form-grid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; align-items: end;">
+                    <div class="form-group">
+                        <label class="form-label">First Name:</label>
+                        <input type="text" id="newClientFirstName" class="form-input" required placeholder="e.g. John">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Last Name:</label>
+                        <input type="text" id="newClientLastName" class="form-input" required placeholder="e.g. Doe">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Account Number:</label>
+                        <input type="text" id="newClientAccountNumber" class="form-input" required placeholder="e.g. ACC001">
+                    </div>
+                    <div class="form-group">
+                        <button type="submit" class="btn btn-success">Add Client</button>
+                    </div>
+                </form>
+            </div>
+            
+            <!-- Filter Section -->
+            <div class="filter-section">
+                <label><strong>Filter by Status:</strong></label>
+                <select id="statusFilter" onchange="filterClients()">
+                    <option value="all">All Clients</option>
+                    <option value="active" selected>Active Only</option>
+                    <option value="defaulted">Defaulted</option>
+                    <option value="blacklisted">Blacklisted</option>
+                </select>
+                
+                <label><strong>Filter by Type:</strong></label>
+                <select id="typeFilter" onchange="filterClients()">
+                    <option value="all">All Types</option>
+                    <option value="standard">Standard Only</option>
+                    <option value="stockvel">Stockvel Only</option>
+                </select>
+                
+                <label><strong>Sort by:</strong></label>
+                <select id="sortBy" onchange="filterClients()">
+                    <option value="name">Name (A-Z)</option>
+                    <option value="account">Account Number</option>
+                    <option value="loans">Total Loans (high first)</option>
+                </select>
+                
+                <button class="btn btn-primary" onclick="location.href='calculator.html'" style="margin-left: auto;">
+                    💳 New Loan
+                </button>
+            </div>
+            
+            <!-- Export -->
+            <div class="filter-section" style="margin-top: 15px; padding-top: 15px; border-top: 1px solid #e9ecef;">
+                <button class="btn btn-success" onclick="exportToExcel()">📊 Export to Excel</button>
+            </div>
+            
+            <!-- Client Database Table -->
+            <h3 class="card-header mt-lg">Client Database</h3>
+            <div class="table-container">
+                <table class="breakdown-table" id="clientsTable">
+                    <thead>
+                        <tr>
+                            <th>Account Number</th>
+                            <th>Client Name</th>
+                            <th>Total Loans</th>
+                            <th>Total Repayment</th>
+                            <th>Status</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="clientsTableBody">
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Shared Modules -->
+    <script src="shared/app-state.js"></script>
+    <script src="shared/calculations.js"></script>
+    <script src="shared/navigation.js"></script>
+    
+    <!-- Page Logic -->
+    <script>
+        // Global state
+        let AppState = {};
+        let allClients = [];
+        let currentFilter = 'active';
+        let currentSort = 'name';
+        
+        /**
+         * Initialize page
+         */
+        function init() {
+            AppState = AppStateManager.load();
+            Navigation.init('clients');
+            loadClients();
+            
+            // Listen for state updates from other tabs
+            AppStateManager.onUpdate(() => {
+                console.log('State updated from another tab, reloading...');
+                AppState = AppStateManager.load();
+                loadClients();
+            });
+            
+            // Add client form
+            document.getElementById('addClientForm').addEventListener('submit', handleAddClient);
+            
+            console.log('✅ Clients page initialized');
+        }
+        
+        /**
+         * Load and display all clients
+         */
+        function loadClients() {
+            allClients = AppState.clients || [];
+            updateStats();
+            filterClients();
+        }
+        
+        /**
+         * Update statistics
+         */
+        function updateStats() {
+            const active = allClients.filter(c => c.status === 'active').length;
+            const blacklisted = allClients.filter(c => c.status === 'blacklisted').length;
+            const defaulted = allClients.filter(c => c.status === 'defaulted').length;
+            
+            // Unified Model: Show breakdown by type
+            const standardClients = allClients.filter(c => (c.client_type || 'standard') === 'standard').length;
+            const stockvelClients = allClients.filter(c => (c.client_type || 'standard') === 'stockvel').length;
+            
+            document.getElementById('totalClients').textContent = allClients.length;
+            document.getElementById('activeClients').textContent = `${active} (${standardClients} std, ${stockvelClients} stockvel)`;
+            document.getElementById('blacklistedClients').textContent = blacklisted;
+            document.getElementById('defaultedClients').textContent = defaulted;
+        }
+        
+        /**
+         * Filter and sort clients
+         */
+        function filterClients() {
+            currentFilter = document.getElementById('statusFilter').value;
+            const typeFilter = document.getElementById('typeFilter').value;
+            currentSort = document.getElementById('sortBy').value;
+            
+            let filtered = [...allClients];
+            
+            // Filter by status
+            if (currentFilter !== 'all') {
+                filtered = filtered.filter(c => c.status === currentFilter);
+            }
+            
+            // Filter by type (unified model: show all clients, filter by type)
+            if (typeFilter !== 'all') {
+                filtered = filtered.filter(c => (c.client_type || 'standard') === typeFilter);
+            }
+            
+            filtered.sort((a, b) => {
+                switch (currentSort) {
+                    case 'name':
+                        const nameA = `${(a.first_name || '')} ${(a.last_name || '')}`.toLowerCase();
+                        const nameB = `${(b.first_name || '')} ${(b.last_name || '')}`.toLowerCase();
+                        return nameA.localeCompare(nameB);
+                    case 'account':
+                        return (a.account_number || '').localeCompare(b.account_number || '');
+                    case 'loans':
+                        return (b.total_loans || 0) - (a.total_loans || 0);
+                    default:
+                        return 0;
+                }
+            });
+            
+            displayClients(filtered);
+        }
+        
+        /**
+         * Display clients in table
+         */
+        function displayClients(clients) {
+            const tbody = document.getElementById('clientsTableBody');
+            
+            if (clients.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="6" style="text-align: center; color: #7f8c8d; padding: 40px;">No clients found. Add a client above or accept a loan from the Calculator.</td></tr>';
+                return;
+            }
+            
+            const loans = AppState.loans || [];
+            
+            tbody.innerHTML = clients.map(client => {
+                const clientLoans = loans.filter(l => l.account_number === client.account_number);
+                const totalLoanAmount = clientLoans.reduce((sum, l) => sum + (l.principal_amount || 0), 0);
+                const totalRepayment = client.total_repayment || 0;
+                const firstName = (client.first_name || '').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+                const lastName = (client.last_name || '').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+                const accountDisplay = (client.account_number || '').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+                const status = (client.status || 'active').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+                const accountForAttr = (client.account_number || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/"/g, '&quot;');
+                
+                // Unified Model: Show client type badge
+                const clientType = client.client_type || 'standard';
+                const typeBadge = clientType === 'stockvel' 
+                    ? '<span class="client-type-badge client-type-stockvel">🎁 Stockvel</span>'
+                    : '<span class="client-type-badge client-type-standard">Standard</span>';
+                
+                // Get stockvel member info if applicable
+                let memberInfo = '';
+                if (clientType === 'stockvel' && client.memberNumber) {
+                    const member = (AppState.stockvelMembers || []).find(m => m.memberNumber === client.memberNumber);
+                    if (member) {
+                        memberInfo = ` <small style="color: #7f8c8d;">(Member #${member.memberNumber})</small>`;
+                    }
+                }
+                
+                let actionsHtml = '';
+                // Add New Loan button (always show)
+                const firstNameForUrl = encodeURIComponent(client.first_name || '');
+                const lastNameForUrl = encodeURIComponent(client.last_name || '');
+                const accountForUrl = encodeURIComponent(client.account_number || '');
+                actionsHtml += `<button class="btn btn-primary" style="padding: 5px 10px; font-size: 12px;" onclick="addNewLoan('${firstNameForUrl}', '${lastNameForUrl}', '${accountForUrl}')">💳 New Loan</button> `;
+                
+                // Link to Stockvel page if stockvel member
+                if (clientType === 'stockvel' && client.memberNumber) {
+                    actionsHtml += `<button class="btn btn-warning" style="padding: 5px 10px; font-size: 12px;" onclick="location.href='stockvel.html#member-${client.memberNumber}'">🎁 View Member</button> `;
+                }
+                
+                if (status !== 'active') {
+                    actionsHtml += `<button class="btn btn-success" style="padding: 5px 10px; font-size: 12px;" onclick="updateClientStatus('${accountForAttr}', 'active')">✓ Activate</button> `;
+                }
+                actionsHtml += `<button class="btn btn-danger" style="padding: 5px 10px; font-size: 12px;" onclick="updateClientStatus('${accountForAttr}', 'defaulted')">⚠ Mark Default</button> `;
+                actionsHtml += `<button class="btn" style="padding: 5px 10px; font-size: 12px; background: #8e44ad; color: white;" onclick="updateClientStatus('${accountForAttr}', 'blacklisted')">🚫 Blacklist</button>`;
+                
+                return `
+                    <tr>
+                        <td><strong>${accountDisplay}</strong></td>
+                        <td>${firstName} ${lastName}${typeBadge}${memberInfo}</td>
+                        <td>R ${totalLoanAmount.toFixed(2)}</td>
+                        <td>R ${totalRepayment.toFixed(2)}</td>
+                        <td><span class="status-badge status-${status}">${status}</span></td>
+                        <td><div style="display: flex; gap: 5px; flex-wrap: wrap;">${actionsHtml}</div></td>
+                    </tr>
+                `;
+            }).join('');
+        }
+        
+        /**
+         * Update client status (active, defaulted, blacklisted)
+         * Unified Model: Also syncs member status if stockvel client
+         */
+        function updateClientStatus(accountNumber, newStatus) {
+            const client = AppState.clients.find(c => c.account_number === accountNumber);
+            if (!client) {
+                alert('Client not found');
+                return;
+            }
+            
+            if (newStatus === 'defaulted' || newStatus === 'blacklisted') {
+                if (!confirm(`Are you sure you want to mark this client as ${newStatus.toUpperCase()}? Their active loans will also be updated.`)) {
+                    return;
+                }
+            }
+            
+            const oldStatus = client.status;
+            client.status = newStatus;
+            
+            // Unified Model: Sync member status if stockvel client
+            if ((client.client_type || 'standard') === 'stockvel' && client.memberNumber) {
+                const member = (AppState.stockvelMembers || []).find(m => m.memberNumber === client.memberNumber);
+                if (member) {
+                    member.status = newStatus;
+                }
+            }
+            
+            // If blacklisting or defaulting, update their active loans
+            if (newStatus === 'blacklisted' || newStatus === 'defaulted') {
+                const clientLoans = (AppState.loans || []).filter(l => l.account_number === accountNumber && l.status === 'active');
+                clientLoans.forEach(loan => {
+                    loan.status = newStatus;
+                    AppState.deployed = (AppState.deployed || 0) - (loan.principal_amount || loan.remaining_principal || 0);
+                });
+            }
+            
+            // Recalculate deployed capital (in case of rounding)
+            AppStateManager.recalculateDeployedCapital(AppState);
+            
+            AppStateManager.save(AppState);
+            loadClients();
+            
+            const statusMessages = {
+                'active': '✅ Client activated',
+                'defaulted': '⚠️ Client marked as defaulted',
+                'blacklisted': '🚫 Client blacklisted'
+            };
+            alert(statusMessages[newStatus] || 'Client status updated');
+        }
+        
+        /**
+         * Handle Add Client form submit
+         */
+        function handleAddClient(e) {
+            e.preventDefault();
+            
+            const accountNumber = document.getElementById('newClientAccountNumber').value.trim();
+            const firstName = document.getElementById('newClientFirstName').value.trim();
+            const lastName = document.getElementById('newClientLastName').value.trim();
+            
+            if (!accountNumber || !firstName || !lastName) {
+                alert('Please fill in all fields.');
+                return;
+            }
+            
+            const existing = (AppState.clients || []).find(c => c.account_number === accountNumber);
+            if (existing) {
+                alert(`A client with account number ${accountNumber} already exists.`);
+                return;
+            }
+            
+            const client = {
+                account_number: accountNumber,
+                first_name: firstName,
+                last_name: lastName,
+                total_loans: 0,
+                total_repayment: 0,
+                status: 'active'
+            };
+            
+            if (!AppState.clients) AppState.clients = [];
+            AppState.clients.push(client);
+            AppStateManager.save(AppState);
+            loadClients();
+            
+            document.getElementById('addClientForm').reset();
+            alert(`✅ Client ${firstName} ${lastName} added successfully.`);
+        }
+        
+        /**
+         * Navigate to calculator with client details pre-filled
+         */
+        function addNewLoan(firstName, lastName, accountNumber) {
+            // Navigate to calculator with URL parameters
+            const params = new URLSearchParams({
+                firstName: firstName,
+                lastName: lastName,
+                accountNumber: accountNumber
+            });
+            window.location.href = `calculator.html?${params.toString()}`;
+        }
+        
+        /**
+         * Unified Model: Sync function to ensure client and member are linked
+         * Call this when client is stockvel type to ensure member entry exists
+         */
+        function syncClientToMember(client) {
+            if ((client.client_type || 'standard') !== 'stockvel') return;
+            
+            if (!AppState.stockvelMembers) AppState.stockvelMembers = [];
+            
+            // Find member by memberNumber or account_number/phone
+            let member = AppState.stockvelMembers.find(m => 
+                m.memberNumber === client.memberNumber ||
+                m.phone === client.account_number ||
+                m.account_number === client.account_number
+            );
+            
+            if (!member && client.memberNumber) {
+                // Member should exist but doesn't - create placeholder
+                member = {
+                    memberNumber: client.memberNumber,
+                    name: `${client.first_name || ''} ${client.last_name || ''}`.trim(),
+                    phone: client.account_number,
+                    account_number: client.account_number,
+                    membershipStartDate: new Date().toISOString().split('T')[0],
+                    membershipEndDate: Calculations.calculateMembershipEndDate(new Date().toISOString().split('T')[0]),
+                    monthlyContribution: 0,
+                    totalContributions: client.total_contributions || 0,
+                    accumulatedBonus: 0,
+                    registeredDate: new Date().toISOString(),
+                    status: 'active'
+                };
+                AppState.stockvelMembers.push(member);
+                AppStateManager.save(AppState);
+                console.log('✅ Created missing stockvel member entry for client:', client.account_number);
+            } else if (member) {
+                // Sync member data with client
+                member.account_number = client.account_number;
+                member.phone = client.account_number;
+                if (!member.name || member.name === 'Unknown') {
+                    member.name = `${client.first_name || ''} ${client.last_name || ''}`.trim();
+                }
+            }
+        }
+        
+        /**
+         * Export clients to Excel
+         */
+        function exportToExcel() {
+            const clients = AppState.clients || [];
+            const loans = AppState.loans || [];
+            
+            const data = [
+                ['Account Number', 'First Name', 'Last Name', 'Status', 'Total Loans', 'Total Loan Amount', 'Total Repayment']
+            ];
+            
+            clients.forEach(client => {
+                const clientLoans = loans.filter(l => l.account_number === client.account_number);
+                const totalLoanAmount = clientLoans.reduce((sum, l) => sum + (l.principal_amount || 0), 0);
+                data.push([
+                    client.account_number || '',
+                    client.first_name || '',
+                    client.last_name || '',
+                    client.status || 'active',
+                    clientLoans.length,
+                    totalLoanAmount.toFixed(2),
+                    (client.total_repayment || 0).toFixed(2)
+                ]);
+            });
+            
+            const ws = XLSX.utils.aoa_to_sheet(data);
+            const wb = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(wb, ws, 'Clients');
+            XLSX.writeFile(wb, `TBFS_Clients_${new Date().toISOString().split('T')[0]}.xlsx`);
+            alert('✅ Client list exported to Excel!');
+        }
+        
+        document.addEventListener('DOMContentLoaded', init);
+    </script>
+</body>
+</html>

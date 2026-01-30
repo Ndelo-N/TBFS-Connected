@@ -1,4 +1,4 @@
-const CACHE_NAME = 'tbfs-loan-manager-v36'; // v1.7.8 - Phase 5: Add Calculator module
+const CACHE_NAME = 'tbfs-loan-manager-v37'; // v1.7.9 - Phase 6: Add Clients module
 const urlsToCache = [
   './',
   './index.html',
@@ -6,6 +6,7 @@ const urlsToCache = [
   './stockvel.html',
   './reports.html',
   './calculator.html',
+  './clients.html',
   './shared/app-state.js',
   './shared/navigation.js',
   './shared/calculations.js',

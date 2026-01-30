@@ -640,7 +640,7 @@
     <div id="updateBanner" style="display: none; background: linear-gradient(135deg, #f39c12 0%, #f1c40f 100%); color: white; padding: 15px; text-align: center; position: sticky; top: 0; z-index: 1000; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
         <div style="max-width: 1200px; margin: 0 auto; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px;">
             <div style="flex: 1; min-width: 200px;">
-                <strong>?? New Update Available!</strong>
+                <strong>&#128276; New Update Available!</strong>
                 <p style="margin: 5px 0 0 0; font-size: 14px; opacity: 0.95;">A new version of TBFS is ready to install</p>
             </div>
             <div style="display: flex; gap: 10px;">
@@ -673,16 +673,16 @@
             <button class="tab active" data-tab="calculator">Loan Calculator</button>
             <button class="tab" data-tab="dashboard">Dashboard</button>
             <button class="tab" data-tab="clients">Clients</button>
-            <button class="tab" data-tab="stockvel">?? Stockvel</button>
+            <button class="tab" data-tab="stockvel">&#128203; Stockvel</button>
             <button class="tab" data-tab="loans">Active Loans</button>
-            <button class="tab" data-tab="reports">?? Reports</button>
-            <button class="tab" data-tab="income-table">?? Income Table</button>
-            <button class="tab" data-tab="settings">?? Settings</button>
+            <button class="tab" data-tab="reports">&#128202; Reports</button>
+            <button class="tab" data-tab="income-table">&#128202; Income Table</button>
+            <button class="tab" data-tab="settings">&#9881; Settings</button>
         </div>
 
         <!-- Swipe Indicators -->
-        <div class="swipe-indicator left" id="swipeLeftIndicator">?</div>
-        <div class="swipe-indicator right" id="swipeRightIndicator">?</div>
+        <div class="swipe-indicator left" id="swipeLeftIndicator">&#8592;</div>
+        <div class="swipe-indicator right" id="swipeRightIndicator">&#8594;</div>
 
         <!-- Tabs Container for Swipe Detection -->
         <div class="tabs-container" id="tabsContainer" style="--header-offset: 0px;">
@@ -708,7 +708,7 @@
                         <div class="form-group">
                             <label for="memberNumber">Member # (Optional):</label>
                             <input type="number" id="memberNumber" name="memberNumber" placeholder="e.g. 1001 - auto-fills stockvel data">
-                            <small style="color: #7f8c8d; font-size: 11px;">?? Enter Member # to auto-populate stockvel fields</small>
+                            <small style="color: #7f8c8d; font-size: 11px;">&#128100; Enter Member # to auto-populate stockvel fields</small>
                         </div>
                         <div class="form-group">
                             <label for="principal">Loan Amount (R):</label>
@@ -761,7 +761,7 @@
                                         </ul>
                                     </li>
                                     <li><strong>10% Minimum Interest:</strong> Applied if tiered rate is below 10%</li>
-                                    <li><strong>Admin Fee:</strong> R60 ? (1 - interest rate)</li>
+                                    <li><strong>Admin Fee:</strong> R60 &#215; (1 - interest rate)</li>
                                     <li><strong>Equal Monthly Payments:</strong> Total cost divided evenly across all months</li>
                                     <li><strong>Special Member Benefits:</strong> Additional rewards tracked automatically</li>
                                 </ul>
@@ -869,7 +869,7 @@
             <div id="dashboardAlerts"></div>
 
             <!-- Financial Overview -->
-            <h3 class="section-title">?? Financial Overview</h3>
+            <h3 class="section-title">&#128176; Financial Overview</h3>
             <div class="stats-grid">
                 <div class="stat-card" style="background: linear-gradient(135deg, #27ae60 0%, #2ecc71 100%);">
                     <h3>Account Balance</h3>
@@ -892,7 +892,7 @@
             </div>
 
             <!-- Profitability Metrics -->
-            <h3 class="section-title" style="margin-top: 30px;">?? Profitability & Earnings</h3>
+            <h3 class="section-title" style="margin-top: 30px;">&#128176; Profitability & Earnings</h3>
             <div class="stats-grid">
                 <div class="stat-card" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);">
                     <h3>Total Interest Earned</h3>
@@ -912,7 +912,7 @@
             </div>
 
             <!-- Profit Goal Progress -->
-            <h3 class="section-title" style="margin-top: 30px;">?? Profit Goal Progress</h3>
+            <h3 class="section-title" style="margin-top: 30px;">&#128200; Profit Goal Progress</h3>
             <div style="background: white; padding: 30px; border-radius: 15px; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);">
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; flex-wrap: wrap; gap: 10px;">
                     <div>
@@ -931,7 +931,7 @@
             </div>
 
             <!-- Loan Portfolio Stats -->
-            <h3 class="section-title" style="margin-top: 30px;">?? Loan Portfolio</h3>
+            <h3 class="section-title" style="margin-top: 30px;">&#128203; Loan Portfolio</h3>
             <div class="stats-grid">
                 <div class="stat-card">
                     <h3>Total Loans</h3>
@@ -949,18 +949,18 @@
 
             <h3 style="margin-top: 30px;">Data Management</h3>
             <div style="display: flex; gap: 10px; flex-wrap: wrap; margin-top: 20px;">
-                <button class="btn btn-secondary" onclick="backupData()">?? Backup Data</button>
-                <button class="btn" onclick="restoreData()">?? Restore Data</button>
-                <button class="btn btn-danger" onclick="clearAllData()">?? Clear All Data</button>
+                <button class="btn btn-secondary" onclick="backupData()">&#128190; Backup Data</button>
+                <button class="btn" onclick="restoreData()">&#128260; Restore Data</button>
+                <button class="btn btn-danger" onclick="clearAllData()">&#128465; Clear All Data</button>
             </div>
 
             <!-- Transaction History Section -->
-            <h3 class="section-title" style="margin-top: 30px;">?? Transaction History</h3>
+            <h3 class="section-title" style="margin-top: 30px;">&#128203; Transaction History</h3>
             <div style="background: white; padding: 20px; border-radius: 15px; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);">
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
                     <p style="margin: 0; color: #7f8c8d; font-size: 14px;">Last 20 transactions</p>
                     <button class="btn" id="undoLastPaymentBtn" onclick="undoLastPayment()" style="background: linear-gradient(135deg, #e74c3c 0%, #c0392b 100%); color: white; padding: 8px 16px; font-size: 14px; display: none;">
-                        ? Undo Last Payment
+                        &#128260; Undo Last Payment
                     </button>
                 </div>
                 <div id="transactionHistoryList" style="max-height: 400px; overflow-y: auto;">
@@ -1012,7 +1012,7 @@
 
         <!-- STOCKVEL TAB -->
         <div id="stockvel" class="tab-content">
-            <h2>?? Stockvel Member Management</h2>
+            <h2>&#128203; Stockvel Member Management</h2>
             
             <!-- Stockvel Summary Stats -->
             <div class="stats-grid">
@@ -1036,7 +1036,7 @@
 
             <!-- REGISTER NEW MEMBER SECTION -->
             <div class="form-section" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 25px; border-radius: 15px;">
-                <h3 class="section-title" style="color: white; margin-bottom: 20px;">? Register New Stockvel Member</h3>
+                <h3 class="section-title" style="color: white; margin-bottom: 20px;">&#10133; Register New Stockvel Member</h3>
                 <p style="margin-bottom: 20px; opacity: 0.9;">Members registered here are SEPARATE from clients. Contributions tracked independently - NO loan required!</p>
                 <form id="registerMemberForm" style="background: white; padding: 20px; border-radius: 10px;">
                     <div class="form-grid">
@@ -1065,16 +1065,16 @@
                             <input type="number" id="newMemberInitialContrib" min="0" step="0.01" value="0" placeholder="Starting balance (optional)">
                         </div>
                     </div>
-                    <button type="submit" class="calculate-btn" style="background: linear-gradient(135deg, #27ae60 0%, #229954 100%); margin-top: 15px;">? Register Member</button>
+                    <button type="submit" class="calculate-btn" style="background: linear-gradient(135deg, #27ae60 0%, #229954 100%); margin-top: 15px;">&#9989; Register Member</button>
                 </form>
             </div>
 
             <!-- MEMBER REGISTRY TABLE -->
             <div class="form-section">
-                <h3 class="section-title">?? Member Registry</h3>
+                <h3 class="section-title">&#128203; Member Registry</h3>
                 <div style="margin-bottom: 15px;">
-                    <button onclick="refreshMemberRegistry()" class="export-btn">?? Refresh</button>
-                    <button onclick="exportMemberRegistry()" class="export-btn" style="margin-left: 10px;">?? Export Registry</button>
+                    <button onclick="refreshMemberRegistry()" class="export-btn">&#128260; Refresh</button>
+                    <button onclick="exportMemberRegistry()" class="export-btn" style="margin-left: 10px;">&#128203; Export Registry</button>
                 </div>
                 <div style="overflow-x: auto;">
                     <table class="breakdown-table">
@@ -1104,7 +1104,7 @@
 
             <!-- Receipt Recording Section -->
             <div class="form-section">
-                <h3 class="section-title">?? Record Receipt / Contribution</h3>
+                <h3 class="section-title">&#128176; Record Receipt / Contribution</h3>
                 <form id="receiptForm" style="background: #f8f9fa; padding: 20px; border-radius: 10px;">
                     <div class="form-grid">
                         <div class="form-group">
@@ -1147,19 +1147,19 @@
                         </div>
                     </div>
                     
-                    <button type="submit" class="calculate-btn" style="margin-top: 15px;">?? Record Receipt</button>
+                    <button type="submit" class="calculate-btn" style="margin-top: 15px;">&#128176; Record Receipt</button>
                 </form>
             </div>
 
             <!-- Contribution History Section -->
             <div class="form-section">
-                <h3 class="section-title">?? Contribution History</h3>
+                <h3 class="section-title">&#128203; Contribution History</h3>
                 <div style="margin-bottom: 15px;">
                     <label for="historyMemberSelect" style="font-weight: 600; margin-right: 10px;">Filter by Member:</label>
                     <select id="historyMemberSelect" style="padding: 8px; border-radius: 5px; border: 2px solid #e9ecef;" onchange="filterContributionHistory()">
                         <option value="">-- All Members --</option>
                     </select>
-                    <button onclick="exportContributionHistory()" class="export-btn" style="margin-left: 10px;">?? Export History</button>
+                    <button onclick="exportContributionHistory()" class="export-btn" style="margin-left: 10px;">&#128203; Export History</button>
                 </div>
                 <div style="overflow-x: auto;">
                     <table class="breakdown-table">
@@ -1187,16 +1187,16 @@
 
             <!-- Membership Renewal Notifications -->
             <div class="form-section">
-                <h3 class="section-title">? Membership Renewal Alerts</h3>
+                <h3 class="section-title">&#128276; Membership Renewal Alerts</h3>
                 <div id="renewalAlerts"></div>
             </div>
 
             <!-- Bonus Payout Report -->
             <div class="form-section">
-                <h3 class="section-title">?? Bonus Payout Report</h3>
+                <h3 class="section-title">&#128176; Bonus Payout Report</h3>
                 <div style="margin-bottom: 15px;">
-                    <button onclick="generateBonusReport()" class="export-btn">?? Generate Report</button>
-                    <button onclick="exportBonusReport()" class="export-btn" style="margin-left: 10px;">?? Export to Excel</button>
+                    <button onclick="generateBonusReport()" class="export-btn">&#128202; Generate Report</button>
+                    <button onclick="exportBonusReport()" class="export-btn" style="margin-left: 10px;">&#128202; Export to Excel</button>
                 </div>
                 <div style="overflow-x: auto;">
                     <table class="breakdown-table">
@@ -1230,23 +1230,23 @@
 
         <!-- REPORTS TAB -->
         <div id="reports" class="tab-content">
-            <h2 class="section-title">?? Business Reports & Analytics</h2>
+            <h2 class="section-title">&#128202; Business Reports & Analytics</h2>
             
             <!-- Report Period Selector -->
             <div class="form-section">
-                <h3 style="color: #2c3e50; margin-bottom: 15px;">?? Report Period</h3>
+                <h3 style="color: #2c3e50; margin-bottom: 15px;">&#128197; Report Period</h3>
                 <div style="display: flex; gap: 10px; flex-wrap: wrap; align-items: center;">
                     <button class="btn" onclick="setReportPeriod('month')" id="periodMonth" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);">This Month</button>
                     <button class="btn btn-secondary" onclick="setReportPeriod('quarter')" id="periodQuarter">This Quarter</button>
                     <button class="btn btn-secondary" onclick="setReportPeriod('year')" id="periodYear">This Year</button>
                     <button class="btn btn-secondary" onclick="setReportPeriod('all')" id="periodAll">All Time</button>
-                    <button class="btn" onclick="generateReports()" style="margin-left: auto; background: linear-gradient(135deg, #f39c12 0%, #e67e22 100%);">?? Refresh Reports</button>
+                    <button class="btn" onclick="generateReports()" style="margin-left: auto; background: linear-gradient(135deg, #f39c12 0%, #e67e22 100%);">&#128260; Refresh Reports</button>
                 </div>
             </div>
 
             <!-- Summary Statistics -->
             <div class="form-section">
-                <h3 style="color: #2c3e50; margin-bottom: 15px;">?? Financial Summary</h3>
+                <h3 style="color: #2c3e50; margin-bottom: 15px;">&#128176; Financial Summary</h3>
                 <div class="stats-grid">
                     <div class="stat-card">
                         <h3>Total Revenue</h3>
@@ -1278,11 +1278,11 @@
 
             <!-- Charts Section -->
             <div class="form-section">
-                <h3 style="color: #2c3e50; margin-bottom: 15px;">?? Visual Analytics</h3>
+                <h3 style="color: #2c3e50; margin-bottom: 15px;">&#128202; Visual Analytics</h3>
                 
                 <!-- Revenue Trend Chart -->
                 <div style="background: white; padding: 20px; border-radius: 15px; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1); margin-bottom: 20px;">
-                    <h4 style="color: #2c3e50; margin-bottom: 15px;">?? Revenue Trend (Last 12 Months) - Actual Payments Received</h4>
+                    <h4 style="color: #2c3e50; margin-bottom: 15px;">&#128200; Revenue Trend (Last 12 Months) - Actual Payments Received</h4>
                     <canvas id="revenueTrendChart" style="max-height: 350px;"></canvas>
                     <p style="margin-top: 10px; font-size: 12px; color: #7f8c8d; text-align: center;">
                         <strong>Green:</strong> Total Revenue | <strong>Purple:</strong> Interest | <strong>Orange:</strong> Fees
@@ -1293,13 +1293,13 @@
                 <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px;">
                     <!-- Loan Type Distribution -->
                     <div style="background: white; padding: 20px; border-radius: 15px; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);">
-                        <h4 style="color: #2c3e50; margin-bottom: 15px;">?? Loan Type Distribution</h4>
+                        <h4 style="color: #2c3e50; margin-bottom: 15px;">&#128202; Loan Type Distribution</h4>
                         <canvas id="loanTypeChart" style="max-height: 250px;"></canvas>
                     </div>
 
                     <!-- Loan Status Distribution -->
                     <div style="background: white; padding: 20px; border-radius: 15px; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);">
-                        <h4 style="color: #2c3e50; margin-bottom: 15px;">?? Loan Status Breakdown</h4>
+                        <h4 style="color: #2c3e50; margin-bottom: 15px;">&#128202; Loan Status Breakdown</h4>
                         <canvas id="loanStatusChart" style="max-height: 250px;"></canvas>
                     </div>
                 </div>
@@ -1307,7 +1307,7 @@
 
             <!-- Cash Flow Projections - NEW FEATURE v1.6 -->
             <div class="form-section">
-                <h3 style="color: #2c3e50; margin-bottom: 15px;">?? Cash Flow Projections (Next 6 Months)</h3>
+                <h3 style="color: #2c3e50; margin-bottom: 15px;">&#128176; Cash Flow Projections (Next 6 Months)</h3>
                 <div style="background: white; padding: 20px; border-radius: 15px; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1); margin-bottom: 20px;">
                     <canvas id="cashFlowChart" style="max-height: 300px;"></canvas>
                     <p style="margin-top: 10px; font-size: 12px; color: #7f8c8d; text-align: center;">
@@ -1317,7 +1317,7 @@
 
                 <!-- Cash Flow Summary Table -->
                 <div style="background: white; padding: 20px; border-radius: 15px; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);">
-                    <h4 style="color: #2c3e50; margin-bottom: 15px;">?? Monthly Forecast Breakdown</h4>
+                    <h4 style="color: #2c3e50; margin-bottom: 15px;">&#128197; Monthly Forecast Breakdown</h4>
                     <div style="overflow-x: auto;">
                         <table style="width: 100%; border-collapse: collapse;">
                             <thead>
@@ -1350,7 +1350,7 @@
 
             <!-- Performance Metrics -->
             <div class="form-section">
-                <h3 style="color: #2c3e50; margin-bottom: 15px;">?? Performance Metrics</h3>
+                <h3 style="color: #2c3e50; margin-bottom: 15px;">&#128202; Performance Metrics</h3>
                 
                 <!-- Current Metrics Cards -->
                 <div style="background: white; padding: 20px; border-radius: 15px; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1); margin-bottom: 20px;">
@@ -1358,7 +1358,7 @@
                         <div>
                             <p style="color: #7f8c8d; font-size: 14px; margin-bottom: 5px;">Return on Capital Deployed (ROCD)</p>
                             <p style="font-size: 24px; font-weight: bold; color: #27ae60;" id="reportROCD">0%</p>
-                            <p style="font-size: 12px; color: #27ae60; margin-top: 5px;" id="rocdTrend">? Trending</p>
+                            <p style="font-size: 12px; color: #27ae60; margin-top: 5px;" id="rocdTrend">&#128200; Trending</p>
                         </div>
                         <div>
                             <p style="color: #7f8c8d; font-size: 14px; margin-bottom: 5px;">Default Rate</p>
@@ -1377,7 +1377,7 @@
 
                 <!-- ROCD Trend Chart - NEW v1.6 -->
                 <div style="background: white; padding: 20px; border-radius: 15px; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);">
-                    <h4 style="color: #2c3e50; margin-bottom: 15px;">?? ROCD Performance Trend</ (Last 12 Months)</h4>
+                    <h4 style="color: #2c3e50; margin-bottom: 15px;">&#128200; ROCD Performance Trend (Last 12 Months)</h4>
                     <canvas id="rocdTrendChart" style="max-height: 300px;"></canvas>
                     <p style="margin-top: 10px; font-size: 12px; color: #7f8c8d; text-align: center;">
                         Track your return on capital deployed over time - Higher is better!
@@ -1405,11 +1405,11 @@
 
             <!-- Export Options -->
             <div class="form-section">
-                <h3 style="color: #2c3e50; margin-bottom: 15px;">?? Export Reports</h3>
+                <h3 style="color: #2c3e50; margin-bottom: 15px;">&#128190; Export Reports</h3>
                 <div style="display: flex; gap: 10px; flex-wrap: wrap;">
-                    <button class="btn" onclick="exportReportPDF()" style="background: linear-gradient(135deg, #e74c3c 0%, #c0392b 100%);">?? Export to PDF</button>
-                    <button class="btn" onclick="exportReportExcel()" style="background: linear-gradient(135deg, #27ae60 0%, #229954 100%);">?? Export to Excel</button>
-                    <button class="btn btn-secondary" onclick="printReport()">??? Print Report</button>
+                    <button class="btn" onclick="exportReportPDF()" style="background: linear-gradient(135deg, #e74c3c 0%, #c0392b 100%);">&#128196; Export to PDF</button>
+                    <button class="btn" onclick="exportReportExcel()" style="background: linear-gradient(135deg, #27ae60 0%, #229954 100%);">&#128202; Export to Excel</button>
+                    <button class="btn btn-secondary" onclick="printReport()">&#128424; Print Report</button>
                 </div>
             </div>
         </div>
@@ -1421,11 +1421,11 @@
 
         <!-- SETTINGS TAB -->
         <div id="settings" class="tab-content">
-            <h2 class="section-title">?? Settings</h2>
+            <h2 class="section-title">&#9881; Settings</h2>
             
             <!-- App Version & Updates Section -->
             <div class="form-section">
-                <h3 style="color: #2c3e50; margin-bottom: 15px;">?? App Version & Updates</h3>
+                <h3 style="color: #2c3e50; margin-bottom: 15px;">&#128276; App Version & Updates</h3>
                 <div style="background: #f8f9fa; padding: 20px; border-radius: 10px; margin-bottom: 20px;">
                     <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 15px;">
                         <div>
@@ -1434,13 +1434,13 @@
                             <p style="margin: 5px 0 0 0; font-size: 12px; color: #95a5a6;" id="updateStatus">Checking for updates...</p>
                         </div>
                         <button class="btn" onclick="checkForUpdates()" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 12px 24px;">
- ?? Check for Updates
+ &#128260; Check for Updates
                         </button>
                     </div>
                 </div>
                 
                 <div style="background: #e8f5e8; padding: 15px; border-radius: 8px; border-left: 4px solid #27ae60;">
-                    <strong style="color: #27ae60;">?? How Updates Work:</strong>
+                    <strong style="color: #27ae60;">&#128218; How Updates Work:</strong>
                     <ul style="margin: 10px 0 0 20px; color: #2c3e50; font-size: 14px;">
                         <li>Updates download automatically in the background</li>
                         <li>Click "Update Now" or close and reopen the app to apply</li>
@@ -1449,17 +1449,17 @@
                 </div>
             </div>
             
-            <h3 class="section-title">?? Cloud Backup Settings</h3>
+            <h3 class="section-title">&#128190; Cloud Backup Settings</h3>
             
             <div class="form-section">
-                <h3 style="color: #2c3e50; margin-bottom: 15px;">?? GitHub Cloud Backup</h3>
+                <h3 style="color: #2c3e50; margin-bottom: 15px;">&#128190; GitHub Cloud Backup</h3>
                 <p style="color: #7f8c8d; margin-bottom: 20px;">Automatically backup your data to a private GitHub repository. Your data syncs across all devices and works offline.</p>
                 
                 <div id="tokenConfigured" style="display: none;">
                     <div style="padding: 15px; border-radius: 10px; margin-bottom: 20px; background: #f0f4ff; border: 2px solid #667eea;">
                         <div style="display: flex; align-items: center; justify-content: space-between;">
                             <div>
-                                <strong style="color: #667eea;">? GitHub Token Configured</strong>
+                                <strong style="color: #667eea;">&#9989; GitHub Token Configured</strong>
                                 <p style="margin: 5px 0 0 0; font-size: 14px; color: #2c3e50;">
                                     You can now restore from cloud
                                 </p>
@@ -1479,7 +1479,7 @@
                     </div>
                     
                     <div id="autoBackupStatus" style="padding: 15px; border-radius: 10px; margin-bottom: 20px; background: #e8f5e8; border: 2px solid #27ae60; display: none;">
-                        <strong style="color: #27ae60;">? Auto-Backup Active</strong>
+                        <strong style="color: #27ae60;">&#9989; Auto-Backup Active</strong>
                         <p style="margin: 5px 0 0 0; font-size: 14px; color: #2c3e50;">
                             Last sync: <span id="lastSyncTime">Never</span>
                         </p>
@@ -1492,7 +1492,7 @@
                         <input type="password" id="githubToken" placeholder="github_pat_xxxxx..." 
                                style="font-family: monospace; font-size: 14px;">
                         <p style="font-size: 12px; color: #7f8c8d; margin-top: 5px;">
- ?? Your token is encrypted and stored securely on your device only. Never shared or exposed.
+ &#128274; Your token is encrypted and stored securely on your device only. Never shared or exposed.
                         </p>
                     </div>
                     
@@ -1502,20 +1502,20 @@
                                value="https://github.com/Ndelo-N/TBFS-Data-Backup.git" readonly
                                style="background: #f8f9fa; font-family: monospace; font-size: 14px;">
                         <p style="font-size: 12px; color: #7f8c8d; margin-top: 5px;">
- ?? Ensure this is your PRIVATE backup repository.
+ &#9888; Ensure this is your PRIVATE backup repository.
                         </p>
                     </div>
 
                     <button class="calculate-btn" onclick="saveToken()">
- ?? Save Token & Configure
+ &#128190; Save Token & Configure
                     </button>
                 </div>
 
                 <div style="margin-top: 30px; padding: 15px; background: #fff3cd; border-left: 4px solid #f39c12; border-radius: 5px;">
-                    <strong style="color: #856404;">?? How to Get Your Token:</strong>
+                    <strong style="color: #856404;">&#128273; How to Get Your Token:</strong>
                     <ol style="margin: 10px 0 0 20px; color: #856404;">
                         <li>Go to: <code>github.com/settings/tokens</code></li>
-                        <li>Click "Generate new token" ? "Fine-grained token"</li>
+                        <li>Click "Generate new token" &#8594; "Fine-grained token"</li>
                         <li>Give access ONLY to <code>TBFS-Data-Backup</code> repo</li>
                         <li>Enable "Contents: Read and write" permission</li>
                         <li>Copy token and paste above</li>
@@ -1525,24 +1525,24 @@
                 <div style="margin-top: 20px;">
                     <h4 style="color: #2c3e50;">Cloud Backup Features:</h4>
                     <ul style="color: #7f8c8d; line-height: 1.8;">
-                        <li>? Auto-sync on every data change</li>
-                        <li>? Works offline - queues changes, syncs when online</li>
-                        <li>? Access from any device</li>
-                        <li>? Daily snapshots kept for 30 days</li>
-                        <li>? One-click restore</li>
-                        <li>? Completely free (uses your private GitHub repo)</li>
+                        <li>&#9989; Auto-sync on every data change</li>
+                        <li>&#9989; Works offline - queues changes, syncs when online</li>
+                        <li>&#9989; Access from any device</li>
+                        <li>&#9989; Daily snapshots kept for 30 days</li>
+                        <li>&#9989; One-click restore</li>
+                        <li>&#9989; Completely free (uses your private GitHub repo)</li>
                     </ul>
                 </div>
             </div>
 
             <div class="form-section">
-                <h3 style="color: #2c3e50; margin-bottom: 15px;">?? Manual Backup</h3>
+                <h3 style="color: #2c3e50; margin-bottom: 15px;">&#128190; Manual Backup</h3>
                 <p style="color: #7f8c8d; margin-bottom: 20px;">Download or restore backups manually.</p>
                 
                 <div style="display: flex; gap: 10px; flex-wrap: wrap;">
-                    <button class="btn btn-secondary" onclick="backupData()">?? Download Local Backup</button>
-                    <button class="btn" onclick="restoreData()">?? Restore from File</button>
-                    <button class="btn" style="background: #27ae60;" onclick="restoreFromCloud()">?? Restore from Cloud</button>
+                    <button class="btn btn-secondary" onclick="backupData()">&#128190; Download Local Backup</button>
+                    <button class="btn" onclick="restoreData()">&#128260; Restore from File</button>
+                    <button class="btn" style="background: #27ae60;" onclick="restoreFromCloud()">&#128260; Restore from Cloud</button>
                 </div>
             </div>
         </div>
@@ -1673,7 +1673,7 @@
                 if (profitRemaining > 0) {
                     document.getElementById('profitRemaining').textContent = `R${profitRemaining.toLocaleString()} remaining to reach goal`;
                 } else {
-                    document.getElementById('profitRemaining').textContent = `?? Goal achieved! Exceeded by R${(totalProfit - this.profitGoal).toLocaleString()}`;
+                    document.getElementById('profitRemaining').textContent = `\u2705 Goal achieved! Exceeded by R${(totalProfit - this.profitGoal).toLocaleString()}`;
                     document.getElementById('profitRemaining').style.color = '#27ae60';
                     document.getElementById('profitRemaining').style.fontWeight = 'bold';
                 }
@@ -1724,24 +1724,24 @@
                         minute: '2-digit' 
                     });
                     
-                    let icon = '??';
+                    let icon = '\u2699';
                     let color = '#3498db';
                     
                     switch(tx.type) {
                         case 'payment':
-                            icon = '??';
+                            icon = '\uD83D\uDCB3';
                             color = '#27ae60';
                             break;
                         case 'loan_created':
-                            icon = '??';
+                            icon = '\uD83D\uDCCB';
                             color = '#f39c12';
                             break;
                         case 'client_status':
-                            icon = '??';
+                            icon = '\uD83D\uDC64';
                             color = '#e74c3c';
                             break;
                         case 'system':
-                            icon = '??';
+                            icon = '\u2699';
                             color = '#95a5a6';
                             break;
                     }
@@ -1913,7 +1913,7 @@
                     `4. Cancel revision`
                 ].join('\n');
                 
-                const choice = prompt(`?? Loan Revision Required!\n\nLoan #${loanId} exceeds 100% interest cap.\nCurrent interest: R${advancedInterest.totalInterestIncurred.toFixed(2)} (${((advancedInterest.totalInterestIncurred/principal)*100).toFixed(1)}%)\n\nOptions:\n${options}\n\nEnter choice (1-4):`);
+                const choice = prompt(`\u26A0\uFE0F Loan Revision Required!\n\nLoan #${loanId} exceeds 100% interest cap.\nCurrent interest: R${advancedInterest.totalInterestIncurred.toFixed(2)} (${((advancedInterest.totalInterestIncurred/principal)*100).toFixed(1)}%)\n\nOptions:\n${options}\n\nEnter choice (1-4):`);
                 
                 switch(choice) {
                     case '1':
@@ -1945,7 +1945,7 @@
                     newTerm: newTerm
                 });
                 
-                alert(`? Loan term extended to ${newTerm} months. Monthly payment reduced to R${loan.monthly_payment.toFixed(2)}`);
+                alert(`\u2705 Loan term extended to ${newTerm} months. Monthly payment reduced to R${loan.monthly_payment.toFixed(2)}`);
                 AppState.save();
                 AppState.updateDashboard();
             },
@@ -1964,7 +1964,7 @@
                     reduction: reduction
                 });
                 
-                alert(`? Principal reduced by R${reduction.toFixed(2)}. New principal: R${newPrincipal.toFixed(2)}`);
+                alert(`\u2705 Principal reduced by R${reduction.toFixed(2)}. New principal: R${newPrincipal.toFixed(2)}`);
                 AppState.save();
                 AppState.updateDashboard();
             },
@@ -1979,13 +1979,13 @@
                     frozenAmount: currentInterest
                 });
                 
-                alert(`? Interest frozen at R${currentInterest.toFixed(2)}. No further interest will accrue.`);
+                alert(`\u2705 Interest frozen at R${currentInterest.toFixed(2)}. No further interest will accrue.`);
                 AppState.save();
                 AppState.updateDashboard();
             },
             
             recalculateFinancialState() {
-                console.log('? Starting comprehensive financial recalculation...');
+                console.log('\uD83D\uDD04 Starting comprehensive financial recalculation...');
                 
                 const INITIAL_CAPITAL = 100000; // Your starting capital
                 
@@ -2059,14 +2059,14 @@
                 const expectedTotal = INITIAL_CAPITAL + calculatedTotalProfit;
                 const balanceCheck = Math.abs(totalAssets - expectedTotal);
                 
-                console.log('\n?? Recalculation Results:');
+                console.log('\n\uD83D\uDCCA Recalculation Results:');
                 console.log(`Capital (in bank): R${calculatedCapital.toFixed(2)} (was R${this.capital.toFixed(2)})`);
                 console.log(`Deployed (loaned out): R${calculatedDeployed.toFixed(2)} (was R${this.deployed.toFixed(2)})`);
                 console.log(`Interest Earned: R${calculatedInterestEarned.toFixed(2)} (was R${this.totalInterestEarned.toFixed(2)})`);
                 console.log(`Fees Earned: R${calculatedFeesEarned.toFixed(2)} (was R${this.totalFeesEarned.toFixed(2)})`);
                 console.log(`Total Profit: R${calculatedTotalProfit.toFixed(2)} (was R${(this.totalInterestEarned + this.totalFeesEarned).toFixed(2)})`);
-                console.log(`\n? Balance Check: R${totalAssets.toFixed(2)} (Capital + Deployed) vs R${expectedTotal.toFixed(2)} (Initial + Profit)`);
-                console.log(`Difference: R${balanceCheck.toFixed(2)} ${balanceCheck < 0.10 ? '?' : '?'}`);
+                console.log(`\n\u2705 Balance Check: R${totalAssets.toFixed(2)} (Capital + Deployed) vs R${expectedTotal.toFixed(2)} (Initial + Profit)`);
+                console.log(`Difference: R${balanceCheck.toFixed(2)} ${balanceCheck < 0.10 ? '\u2705' : '\u274C'}`);
                 
                 // Step 6: Apply corrections
                 const oldCapital = this.capital;
@@ -2079,22 +2079,22 @@
                 this.totalInterestEarned = Math.round(calculatedInterestEarned * 100) / 100;
                 this.totalFeesEarned = Math.round(calculatedFeesEarned * 100) / 100;
                 
-                console.log('\n? Applied Corrections:');
+                console.log('\n\u2705 Applied Corrections:');
                 if (Math.abs(oldCapital - this.capital) > 0.01) {
-                    console.log(`? Fixed capital: R${oldCapital.toFixed(2)} ? R${this.capital.toFixed(2)} (${this.capital > oldCapital ? '+' : ''}${(this.capital - oldCapital).toFixed(2)})`);
+                    console.log(`\u2705 Fixed capital: R${oldCapital.toFixed(2)} \u2192 R${this.capital.toFixed(2)} (${this.capital > oldCapital ? '+' : ''}${(this.capital - oldCapital).toFixed(2)})`);
                 }
                 if (Math.abs(oldDeployed - this.deployed) > 0.01) {
-                    console.log(`? Fixed deployed: R${oldDeployed.toFixed(2)} ? R${this.deployed.toFixed(2)} (${this.deployed > oldDeployed ? '+' : ''}${(this.deployed - oldDeployed).toFixed(2)})`);
+                    console.log(`\u2705 Fixed deployed: R${oldDeployed.toFixed(2)} \u2192 R${this.deployed.toFixed(2)} (${this.deployed > oldDeployed ? '+' : ''}${(this.deployed - oldDeployed).toFixed(2)})`);
                 }
                 if (Math.abs(oldInterest - this.totalInterestEarned) > 0.01) {
-                    console.log(`? Fixed interest: R${oldInterest.toFixed(2)} ? R${this.totalInterestEarned.toFixed(2)} (${this.totalInterestEarned > oldInterest ? '+' : ''}${(this.totalInterestEarned - oldInterest).toFixed(2)})`);
+                    console.log(`\u2705 Fixed interest: R${oldInterest.toFixed(2)} \u2192 R${this.totalInterestEarned.toFixed(2)} (${this.totalInterestEarned > oldInterest ? '+' : ''}${(this.totalInterestEarned - oldInterest).toFixed(2)})`);
                 }
                 if (Math.abs(oldFees - this.totalFeesEarned) > 0.01) {
-                    console.log(`? Fixed fees: R${oldFees.toFixed(2)} ? R${this.totalFeesEarned.toFixed(2)} (${this.totalFeesEarned > oldFees ? '+' : ''}${(this.totalFeesEarned - oldFees).toFixed(2)})`);
+                    console.log(`\u2705 Fixed fees: R${oldFees.toFixed(2)} \u2192 R${this.totalFeesEarned.toFixed(2)} (${this.totalFeesEarned > oldFees ? '+' : ''}${(this.totalFeesEarned - oldFees).toFixed(2)})`);
                 }
                 
                 this.save();
-                console.log('\n? Financial recalculation complete!');
+                console.log('\n\u2705 Financial recalculation complete!');
                 
                 return {
                     capital: this.capital,
@@ -2113,18 +2113,18 @@
                 // Warning at 80 active loans
                 const activeLoans = this.loans.filter(l => l.status === 'active').length;
                 if (activeLoans >= 80) {
-                    alerts.innerHTML += `<div class="alert alert-warning">?? <strong>High Loan Volume:</strong> You have ${activeLoans} active loans. Consider monitoring capacity.</div>`;
+                    alerts.innerHTML += `<div class="alert alert-warning">\u26A0\uFE0F <strong>High Loan Volume:</strong> You have ${activeLoans} active loans. Consider monitoring capacity.</div>`;
                 }
                 
                 // Deployment limit at R80,000
                 if (this.deployed > 80000) {
-                    alerts.innerHTML += `<div class="alert alert-danger">?? <strong>Deployment Limit Exceeded:</strong> You've deployed R${this.deployed.toLocaleString()}. Maximum deployment is R80,000!</div>`;
+                    alerts.innerHTML += `<div class="alert alert-danger">\u274C <strong>Deployment Limit Exceeded:</strong> You've deployed R${this.deployed.toLocaleString()}. Maximum deployment is R80,000!</div>`;
                 }
                 
                 // Reserve capital warning at R20,000 remaining
                 const available = this.capital - this.deployed;
                 if (available < 20000) {
-                    alerts.innerHTML += `<div class="alert alert-warning">?? <strong>Reserve Capital Low:</strong> Only R${available.toLocaleString()} remaining. Consider maintaining higher reserves.</div>`;
+                    alerts.innerHTML += `<div class="alert alert-warning">\u26A0\uFE0F <strong>Reserve Capital Low:</strong> Only R${available.toLocaleString()} remaining. Consider maintaining higher reserves.</div>`;
                 }
             },
             
@@ -2165,9 +2165,9 @@
                             <td><span class="status-badge status-${client.status}">${client.status}</span></td>
                             <td>
                                 <div style="display: flex; gap: 5px; flex-wrap: wrap;">
-                                    ${client.status !== 'active' ? `<button class="btn" style="padding: 5px 10px; font-size: 12px;" onclick="updateClientStatus('${client.account_number}', 'active')">? Activate</button>` : ''}
-                                    <button class="btn btn-danger" style="padding: 5px 10px; font-size: 12px;" onclick="updateClientStatus('${client.account_number}', 'defaulted')">? Mark Default</button>
-                                    <button class="btn" style="padding: 5px 10px; font-size: 12px; background: #8e44ad;" onclick="updateClientStatus('${client.account_number}', 'blacklisted')">?? Blacklist</button>
+                                    ${client.status !== 'active' ? `<button class="btn" style="padding: 5px 10px; font-size: 12px;" onclick="updateClientStatus('${client.account_number}', 'active')">\u2705 Activate</button>` : ''}
+                                    <button class="btn btn-danger" style="padding: 5px 10px; font-size: 12px;" onclick="updateClientStatus('${client.account_number}', 'defaulted')">\u26A0\uFE0F Mark Default</button>
+                                    <button class="btn" style="padding: 5px 10px; font-size: 12px; background: #8e44ad;" onclick="updateClientStatus('${client.account_number}', 'blacklisted')">\u26D4 Blacklist</button>
                                 </div>
                             </td>
                         </tr>
@@ -2242,12 +2242,12 @@
                         <div class="loan-card">
                             <h4>Loan #${loan.loan_id} - ${loan.client_name}</h4>
                             <div class="info-row">
-                                <span>?? Loan Date:</span>
+                                <span>\uD83D\uDCC5 Loan Date:</span>
                                 <strong style="color: #7f8c8d;">${loanStartStr}</strong>
                             </div>
                             ${loan.status === 'active' ? `
                             <div class="info-row">
-                                <span>? Next Payment Due:</span>
+                                <span>\uD83D\uDCC5 Next Payment Due:</span>
                                 <strong style="color: ${isOverdue ? '#e74c3c' : '#27ae60'};">${nextDueStr}${isOverdue ? ` (${daysOverdue} days overdue)` : ''}</strong>
                             </div>
                             ` : ''}
@@ -2275,16 +2275,16 @@
                                 <span>Actions:</span>
                                 <div style="display: flex; gap: 5px; flex-wrap: wrap;">
                                     ${loan.status === 'active' ? `
-                                        <button class="btn" style="padding: 5px 10px; font-size: 12px;" onclick="makePayment(${loan.loan_id})">?? Make Payment</button>
-                                        <button class="btn" style="padding: 5px 10px; font-size: 12px; background: #3498db;" onclick="adjustActiveLoan(${loan.loan_id})">?? Adjust Loan</button>
-                                        <button class="btn" style="padding: 5px 10px; font-size: 12px;" onclick="updateLoanStatus(${loan.loan_id}, 'completed')">? Mark Paid</button>
-                                        <button class="btn btn-warning" style="padding: 5px 10px; font-size: 12px;" onclick="AppState.reviseLoan(${loan.loan_id})">?? Revise Loan</button>
-                                        <button class="btn btn-danger" style="padding: 5px 10px; font-size: 12px;" onclick="updateLoanStatus(${loan.loan_id}, 'defaulted')">?? Mark Default</button>
-                                        <button class="btn" style="padding: 5px 10px; font-size: 12px; background: #8e44ad;" onclick="updateLoanStatus(${loan.loan_id}, 'blacklisted')">?? Blacklist</button>
-                                        <button class="btn" style="padding: 5px 10px; font-size: 12px; background: linear-gradient(135deg, #e67e22 0%, #d35400 100%); margin-top: 5px; width: 100%;" onclick="generateLoanStatusPDF(${loan.loan_id})">?? Download Status PDF</button>
+                                        <button class="btn" style="padding: 5px 10px; font-size: 12px;" onclick="makePayment(${loan.loan_id})">\uD83D\uDCB3 Make Payment</button>
+                                        <button class="btn" style="padding: 5px 10px; font-size: 12px; background: #3498db;" onclick="adjustActiveLoan(${loan.loan_id})">\u2699 Adjust Loan</button>
+                                        <button class="btn" style="padding: 5px 10px; font-size: 12px;" onclick="updateLoanStatus(${loan.loan_id}, 'completed')">\u2705 Mark Paid</button>
+                                        <button class="btn btn-warning" style="padding: 5px 10px; font-size: 12px;" onclick="AppState.reviseLoan(${loan.loan_id})">\u21BB Revise Loan</button>
+                                        <button class="btn btn-danger" style="padding: 5px 10px; font-size: 12px;" onclick="updateLoanStatus(${loan.loan_id}, 'defaulted')">\u26A0\uFE0F Mark Default</button>
+                                        <button class="btn" style="padding: 5px 10px; font-size: 12px; background: #8e44ad;" onclick="updateLoanStatus(${loan.loan_id}, 'blacklisted')">\u26D4 Blacklist</button>
+                                        <button class="btn" style="padding: 5px 10px; font-size: 12px; background: linear-gradient(135deg, #e67e22 0%, #d35400 100%); margin-top: 5px; width: 100%;" onclick="generateLoanStatusPDF(${loan.loan_id})">\uD83D\uDCC4 Download Status PDF</button>
                                     ` : `
-                                        <button class="btn btn-secondary" style="padding: 5px 10px; font-size: 12px;" onclick="updateLoanStatus(${loan.loan_id}, 'active')">? Reactivate</button>
-                                        <button class="btn" style="padding: 5px 10px; font-size: 12px; background: linear-gradient(135deg, #e67e22 0%, #d35400 100%);" onclick="generateLoanStatusPDF(${loan.loan_id})">?? Download Status PDF</button>
+                                        <button class="btn btn-secondary" style="padding: 5px 10px; font-size: 12px;" onclick="updateLoanStatus(${loan.loan_id}, 'active')">\u21BB Reactivate</button>
+                                        <button class="btn" style="padding: 5px 10px; font-size: 12px; background: linear-gradient(135deg, #e67e22 0%, #d35400 100%);" onclick="generateLoanStatusPDF(${loan.loan_id})">\uD83D\uDCC4 Download Status PDF</button>
                                     `}
                                 </div>
                             </div>
@@ -2451,9 +2451,9 @@
                 }
             });
 
-            console.log('? Advanced Swipe Navigation initialized!');
-            console.log('?? Swipe left/right to navigate tabs');
-            console.log('?? Use arrow keys on desktop');
+            console.log('\u2705 Advanced Swipe Navigation initialized!');
+            console.log('\uD83D\uDD04 Swipe left/right to navigate tabs');
+            console.log('\u2190\u2192 Use arrow keys on desktop');
         }
 
         // Wait for DOM to load
@@ -2541,9 +2541,9 @@
                     document.getElementById('membershipStartDate').required = true;
                     
                     // Show success message
-                    alert(`? Stockvel Member Detected!\n\nMember #: ${member.memberNumber}\nAccount #: ${member.account_number || 'N/A'}\nName: ${member.name}\nContributions: R${member.totalContributions.toFixed(2)}\nBonus Balance: R${member.accumulatedBonus.toFixed(2)}\n\nAll fields auto-filled!`);
+                    alert(`\u2705 Stockvel Member Detected!\n\nMember #: ${member.memberNumber}\nAccount #: ${member.account_number || 'N/A'}\nName: ${member.name}\nContributions: R${member.totalContributions.toFixed(2)}\nBonus Balance: R${member.accumulatedBonus.toFixed(2)}\n\nAll fields auto-filled!`);
                 } else {
-                    alert(`? Member #${memberNum} not found!\n\nPlease check the Member # or register this member in the Stockvel tab first.`);
+                    alert(`\u274C Member #${memberNum} not found!\n\nPlease check the Member # or register this member in the Stockvel tab first.`);
                 }
             }
             
@@ -2821,12 +2821,12 @@
                     const monthsUntilExpiry = Math.floor((membershipExpiry - today) / (1000 * 60 * 60 * 24 * 30));
                     
                     if (monthsUntilExpiry < 1) {
-                        alert('? Membership has expired! Please renew membership before taking a loan.');
+                        alert('\u26A0\uFE0F Membership has expired! Please renew membership before taking a loan.');
                         return;
                     }
                     
                     if (term > monthsUntilExpiry) {
-                        alert(`? Loan term too long!\n\nYour membership expires in ${monthsUntilExpiry} month(s).\nMaximum loan term: ${monthsUntilExpiry} month(s)\n\nPlease reduce the loan term or renew your membership first.`);
+                        alert(`\u26A0\uFE0F Loan term too long!\n\nYour membership expires in ${monthsUntilExpiry} month(s).\nMaximum loan term: ${monthsUntilExpiry} month(s)\n\nPlease reduce the loan term or renew your membership first.`);
                         return;
                     }
                 }
@@ -3196,7 +3196,7 @@
                         // if (loanData.totalBonus > 0) {
                         //     clientInfoHTML += `
                         //     <div style="background: #fff3cd; padding: 10px; border-radius: 8px; margin-top: 10px; border: 2px solid #ffc107;">
-                        //         <strong style="color: #856404;">?? Member Bonus:</strong> R ${loanData.totalBonus.toFixed(2)}<br>
+                        //         <strong style="color: #856404;">&#127873; Member Bonus:</strong> R ${loanData.totalBonus.toFixed(2)}<br>
                         //         <span style="font-size: 11px; color: #856404;">This bonus will be added to your contributions after each payment is received!</span>
                         //     </div>`;
                         // }
@@ -3364,7 +3364,7 @@
                         console.log('PDF opened in new window for mobile viewing');
                         
                         // Show success message with instructions
-                        alert('? PDF generated successfully!\n\n?? The PDF has opened in a new tab.\n\nTo save it:\n? Tap the share/download icon\n? Choose "Save to Files" or "Download"\n\nThe PDF will then be saved to your device.');
+                        alert('\uD83D\uDCC4 PDF generated successfully!\n\n\uD83D\uDCF1 The PDF has opened in a new tab.\n\nTo save it:\n\u2022 Tap the share/download icon\n\u2022 Choose "Save to Files" or "Download"\n\nThe PDF will then be saved to your device.');
                         
                         // Clean up blob URL after a delay
                         setTimeout(() => URL.revokeObjectURL(blobUrl), 60000);
@@ -3388,7 +3388,7 @@
                             URL.revokeObjectURL(blobUrl);
                         }, 100);
                         
-                        alert('? PDF generated!\n\n?? If the download didn\'t start automatically, please check your browser\'s download settings or allow pop-ups for this app.');
+                        alert('\uD83D\uDCC4 PDF generated!\n\n\uD83D\uDCF1 If the download didn\'t start automatically, please check your browser\'s download settings or allow pop-ups for this app.');
                     }
                 } else {
                     // Desktop - use standard save method
@@ -3407,7 +3407,7 @@
                     return true;
                 } catch (fallbackError) {
                     console.error('Fallback save also failed:', fallbackError);
-                    alert('? Failed to download PDF. Please try again or contact support.');
+                    alert('\u274C Failed to download PDF. Please try again or contact support.');
                     return false;
                 }
             }
@@ -3803,7 +3803,7 @@
                             doc.setFontSize(12);
                             doc.setTextColor(231, 76, 60);
                             doc.setFont('helvetica', 'bold');
-                            doc.text(`? PAYMENT OVERDUE`, 20, yPos);
+                            doc.text(`\u26A0\uFE0F PAYMENT OVERDUE`, 20, yPos);
                             yPos += 7;
                             doc.setFontSize(10);
                             doc.text(`Due Date: ${nextDueStr} (${daysOverdue} days overdue)`, 20, yPos);
@@ -3888,13 +3888,13 @@
                         yPos += 6;
                         doc.setFontSize(8);
                         doc.setTextColor(100, 100, 100);
-                        doc.text('? This is a statement of your current loan status as of the report date above', 20, yPos);
+                        doc.text('\u2139\uFE0F This is a statement of your current loan status as of the report date above', 20, yPos);
                         yPos += 5;
-                        doc.text('? Please ensure payments are made by the due date to avoid penalties', 20, yPos);
+                        doc.text('\u2139\uFE0F Please ensure payments are made by the due date to avoid penalties', 20, yPos);
                         yPos += 5;
-                        doc.text('? For any queries, please contact TBFS directly', 20, yPos);
+                        doc.text('\u2139\uFE0F For any queries, please contact TBFS directly', 20, yPos);
                         yPos += 5;
-                        doc.text('? Keep this document for your records', 20, yPos);
+                        doc.text('\u2139\uFE0F Keep this document for your records', 20, yPos);
                     }
 
                     // Footer - Bottom of page
@@ -3937,7 +3937,7 @@
             document.body.removeChild(a);
             URL.revokeObjectURL(url);
             
-            alert('? Data backup downloaded successfully!');
+            alert('\u2705 Data backup downloaded successfully!');
         }
 
         function restoreData() {
@@ -3954,9 +3954,9 @@
                         const data = JSON.parse(e.target.result);
                         localStorage.setItem('tbfsAppState', JSON.stringify(data));
                         AppState.init(); // Reload the app with restored data
-                        alert('? Data restored successfully!');
+                        alert('\u2705 Data restored successfully!');
                     } catch (error) {
-                        alert('? Invalid backup file. Please select a valid TBFS backup file.');
+                        alert('\u274C Invalid backup file. Please select a valid TBFS backup file.');
                     }
                 };
                 reader.readAsText(file);
@@ -3965,15 +3965,15 @@
         }
 
         function clearAllData() {
-            if (confirm('?? This will permanently delete ALL data. Are you sure?')) {
+            if (confirm('\u26A0\uFE0F This will permanently delete ALL data. Are you sure?')) {
                 // Auto-backup before clearing
-                console.log('?? Auto-backup before clearing all data...');
+                console.log('\uD83D\uDD04 Auto-backup before clearing all data...');
                 backupData();
                 
                 setTimeout(() => {
                 localStorage.removeItem('tbfsAppState');
                 AppState.init();
-                    alert('? All data cleared successfully.\n\n?? A backup was automatically saved before clearing.');
+                    alert('\u2705 All data cleared successfully.\n\n\uD83D\uDD04 A backup was automatically saved before clearing.');
                 }, 500); // Small delay to ensure backup completes
             }
         }
@@ -3989,7 +3989,7 @@
             const existingClient = AppState.clients.find(c => c.account_number === loanData.accountNumber);
             if (existingClient) {
                 if (existingClient.status !== 'active') {
-                    alert(`? SECURITY ALERT: Client ${loanData.accountNumber} is ${existingClient.status.toUpperCase()}. Cannot approve loan for inactive clients.`);
+                    alert(`\u26A0\uFE0F SECURITY ALERT: Client ${loanData.accountNumber} is ${existingClient.status.toUpperCase()}. Cannot approve loan for inactive clients.`);
                     return;
                 }
             }
@@ -4102,7 +4102,7 @@
             AppState.save();
             AppState.updateDashboard();
 
-            alert(`? Loan approved and added to system!\n\nClient: ${loanData.firstName} ${loanData.lastName}\nAccount: ${loanData.accountNumber}\nAmount: R${loanData.principal.toFixed(2)}\nMonthly Payment: R${loanData.monthlyPayment.toFixed(2)}`);
+            alert(`\u2705 Loan approved and added to system!\n\nClient: ${loanData.firstName} ${loanData.lastName}\nAccount: ${loanData.accountNumber}\nAmount: R${loanData.principal.toFixed(2)}\nMonthly Payment: R${loanData.monthlyPayment.toFixed(2)}`);
 
             // Reset form
             document.getElementById('loanForm').reset();
@@ -4119,7 +4119,7 @@
 
             // Auto-backup before risky operations
             if (newStatus === 'defaulted' || newStatus === 'blacklisted') {
-                console.log('?? Auto-backup before risky operation...');
+                console.log('\uD83D\uDD04 Auto-backup before risky operation...');
                 backupData();
             }
 
@@ -4149,9 +4149,9 @@
 
             // Show confirmation
             const statusMessages = {
-                'active': '? Client activated',
-                'defaulted': '?? Client marked as defaulted',
-                'blacklisted': '?? Client blacklisted'
+                'active': '\u2705 Client activated',
+                'defaulted': '\u26A0\uFE0F Client marked as defaulted',
+                'blacklisted': '\u26D4 Client blacklisted'
             };
 
             alert(statusMessages[newStatus] || 'Client status updated');
@@ -4172,7 +4172,7 @@
 
             // Get payment date from user first (default to today)
             const today = new Date().toISOString().split('T')[0];
-            const paymentDate = prompt(`?? Enter payment date (YYYY-MM-DD):`, today);
+            const paymentDate = prompt(`\uD83D\uDCC5 Enter payment date (YYYY-MM-DD):`, today);
             
             if (!paymentDate) {
                 alert('Payment cancelled');
@@ -4202,7 +4202,7 @@
                                 initiationFeeRemaining;
 
             // Get payment amount from user
-            const paymentAmount = prompt(`?? Enter payment amount for Loan #${loanId}:\n\n?? Current Status:\n??? Remaining Balance: R${loan.current_balance.toFixed(2)}\n??? Expected Monthly Payment: R${loan.monthly_payment.toFixed(2)}\n??? Remaining Principal: R${(loan.remaining_principal || loan.principal_amount).toFixed(2)}\n\n?? Full Payoff Amount: R${payoffAmount.toFixed(2)}\n   (Principal + Remaining Initiation Fee)`);
+            const paymentAmount = prompt(`\uD83D\uDCB0 Enter payment amount for Loan #${loanId}:\n\n\uD83D\uDCCA Current Status:\n\u2022 Remaining Balance: R${loan.current_balance.toFixed(2)}\n\u2022 Expected Monthly Payment: R${loan.monthly_payment.toFixed(2)}\n\u2022 Remaining Principal: R${(loan.remaining_principal || loan.principal_amount).toFixed(2)}\n\n\uD83D\uDCB0 Full Payoff Amount: R${payoffAmount.toFixed(2)}\n   (Principal + Remaining Initiation Fee)`);
             
             if (!paymentAmount || isNaN(paymentAmount) || parseFloat(paymentAmount) <= 0) {
                 alert('Invalid payment amount');
@@ -4257,7 +4257,7 @@
             // Step 1: Deduct admin fee from payment
             let remainingPayment = paidAmount - adminFeePerMonth;
             if (remainingPayment < 0) {
-                alert(`? Payment too low! Minimum is R${adminFeePerMonth.toFixed(2)} for admin fee.`);
+                alert(`\u274C Payment too low! Minimum is R${adminFeePerMonth.toFixed(2)} for admin fee.`);
                 return;
             }
             
@@ -4411,25 +4411,25 @@
             AppState.updateDashboard();
 
             // Show detailed summary
-            let summary = `? Payment Processed!\n\n`;
+            let summary = `\u2705 Payment Processed!\n\n`;
             summary += `Type: ${paymentType}\n`;
             summary += `Amount Paid: R${paidAmount.toFixed(2)}\n\n`;
-            summary += `?? Breakdown:\n`;
-            summary += `? Principal: R${principalPaid.toFixed(2)}\n`;
-            summary += `? Interest: R${interestForThisPayment.toFixed(2)}\n`;
-            summary += `? Admin Fee: R${adminFeePerMonth.toFixed(2)}\n`;
-            summary += `? Initiation Fee: R${initiationFeePaid.toFixed(2)}\n\n`;
+            summary += `\uD83D\uDCCA Breakdown:\n`;
+            summary += `\u2022 Principal: R${principalPaid.toFixed(2)}\n`;
+            summary += `\u2022 Interest: R${interestForThisPayment.toFixed(2)}\n`;
+            summary += `\u2022 Admin Fee: R${adminFeePerMonth.toFixed(2)}\n`;
+            summary += `\u2022 Initiation Fee: R${initiationFeePaid.toFixed(2)}\n\n`;
             
             // Add bonus info for stockvel members
             if (bonusEarned > 0) {
-                summary += `?? Stockvel Member Bonus:\n`;
-                summary += `? Bonus Earned: R${bonusEarned.toFixed(2)}\n`;
-                summary += `? Total Accumulated: R${stockvelMember.accumulatedBonus.toFixed(2)}\n\n`;
+                summary += `\uD83C\uDF81 Stockvel Member Bonus:\n`;
+                summary += `\uD83C\uDF81 Bonus Earned: R${bonusEarned.toFixed(2)}\n`;
+                summary += `\u2022 Total Accumulated: R${stockvelMember.accumulatedBonus.toFixed(2)}\n\n`;
             }
             
-            summary += `?? Loan Status:\n`;
-            summary += `??? Remaining Principal: R${loan.remaining_principal.toFixed(2)}\n`;
-            summary += `? Interest Cap Remaining: R${(loan.max_interest_allowed - loan.total_interest_charged).toFixed(2)}\n`;
+            summary += `\uD83D\uDCCB Loan Status:\n`;
+            summary += `\u2022 Remaining Principal: R${loan.remaining_principal.toFixed(2)}\n`;
+            summary += `\u2022 Interest Cap Remaining: R${(loan.max_interest_allowed - loan.total_interest_charged).toFixed(2)}\n`;
             
             if (isFullPayoff || loan.remaining_principal <= 0) {
                 loan.remaining_principal = 0;
@@ -4442,7 +4442,7 @@
                 });
                 AppState.save();
                 AppState.updateDashboard();
-                summary += `\n?? LOAN PAID OFF!\n`;
+                summary += `\n\uD83C\uDF89 LOAN PAID OFF!\n`;
                 if (!isEarlyPayoff) {
                     summary += `Interest Saved: R${(loan.max_interest_allowed - loan.total_interest_charged).toFixed(2)}`;
                 }
@@ -4456,7 +4456,7 @@
             const lastTransaction = AppState.transactionHistory[0];
             
             if (!lastTransaction || lastTransaction.type !== 'payment') {
-                alert('? No payment to undo');
+                alert('\u26A0\uFE0F No payment to undo');
                 return;
             }
             
@@ -4468,7 +4468,7 @@
             const loan = AppState.loans.find(l => l.loan_id === details.loanId);
             
             if (!loan) {
-                alert('? Cannot find loan for this payment');
+                alert('\u274C Cannot find loan for this payment');
                 return;
             }
             
@@ -4516,7 +4516,7 @@
             AppState.save();
             AppState.updateDashboard();
             
-            alert(`? Payment undone successfully!\n\nReversed: R${details.amount.toFixed(2)}\nLoan #${details.loanId} balance restored to: R${details.previousBalance.toFixed(2)}`);
+            alert(`\u2705 Payment undone successfully!\n\nReversed: R${details.amount.toFixed(2)}\nLoan #${details.loanId} balance restored to: R${details.previousBalance.toFixed(2)}`);
         }
 
         // Loan Status Management
@@ -4545,10 +4545,10 @@
 
             // Show confirmation
             const statusMessages = {
-                'completed': '? Loan marked as completed (paid)',
-                'defaulted': '? Loan marked as defaulted',
-                'blacklisted': '?? Client blacklisted',
-                'active': '? Loan reactivated'
+                'completed': '\u2705 Loan marked as completed (paid)',
+                'defaulted': '\u26A0\uFE0F Loan marked as defaulted',
+                'blacklisted': '\u26D4 Client blacklisted',
+                'active': '\u21BB Loan reactivated'
             };
 
             alert(statusMessages[newStatus] || 'Status updated');
@@ -4563,19 +4563,19 @@
             }
 
             if (loan.status !== 'active') {
-                alert('?? Can only adjust active loans. This loan status is: ' + loan.status);
+                alert('\u26A0\uFE0F Can only adjust active loans. This loan status is: ' + loan.status);
                 return;
             }
 
             // Show adjustment options
             const adjustmentType = prompt(
-                `?? Adjust Loan #${loanId} - ${loan.client_name}\n\n` +
+                `\u2699 Adjust Loan #${loanId} - ${loan.client_name}\n\n` +
                 `Current Details:\n` +
-                `? Principal Amount: R${loan.principal_amount.toFixed(2)}\n` +
-                `??? Remaining Principal: R${loan.remaining_principal.toFixed(2)}\n` +
-                `? Current Balance: R${loan.current_balance.toFixed(2)}\n` +
-                `? Total Interest Charged: R${(loan.total_interest_charged || 0).toFixed(2)}\n` +
-                `? Max Interest Allowed: R${loan.max_interest_allowed.toFixed(2)}\n\n` +
+                `\u2022 Principal Amount: R${loan.principal_amount.toFixed(2)}\n` +
+                `\u2022 Remaining Principal: R${loan.remaining_principal.toFixed(2)}\n` +
+                `\u2022 Current Balance: R${loan.current_balance.toFixed(2)}\n` +
+                `\u2022 Total Interest Charged: R${(loan.total_interest_charged || 0).toFixed(2)}\n` +
+                `\u2022 Max Interest Allowed: R${loan.max_interest_allowed.toFixed(2)}\n\n` +
                 `Select Adjustment Type:\n` +
                 `1 - Add Late Payment Interest\n` +
                 `2 - Increase Loan Amount (Top-up)\n` +
@@ -4607,7 +4607,7 @@
             const remainingInterestCap = maxInterest - currentInterest;
 
             const interestAmount = prompt(
-                `?? Add Late Payment Interest\n\n` +
+                `\u2795 Add Late Payment Interest\n\n` +
                 `Loan #${loan.loan_id} - ${loan.client_name}\n\n` +
                 `Current Interest Charged: R${currentInterest.toFixed(2)}\n` +
                 `Max Interest Allowed: R${maxInterest.toFixed(2)}\n` +
@@ -4626,7 +4626,7 @@
             // Check if adding this interest would exceed the cap
             if (currentInterest + amount > maxInterest) {
                 const confirm = window.confirm(
-                    `?? WARNING: Adding R${amount.toFixed(2)} will exceed the interest cap!\n\n` +
+                    `\u26A0\uFE0F WARNING: Adding R${amount.toFixed(2)} will exceed the interest cap!\n\n` +
                     `Current: R${currentInterest.toFixed(2)}\n` +
                     `After Addition: R${(currentInterest + amount).toFixed(2)}\n` +
                     `Cap: R${maxInterest.toFixed(2)}\n` +
@@ -4642,7 +4642,7 @@
 
             // Get reason for the adjustment
             const reason = prompt(
-                `?? Enter reason for adding interest:\n` +
+                `\uD83D\uDCDD Enter reason for adding interest:\n` +
                 `(e.g., "Late payment penalty", "Missed 2 payments", etc.)`
             );
 
@@ -4681,7 +4681,7 @@
             AppState.updateDashboard();
 
             alert(
-                `? Late Interest Added Successfully!\n\n` +
+                `\u2705 Late Interest Added Successfully!\n\n` +
                 `Loan #${loan.loan_id} - ${loan.client_name}\n` +
                 `Interest Added: R${amount.toFixed(2)}\n` +
                 `Total Interest Now: R${loan.total_interest_charged.toFixed(2)}\n` +
@@ -4693,7 +4693,7 @@
         // Increase Loan Amount (Top-up)
         function increaseLoanAmount(loan) {
             const increaseAmount = prompt(
-                `?? Increase Loan Amount (Top-up)\n\n` +
+                `\uD83D\uDCC8 Increase Loan Amount (Top-up)\n\n` +
                 `Loan #${loan.loan_id} - ${loan.client_name}\n\n` +
                 `Current Principal: R${loan.principal_amount.toFixed(2)}\n` +
                 `Remaining Principal: R${loan.remaining_principal.toFixed(2)}\n` +
@@ -4712,7 +4712,7 @@
             // Check if business has enough capital
             if (AppState.capital < amount) {
                 alert(
-                    `? Insufficient Capital!\n\n` +
+                    `\u274C Insufficient Capital!\n\n` +
                     `Available Capital: R${AppState.capital.toFixed(2)}\n` +
                     `Requested: R${amount.toFixed(2)}\n` +
                     `Shortfall: R${(amount - AppState.capital).toFixed(2)}`
@@ -4722,7 +4722,7 @@
 
             // Get reason for the increase
             const reason = prompt(
-                `?? Enter reason for increasing loan amount:\n` +
+                `\uD83D\uDCDD Enter reason for increasing loan amount:\n` +
                 `(e.g., "Emergency top-up", "Additional business capital", etc.)`
             );
 
@@ -4743,7 +4743,7 @@
             const newBalance = oldBalance + amount;
 
             const confirm = window.confirm(
-                `? Confirm Loan Increase\n\n` +
+                `\uD83D\uDCC8 Confirm Loan Increase\n\n` +
                 `Loan #${loan.loan_id} - ${loan.client_name}\n\n` +
                 `Principal: R${oldPrincipal.toFixed(2)} ? R${newPrincipal.toFixed(2)} (+R${amount.toFixed(2)})\n` +
                 `Remaining Principal: R${oldRemainingPrincipal.toFixed(2)} ? R${newRemainingPrincipal.toFixed(2)}\n` +
@@ -4812,7 +4812,7 @@
             AppState.updateDashboard();
 
             alert(
-                `? Loan Amount Increased Successfully!\n\n` +
+                `\u2705 Loan Amount Increased Successfully!\n\n` +
                 `Loan #${loan.loan_id} - ${loan.client_name}\n\n` +
                 `Principal Increased: R${oldPrincipal.toFixed(2)} ? R${newPrincipal.toFixed(2)}\n` +
                 `Amount Added: R${amount.toFixed(2)}\n` +
@@ -4927,7 +4927,7 @@
             AppState.stockvelReceipts.push(receipt);
             AppState.save();
             
-            alert('? Receipt recorded successfully!\n\n' + 
+            alert('\u2705 Receipt recorded successfully!\n\n' + 
                   `Member: ${member.name}\n` +
                   `Type: ${type}\n` +
                   `Amount: R${amount.toFixed(2)}\n` +
@@ -5058,13 +5058,13 @@
                                 <span style="margin-left: 10px; color: #7f8c8d;">(Member #${member.memberNumber})</span>
                                 <br>
                                 <span style="color: ${urgency === 'expired' ? '#e74c3c' : urgency === 'urgent' ? '#f39c12' : '#f1c40f'}; font-weight: 600;">
-                                    ${isExpired ? `?? EXPIRED ${Math.abs(daysLeft)} days ago` : `? ${daysLeft} days left`}
+                                    ${isExpired ? `\u26A0\uFE0F EXPIRED ${Math.abs(daysLeft)} days ago` : `\uD83D\uDCC5 ${daysLeft} days left`}
                                 </span>
                                 <span style="margin-left: 10px; color: #7f8c8d;">Expires: ${endDate.toLocaleDateString('en-ZA')}</span>
                             </div>
                             <div style="display: flex; gap: 8px;">
-                                <button onclick="viewMemberDetails(${member.memberNumber})" class="export-btn" style="padding: 8px 16px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);">??? View Details</button>
-                                <button onclick="renewMembershipByNumber(${member.memberNumber})" class="calculate-btn" style="padding: 8px 16px;">?? Renew Membership</button>
+                                <button onclick="viewMemberDetails(${member.memberNumber})" class="export-btn" style="padding: 8px 16px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);">\uD83D\uDC40 View Details</button>
+                                <button onclick="renewMembershipByNumber(${member.memberNumber})" class="calculate-btn" style="padding: 8px 16px;">\uD83D\uDD04 Renew Membership</button>
                             </div>
                         </div>
                     </div>
@@ -5089,7 +5089,7 @@
             
             AppState.save();
             
-            alert(`? Membership renewed for ${client.firstName} ${client.lastName}!\\nNew expiry date: ${newEndDate.toLocaleDateString('en-ZA')}`);
+            alert(`\u2705 Membership renewed for ${client.firstName} ${client.lastName}!\\nNew expiry date: ${newEndDate.toLocaleDateString('en-ZA')}`);
             
             checkMembershipRenewals();
             loadStockvelDashboard();
@@ -5122,8 +5122,8 @@
                         <td style="color: #f39c12; font-weight: 600;">R${pendingBonuses.toFixed(2)}</td>
                         <td>${lastBonusDate}</td>
                         <td>
-                            <button onclick="generateMemberDisbursementPDF('${member.accountNumber}')" class="export-btn" style="padding: 4px 10px; font-size: 11px; margin-right: 5px;">?? Statement</button>
-                            ${pendingBonuses > 0 ? `<button onclick="payoutBonus('${member.accountNumber}')" class="export-btn" style="padding: 4px 10px; font-size: 11px;">?? Payout</button>` : ''}
+                            <button onclick="generateMemberDisbursementPDF('${member.accountNumber}')" class="export-btn" style="padding: 4px 10px; font-size: 11px; margin-right: 5px;">\uD83D\uDCC4 Statement</button>
+                            ${pendingBonuses > 0 ? `<button onclick="payoutBonus('${member.accountNumber}')" class="export-btn" style="padding: 4px 10px; font-size: 11px;">\uD83D\uDCB0 Payout</button>` : ''}
                         </td>
                     </tr>
                 `;
@@ -5165,7 +5165,7 @@
             // localStorage now handled by AppState.save()
             localStorage.setItem('clients', JSON.stringify(AppState.clients));
             
-            alert(`? Bonus of R${amount.toFixed(2)} paid out to ${client.firstName} ${client.lastName}`);
+            alert(`\u2705 Bonus of R${amount.toFixed(2)} paid out to ${client.firstName} ${client.lastName}`);
             
             generateBonusReport();
             displayContributionHistory();
@@ -5263,7 +5263,7 @@
                 // Document Title
                 doc.setFontSize(16);
                 doc.setTextColor(102, 126, 234);
-                doc.text('?? MEMBER DISBURSEMENT STATEMENT', 105, 68, { align: 'center' });
+                doc.text('\uD83D\uDCCB MEMBER DISBURSEMENT STATEMENT', 105, 68, { align: 'center' });
                 
                 // Line separator
                 doc.setDrawColor(102, 126, 234);
@@ -5285,7 +5285,7 @@
                 if (daysUntilEnd !== null && daysUntilEnd <= 30) {
                     doc.setTextColor(231, 76, 60);
                     doc.setFont('helvetica', 'bold');
-                    doc.text(`? Membership expires in ${daysUntilEnd} days`, 20, 111);
+                    doc.text(`\u26A0\uFE0F Membership expires in ${daysUntilEnd} days`, 20, 111);
                     doc.setFont('helvetica', 'normal');
                     doc.setTextColor(44, 62, 80);
                 }
@@ -5337,7 +5337,7 @@
                     doc.setFont('helvetica', 'italic');
                     doc.setFontSize(8);
                     doc.setTextColor(100, 100, 100);
-                    doc.text('?? Surprise! You earned bonuses from your loan payments!', 25, activityY + 24);
+                    doc.text('\uD83C\uDF89 Surprise! You earned bonuses from your loan payments!', 25, activityY + 24);
                     doc.text('These have been added to your total contributions.', 25, activityY + 29);
                 }
                 
@@ -5394,13 +5394,13 @@
                 doc.setFontSize(10);
                 doc.setTextColor(133, 100, 4);
                 doc.setFont('helvetica', 'bold');
-                doc.text('?? Important Information', 25, infoY + 7);
+                doc.text('\u2139\uFE0F Important Information', 25, infoY + 7);
                 
                 doc.setFont('helvetica', 'normal');
                 doc.setFontSize(8);
-                doc.text('? Your bonuses are calculated automatically when you make loan payments', 25, infoY + 13);
-                doc.text('? All bonuses are added to your total contributions', 25, infoY + 18);
-                doc.text('? Higher contributions give you access to better loan rates', 25, infoY + 23);
+                doc.text('\u2022 Your bonuses are calculated automatically when you make loan payments', 25, infoY + 13);
+                doc.text('\u2022 All bonuses are added to your total contributions', 25, infoY + 18);
+                doc.text('\u2022 Higher contributions give you access to better loan rates', 25, infoY + 23);
                 
                 // Footer
                 doc.setFontSize(8);
@@ -5468,7 +5468,7 @@
             
             AppState.save();
             
-            alert(`? Member registered successfully!\n\nMember #: ${newMember.memberNumber}\nName: ${name}\nMonthly Contribution: R${monthlyContrib.toFixed(2)}\n\nMembership valid until: ${endDate.toLocaleDateString()}`);
+            alert(`\u2705 Member registered successfully!\n\nMember #: ${newMember.memberNumber}\nName: ${name}\nMonthly Contribution: R${monthlyContrib.toFixed(2)}\n\nMembership valid until: ${endDate.toLocaleDateString()}`);
             
             // Reset form
             document.getElementById('registerMemberForm').reset();
@@ -5496,7 +5496,7 @@
                 if (daysUntilExpiry < 0) {
                     statusBadge = '<span style="background: #e74c3c; color: white; padding: 4px 8px; border-radius: 4px; font-size: 12px;">? Expired</span>';
                 } else if (daysUntilExpiry <= 7) {
-                    statusBadge = '<span style="background: #e67e22; color: white; padding: 4px 8px; border-radius: 4px; font-size: 12px;">?? Urgent</span>';
+                    statusBadge = '<span style="background: #e67e22; color: white; padding: 4px 8px; border-radius: 4px; font-size: 12px;">\u26A0\uFE0F Urgent</span>';
                 } else if (daysUntilExpiry <= 30) {
                     statusBadge = '<span style="background: #f39c12; color: white; padding: 4px 8px; border-radius: 4px; font-size: 12px;">? Soon</span>';
                 } else {
@@ -5514,8 +5514,8 @@
                         <td>${statusBadge}</td>
                         <td>${endDate.toLocaleDateString()}</td>
                         <td>
-                            <button onclick="viewMemberDetails(${member.memberNumber})" class="export-btn" style="padding: 6px 12px; font-size: 12px;">??? View</button>
-                            <button onclick="renewMembershipByNumber(${member.memberNumber})" class="calculate-btn" style="padding: 6px 12px; font-size: 12px;">?? Renew</button>
+                            <button onclick="viewMemberDetails(${member.memberNumber})" class="export-btn" style="padding: 6px 12px; font-size: 12px;">\uD83D\uDC40 View</button>
+                            <button onclick="renewMembershipByNumber(${member.memberNumber})" class="calculate-btn" style="padding: 6px 12px; font-size: 12px;">\uD83D\uDD04 Renew</button>
                         </td>
                     </tr>
                 `;
@@ -5556,7 +5556,7 @@
             const receipts = AppState.stockvelReceipts.filter(r => r.memberNumber === memberNumber);
             const receiptCount = receipts.length;
             
-            alert(`?? Member Details\n\nMember #: ${member.memberNumber}\nAccount #: ${member.account_number || 'Not provided'}\nName: ${member.name}\nPhone: ${member.phone || 'Not provided'}\nEmail: ${member.email || 'Not provided'}\n\n?? Financial Summary:\nTotal Contributions: R${member.totalContributions.toFixed(2)}\nAccumulated Bonus: R${member.accumulatedBonus.toFixed(2)}\nMonthly Contribution: R${member.monthlyContribution.toFixed(2)}\n\n?? Membership:\nStart Date: ${new Date(member.membershipStartDate).toLocaleDateString()}\nEnd Date: ${new Date(member.membershipEndDate).toLocaleDateString()}\nStatus: ${member.status}\n\n?? Activity:\nTotal Receipts: ${receiptCount}`);
+            alert(`\uD83D\uDC64 Member Details\n\nMember #: ${member.memberNumber}\nAccount #: ${member.account_number || 'Not provided'}\nName: ${member.name}\nPhone: ${member.phone || 'Not provided'}\nEmail: ${member.email || 'Not provided'}\n\n\uD83D\uDCB0 Financial Summary:\nTotal Contributions: R${member.totalContributions.toFixed(2)}\nAccumulated Bonus: R${member.accumulatedBonus.toFixed(2)}\nMonthly Contribution: R${member.monthlyContribution.toFixed(2)}\n\n\uD83D\uDCC5 Membership:\nStart Date: ${new Date(member.membershipStartDate).toLocaleDateString()}\nEnd Date: ${new Date(member.membershipEndDate).toLocaleDateString()}\nStatus: ${member.status}\n\n\uD83D\uDCCA Activity:\nTotal Receipts: ${receiptCount}`);
         }
 
         // RENEW MEMBERSHIP BY MEMBER NUMBER
@@ -5570,7 +5570,7 @@
             member.membershipEndDate = newEnd.toISOString().split('T')[0];
             AppState.save();
             
-            alert(`? Membership renewed!\n\nMember: ${member.name}\nNew expiry date: ${newEnd.toLocaleDateString()}`);
+            alert(`\u2705 Membership renewed!\n\nMember: ${member.name}\nNew expiry date: ${newEnd.toLocaleDateString()}`);
             
             refreshMemberRegistry();
             loadStockvelDashboard();
@@ -5640,7 +5640,7 @@
                                     updateAvailable = true;
                                     waitingServiceWorker = newWorker;
                                     showUpdateBanner();
-                                    document.getElementById('updateStatus').textContent = '?? Update available!';
+                                    document.getElementById('updateStatus').textContent = '\uD83D\uDD14 Update available!';
                                     document.getElementById('updateStatus').style.color = '#27ae60';
                                 }
                             });
@@ -5659,7 +5659,7 @@
                 
                 // Listen for controller change (update activated)
                 navigator.serviceWorker.addEventListener('controllerchange', () => {
-                    console.log('? Controller change detected - new service worker has taken control');
+                    console.log('\uD83D\uDD04 Controller change detected - new service worker has taken control');
                     console.log('Reloading page to use new service worker...');
                     // Small delay to ensure the service worker is fully ready
                     setTimeout(() => {
@@ -5676,7 +5676,7 @@
             const button = document.querySelector('[onclick="checkForUpdates()"]');
             if (button) {
                 button.disabled = true;
-                button.textContent = '?? Checking...';
+                button.textContent = '\uD83D\uDD04 Checking...';
             }
             document.getElementById('updateStatus').textContent = 'Checking for updates...';
             document.getElementById('updateStatus').style.color = '#7f8c8d';
@@ -5709,7 +5709,7 @@
                     if (remoteVersion !== currentVersion) {
                         // Version mismatch - update available
                         updateAvailable = true;
-                        document.getElementById('updateStatus').textContent = `?? Update available! v${currentVersion} ? v${remoteVersion}`;
+                        document.getElementById('updateStatus').textContent = `\uD83D\uDD14 Update available! v${currentVersion} \u2192 v${remoteVersion}`;
                         document.getElementById('updateStatus').style.color = '#27ae60';
                         showUpdateBanner();
                         
@@ -5723,7 +5723,7 @@
                     } else {
                         // Versions match - no update needed
                         updateAvailable = false;
-                        document.getElementById('updateStatus').textContent = `? You're running the latest version! (v${currentVersion})`;
+                        document.getElementById('updateStatus').textContent = `\u2705 You're running the latest version! (v${currentVersion})`;
                         document.getElementById('updateStatus').style.color = '#27ae60';
                         dismissUpdateBanner(); // Hide banner if shown
                     }
@@ -5738,11 +5738,11 @@
                             
                             setTimeout(() => {
                                 if (updateAvailable) {
-                                    document.getElementById('updateStatus').textContent = '?? Update available!';
+                                    document.getElementById('updateStatus').textContent = '\uD83D\uDD14 Update available!';
                                     document.getElementById('updateStatus').style.color = '#27ae60';
                                     showUpdateBanner();
                                 } else {
-                                    document.getElementById('updateStatus').textContent = '? No updates found';
+                                    document.getElementById('updateStatus').textContent = '\u2705 No updates found';
                                     document.getElementById('updateStatus').style.color = '#27ae60';
                                 }
                             }, 1500);
@@ -5752,16 +5752,16 @@
                 
                 if (button) {
                     button.disabled = false;
-                    button.textContent = ' ?? Check for Updates';
+                    button.textContent = ' &#128260; Check for Updates';
                 }
                 
             } catch (error) {
                 console.error('Update check failed:', error);
-                document.getElementById('updateStatus').textContent = '? Failed to check for updates. Check your internet connection.';
+                document.getElementById('updateStatus').textContent = '\u274C Failed to check for updates. Check your internet connection.';
                 document.getElementById('updateStatus').style.color = '#e74c3c';
                 if (button) {
                     button.disabled = false;
-                    button.textContent = ' ?? Check for Updates';
+                    button.textContent = ' &#128260; Check for Updates';
                 }
             }
         }
@@ -5797,7 +5797,7 @@
                     if (banner) {
                         banner.innerHTML = `
                             <div style="max-width: 1200px; margin: 0 auto; text-align: center;">
-                                <strong>?? Updating...</strong>
+                                <strong>\u231B Updating...</strong>
                                 <p style="margin: 5px 0 0 0; font-size: 14px;">The app will reload in a moment</p>
                             </div>
                         `;
@@ -5949,7 +5949,7 @@
                     localStorage.removeItem('pendingCloudBackup');
                     this.updateSyncTime();
                     
-                    console.log('? Cloud backup successful');
+                    console.log('\u2705 Cloud backup successful');
                 } catch (error) {
                     console.error('Cloud backup failed:', error);
                     localStorage.setItem('pendingCloudBackup', 'true');
@@ -6000,9 +6000,9 @@
             async syncPendingBackups() {
                 const hasPending = localStorage.getItem('pendingCloudBackup');
                 if (hasPending && this.autoBackupEnabled && this.hasToken()) {
-                    console.log('?? Syncing pending backup...');
+                    console.log('\uD83D\uDD04 Syncing pending backup...');
                     await this.backup();
-                    alert('? Pending backup synced to cloud!');
+                    alert('\u2705 Pending backup synced to cloud!');
                 }
             },
             
@@ -6025,8 +6025,8 @@
                         // Handle different error types with specific messages
                         if (response.status === 404) {
                             // No backup file exists yet - this is not an error, just information
-                            alert('?? No cloud backup found yet.\n\n' +
-                                  '?? To create your first backup:\n' +
+                            alert('\uD83D\uDCE5 No cloud backup found yet.\n\n' +
+                                  '\uD83D\uDCDD To create your first backup:\n' +
                                   '1. Enable "Auto-Backup" in Settings, or\n' +
                                   '2. Make any change (add/edit a loan) to trigger automatic backup, or\n' +
                                   '3. Use "Download Local Backup" to save locally first\n\n' +
@@ -6047,7 +6047,7 @@
                     
                     // Restore data
                     localStorage.setItem('tbfsAppState', JSON.stringify(data));
-                    alert('? Data restored from cloud successfully!\n\nReloading app to display restored data...');
+                    alert('\u2705 Data restored from cloud successfully!\n\nReloading app to display restored data...');
                     
                     // Reload page to refresh all views
                     setTimeout(() => {
@@ -6055,7 +6055,7 @@
                     }, 500);
                 } catch (error) {
                     // Only show error for actual errors (not 404 which we handled above)
-                    alert('? Failed to restore from cloud: ' + error.message);
+                    alert('\u274C Failed to restore from cloud: ' + error.message);
                 }
             }
         };
@@ -6084,7 +6084,7 @@
             // Clear token input
             document.getElementById('githubToken').value = '';
             
-            alert('? Token saved! You can now restore from cloud.\n\n?? Tip: Check the "Enable Auto-Backup" box if you want this device to automatically sync changes to cloud.');
+            alert('\u2705 Token saved! You can now restore from cloud.\n\n\uD83D\uDCA1 Tip: Check the "Enable Auto-Backup" box if you want this device to automatically sync changes to cloud.');
         }
         
         function removeToken() {
@@ -6111,7 +6111,7 @@
                 // Perform initial backup
                 CloudBackup.backup();
                 
-                alert('? Auto-backup enabled! Every change will now sync to cloud automatically.');
+                alert('\u2705 Auto-backup enabled! Every change will now sync to cloud automatically.');
             } else {
                 // Disabling auto-backup
                 if (confirm('Disable auto-backup on this device? You can still restore from cloud anytime.')) {
@@ -6646,10 +6646,10 @@
             
             const comparisonElement = document.getElementById('rocdComparison');
             if (currentROCD > avgROCD) {
-                comparisonElement.textContent = `? ${((currentROCD - avgROCD) / avgROCD * 100).toFixed(1)}% above avg`;
+                comparisonElement.textContent = `\u2191 ${((currentROCD - avgROCD) / avgROCD * 100).toFixed(1)}% above avg`;
                 comparisonElement.style.color = '#27ae60';
             } else if (currentROCD < avgROCD) {
-                comparisonElement.textContent = `? ${((avgROCD - currentROCD) / avgROCD * 100).toFixed(1)}% below avg`;
+                comparisonElement.textContent = `\u2193 ${((avgROCD - currentROCD) / avgROCD * 100).toFixed(1)}% below avg`;
                 comparisonElement.style.color = '#e74c3c';
             } else {
                 comparisonElement.textContent = '= At average';
@@ -6665,13 +6665,13 @@
                     const recentAvg = recent.reduce((a, b) => a + b, 0) / recent.length;
                     const previousAvg = previous.reduce((a, b) => a + b, 0) / previous.length;
                     if (recentAvg > previousAvg) {
-                        trendElement.textContent = '? Improving';
+                        trendElement.textContent = '\u2191 Improving';
                         trendElement.style.color = '#27ae60';
                     } else if (recentAvg < previousAvg) {
-                        trendElement.textContent = '? Declining';
+                        trendElement.textContent = '\u2193 Declining';
                         trendElement.style.color = '#e74c3c';
                     } else {
-                        trendElement.textContent = '? Stable';
+                        trendElement.textContent = '\u2192 Stable';
                         trendElement.style.color = '#3498db';
                     }
                 }
@@ -6823,7 +6823,7 @@
         // Export Report to PDF - ENHANCED v1.6
         function exportReportPDF() {
             if (typeof window.jspdf === 'undefined') {
-                alert('? PDF library not loaded');
+                alert('\u274C PDF library not loaded');
                 return;
             }
             
@@ -6848,7 +6848,7 @@
             // Financial Summary
             pdf.setFontSize(14);
             pdf.setTextColor(44, 62, 80);
-            pdf.text('?? Financial Summary', 14, yPos);
+            pdf.text('\uD83D\uDCB0 Financial Summary', 14, yPos);
             yPos += 10;
             
             pdf.setFontSize(10);
@@ -6873,7 +6873,7 @@
             // Performance Metrics
             pdf.setFontSize(14);
             pdf.setTextColor(44, 62, 80);
-            pdf.text('?? Performance Metrics', 14, yPos);
+            pdf.text('\uD83D\uDCCA Performance Metrics', 14, yPos);
             yPos += 10;
             
             pdf.setFontSize(10);
@@ -6901,7 +6901,7 @@
             // Cash Flow Projections (Next 3 Months)
             pdf.setFontSize(14);
             pdf.setTextColor(44, 62, 80);
-            pdf.text('?? Cash Flow Forecast (Next 3 Months)', 14, yPos);
+            pdf.text('\uD83D\uDCB0 Cash Flow Forecast (Next 3 Months)', 14, yPos);
             yPos += 10;
             
             pdf.setFontSize(9);
@@ -6930,7 +6930,7 @@
             // Top Clients
             pdf.setFontSize(14);
             pdf.setTextColor(44, 62, 80);
-            pdf.text('?? Top Clients', 14, yPos);
+            pdf.text('\uD83D\uDC64 Top Clients', 14, yPos);
             yPos += 10;
             
             pdf.setFontSize(9);
@@ -6968,14 +6968,14 @@
             
             // Additional success message for desktop only (mobile gets alert in helper)
             if (success && !/Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent)) {
-                alert('? Comprehensive PDF report downloaded!');
+                alert('\u2705 Comprehensive PDF report downloaded!');
             }
         }
 
         // Export Report to Excel - ENHANCED v1.6 with Multiple Sheets
         function exportReportExcel() {
             if (typeof XLSX === 'undefined') {
-                alert('? Excel export library not loaded');
+                alert('\u274C Excel export library not loaded');
                 return;
             }
             
@@ -7106,7 +7106,7 @@
             // Download
             XLSX.writeFile(wb, `TBFS_Comprehensive_Report_${new Date().toISOString().split('T')[0]}.xlsx`);
             
-            alert('? Enhanced Excel report with 4 sheets exported successfully!\n\n?? Sheets included:\n?? Summary\n?? Monthly Revenue\n?? Cash Flow Forecast\n?? Loan Details');
+            alert('\u2705 Enhanced Excel report with 4 sheets exported successfully!\n\n\uD83D\uDCCA Sheets included:\n\u2022 Summary\n\u2022 Monthly Revenue\n\u2022 Cash Flow Forecast\n\u2022 Loan Details');
         }
 
         // Print Report
