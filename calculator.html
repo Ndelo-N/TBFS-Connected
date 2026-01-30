@@ -347,6 +347,9 @@
             // Set default loan date to today
             document.getElementById('loanDate').valueAsDate = new Date();
             
+            // Auto-fill from URL parameters (if coming from Clients page)
+            autoFillFromURL();
+            
             // Set up form handler
             document.getElementById('loanForm').addEventListener('submit', function(e) {
                 e.preventDefault();
@@ -363,6 +366,68 @@
             });
             
             console.log('✅ Calculator page initialized');
+        }
+        
+        /**
+         * Auto-fill form fields from URL parameters
+         * Called when navigating from Clients page with "Add New Loan" button
+         */
+        function autoFillFromURL() {
+            const urlParams = new URLSearchParams(window.location.search);
+            const firstName = urlParams.get('firstName');
+            const lastName = urlParams.get('lastName');
+            const accountNumber = urlParams.get('accountNumber');
+            
+            if (firstName || lastName || accountNumber) {
+                // Auto-fill client details
+                if (firstName) {
+                    document.getElementById('firstName').value = decodeURIComponent(firstName);
+                }
+                if (lastName) {
+                    document.getElementById('lastName').value = decodeURIComponent(lastName);
+                }
+                if (accountNumber) {
+                    document.getElementById('accountNumber').value = decodeURIComponent(accountNumber);
+                }
+                
+                // Check if this client is a stockvel member and auto-fill if so
+                const accountNum = decodeURIComponent(accountNumber);
+                const client = (AppState.clients || []).find(c => c.account_number === accountNum);
+                if (client && client.client_type === 'stockvel') {
+                    // Try to find stockvel member
+                    const member = (AppState.stockvelMembers || []).find(m => 
+                        m.account_number === accountNum || 
+                        m.name === `${firstName} ${lastName}`.trim()
+                    );
+                    if (member) {
+                        document.getElementById('stockvelMember').checked = true;
+                        toggleStockvelFields();
+                        document.getElementById('memberNumber').value = member.memberNumber;
+                        loadMemberData(); // This will auto-fill stockvel fields
+                    } else {
+                        // Client is stockvel but not in member registry - still check the box
+                        document.getElementById('stockvelMember').checked = true;
+                        toggleStockvelFields();
+                    }
+                }
+                
+                // Scroll to form
+                document.getElementById('loanForm').scrollIntoView({ behavior: 'smooth', block: 'start' });
+                
+                // Show a brief notification
+                const notification = document.createElement('div');
+                notification.style.cssText = 'position: fixed; top: 80px; right: 20px; background: #27ae60; color: white; padding: 15px 20px; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); z-index: 10000; font-weight: 600;';
+                notification.textContent = '✅ Client details auto-filled!';
+                document.body.appendChild(notification);
+                setTimeout(() => {
+                    notification.style.transition = 'opacity 0.3s';
+                    notification.style.opacity = '0';
+                    setTimeout(() => notification.remove(), 300);
+                }, 3000);
+                
+                // Clean URL (remove parameters) for cleaner navigation
+                window.history.replaceState({}, document.title, window.location.pathname);
+            }
         }
         
         /**
@@ -1132,23 +1197,78 @@
                 return;
             }
             
-            // Check if client exists
+            // Unified Model: Check if client exists, sync with stockvel member if applicable
             let client = (AppState.clients || []).find(c => c.account_number === loanData.accountNumber);
             
+            // Unified Model: Sync logic for stockvel members
+            let memberNumber = null;
+            let tieredRate = null;
+            
+            if (loanData.isStockvelMember) {
+                // Find stockvel member by name, phone, or account number
+                const memberName = `${loanData.firstName} ${loanData.lastName}`;
+                const stockvelMembers = AppState.stockvelMembers || [];
+                let possibleMember = stockvelMembers.find(m => 
+                    m.name === memberName || 
+                    m.phone === loanData.accountNumber ||
+                    m.account_number === loanData.accountNumber
+                );
+                
+                // If member found, use their memberNumber
+                if (possibleMember) {
+                    memberNumber = possibleMember.memberNumber;
+                } else {
+                    // Unified Model: Create stockvel member entry if doesn't exist
+                    if (!AppState.nextMemberNumber) AppState.nextMemberNumber = 1001;
+                    memberNumber = AppState.nextMemberNumber++;
+                    
+                    const endDate = Calculations.calculateMembershipEndDate(new Date().toISOString().split('T')[0]);
+                    possibleMember = {
+                        memberNumber: memberNumber,
+                        name: memberName,
+                        phone: loanData.accountNumber,
+                        account_number: loanData.accountNumber,
+                        membershipStartDate: new Date().toISOString().split('T')[0],
+                        membershipEndDate: endDate,
+                        monthlyContribution: loanData.monthlyContribution || 0,
+                        totalContributions: loanData.totalContributions || 0,
+                        accumulatedBonus: 0,
+                        registeredDate: new Date().toISOString(),
+                        status: 'active'
+                    };
+                    AppState.stockvelMembers.push(possibleMember);
+                }
+                
+                // Calculate tiered rate for bonus calculation
+                if (loanData.totalContributions > 0) {
+                    const tieredResult = Calculations.calculateTieredStockvelInterest(loanData.principal, loanData.totalContributions);
+                    const tieredInterest = tieredResult.tiers1to4Interest;
+                    tieredRate = loanData.totalContributions > 0 ? (tieredInterest / loanData.totalContributions) : 0;
+                }
+            }
+            
+            // Unified Model: Create or update client
             if (client) {
                 if (client.status !== 'active') {
                     alert(`⛔ SECURITY ALERT: Client ${loanData.accountNumber} is ${client.status.toUpperCase()}. Cannot approve loan for inactive clients.`);
                     return;
                 }
                 client.total_loans = (client.total_loans || 0) + 1;
+                
+                // Sync: Update client to stockvel type if applicable
+                if (loanData.isStockvelMember) {
+                    client.client_type = 'stockvel';
+                    client.memberNumber = memberNumber;
+                }
             } else {
                 // Create new client
                 client = {
                     account_number: loanData.accountNumber,
                     first_name: loanData.firstName,
                     last_name: loanData.lastName,
-                    phone_number: '',
+                    phone_number: loanData.accountNumber, // Use account number as phone if stockvel
                     client_type: loanData.isStockvelMember ? 'stockvel' : 'standard',
+                    memberNumber: loanData.isStockvelMember ? memberNumber : null, // Unified Model: Link to member
                     total_loans: 1,
                     total_contributions: loanData.totalContributions || 0,
                     total_repayment: 0,
@@ -1166,32 +1286,6 @@
             });
             
             console.log('Interest Cap Applied:', interestCapFields._interest_cap_description);
-            
-            // Detect if this is a stockvel MEMBER loan (from separate registry)
-            let memberNumber = null;
-            let tieredRate = null;
-            
-            if (loanData.isStockvelMember) {
-                // Try to find member by name and phone/account
-                const memberName = `${loanData.firstName} ${loanData.lastName}`;
-                const stockvelMembers = AppState.stockvelMembers || [];
-                const possibleMember = stockvelMembers.find(m => 
-                    m.name === memberName || 
-                    m.phone === loanData.accountNumber
-                );
-                
-                if (possibleMember) {
-                    memberNumber = possibleMember.memberNumber;
-                }
-                
-                // Calculate tiered rate for bonus calculation later
-                if (loanData.totalContributions > 0) {
-                    const tieredResult = Calculations.calculateTieredStockvelInterest(loanData.principal, loanData.totalContributions);
-                    // Use tiers 1-4 interest only for bonus calculation
-                    const tieredInterest = tieredResult.tiers1to4Interest;
-                    tieredRate = loanData.totalContributions > 0 ? (tieredInterest / loanData.totalContributions) : 0;
-                }
-            }
             
             // Calculate total cost
             const totalCost = loanData.schedule.reduce((sum, p) => sum + p.monthly_payment, 0);
@@ -1235,14 +1329,29 @@
                 // Schedule
                 schedule: loanData.schedule,
                 
-                // Stockvel-specific
+                // Stockvel-specific (Unified Model: Always set memberNumber if stockvel)
                 total_contributions: loanData.totalContributions || 0,
                 monthly_contribution: loanData.monthlyContribution || 0,
                 accumulated_bonus: loanData.accumulatedBonus || 0,
-                memberNumber: memberNumber,
+                memberNumber: memberNumber, // Unified Model: Links to stockvelMembers[]
                 tieredRate: tieredRate,
                 isStockvelLoan: loanData.isStockvelMember
             };
+            
+            // Unified Model: Sync member's contribution data if stockvel loan
+            if (loanData.isStockvelMember && memberNumber) {
+                const member = AppState.stockvelMembers.find(m => m.memberNumber === memberNumber);
+                if (member) {
+                    // Update member's total contributions if loan includes contributions
+                    if (loanData.totalContributions > 0) {
+                        member.totalContributions = Math.max(member.totalContributions || 0, loanData.totalContributions);
+                    }
+                    // Ensure account_number link
+                    if (!member.account_number) {
+                        member.account_number = loanData.accountNumber;
+                    }
+                }
+            }
             
             // Add loan to state
             if (!AppState.loans) AppState.loans = [];

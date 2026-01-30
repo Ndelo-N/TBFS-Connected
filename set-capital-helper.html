@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Set Capital - TBFS Helper</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .container {
+            background: white;
+            border-radius: 20px;
+            padding: 40px;
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.2);
+            max-width: 500px;
+            width: 100%;
+        }
+        
+        h1 {
+            color: #2c3e50;
+            margin-bottom: 10px;
+        }
+        
+        .subtitle {
+            color: #7f8c8d;
+            margin-bottom: 30px;
+        }
+        
+        .form-group {
+            margin-bottom: 20px;
+        }
+        
+        label {
+            display: block;
+            font-weight: 600;
+            color: #2c3e50;
+            margin-bottom: 8px;
+        }
+        
+        input {
+            width: 100%;
+            padding: 12px 15px;
+            border: 2px solid #e0e6ed;
+            border-radius: 10px;
+            font-size: 16px;
+            transition: all 0.3s ease;
+        }
+        
+        input:focus {
+            outline: none;
+            border-color: #667eea;
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+        }
+        
+        .btn {
+            width: 100%;
+            padding: 15px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 10px;
+            font-size: 18px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            margin-top: 10px;
+        }
+        
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 25px rgba(102, 126, 234, 0.3);
+        }
+        
+        .btn-success {
+            background: linear-gradient(135deg, #27ae60 0%, #2ecc71 100%);
+        }
+        
+        .info-box {
+            background: #e3f2fd;
+            border-left: 4px solid #2196f3;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+        }
+        
+        .info-box h4 {
+            color: #1976d2;
+            margin-bottom: 8px;
+        }
+        
+        .current-capital {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            text-align: center;
+        }
+        
+        .current-capital-label {
+            font-size: 12px;
+            color: #7f8c8d;
+            margin-bottom: 5px;
+        }
+        
+        .current-capital-value {
+            font-size: 32px;
+            font-weight: bold;
+            color: #2c3e50;
+        }
+        
+        .success-message {
+            background: #d4edda;
+            border-left: 4px solid #27ae60;
+            padding: 15px;
+            border-radius: 8px;
+            margin-top: 20px;
+            color: #155724;
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>💰 Set Available Capital</h1>
+        <p class="subtitle">Update your available funds for issuing loans</p>
+        
+        <div class="info-box">
+            <h4>📋 Current Capital</h4>
+            <div class="current-capital">
+                <div class="current-capital-label">Available Funds</div>
+                <div class="current-capital-value" id="currentCapital">Loading...</div>
+            </div>
+        </div>
+        
+        <form id="capitalForm">
+            <div class="form-group">
+                <label for="newCapital">New Capital Amount (R):</label>
+                <input type="number" id="newCapital" min="0" step="1000" value="100000" required>
+                <small style="color: #7f8c8d; font-size: 12px; margin-top: 5px; display: block;">Enter the total amount available for loans</small>
+            </div>
+            
+            <button type="submit" class="btn btn-success">✅ Set Capital to R100,000</button>
+        </form>
+        
+        <div class="success-message" id="successMessage">
+            ✅ Capital updated successfully! You can now close this page and return to the main app.
+        </div>
+    </div>
+    
+    <script src="shared/app-state.js"></script>
+    <script>
+        // Load current capital
+        function loadCurrentCapital() {
+            try {
+                const state = AppStateManager.load();
+                const capital = state.capital || 0;
+                document.getElementById('currentCapital').textContent = `R ${capital.toLocaleString('en-ZA')}`;
+            } catch (error) {
+                console.error('Error loading capital:', error);
+                document.getElementById('currentCapital').textContent = 'R 0';
+            }
+        }
+        
+        // Set capital
+        function setCapital(amount) {
+            try {
+                const state = AppStateManager.load();
+                state.capital = parseFloat(amount);
+                AppStateManager.save(state);
+                return true;
+            } catch (error) {
+                console.error('Error setting capital:', error);
+                alert('Error setting capital: ' + error.message);
+                return false;
+            }
+        }
+        
+        // Handle form submit
+        document.getElementById('capitalForm').addEventListener('submit', function(e) {
+            e.preventDefault();
+            
+            const newCapital = parseFloat(document.getElementById('newCapital').value);
+            
+            if (isNaN(newCapital) || newCapital < 0) {
+                alert('Please enter a valid amount');
+                return;
+            }
+            
+            if (setCapital(newCapital)) {
+                document.getElementById('successMessage').style.display = 'block';
+                loadCurrentCapital();
+                
+                // Update the input to show what was set
+                document.getElementById('newCapital').value = newCapital;
+                
+                // Show success message
+                setTimeout(() => {
+                    alert(`✅ Capital set successfully to R${newCapital.toLocaleString('en-ZA')}!\n\nYou can now issue loans up to this amount.`);
+                }, 100);
+            }
+        });
+        
+        // Load current capital on page load
+        loadCurrentCapital();
+    </script>
+</body>
+</html>
