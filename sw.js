@@ -1,18 +1,19 @@
-const CACHE_NAME = 'tbfs-loan-manager-v38'; // v1.7.10 - Phase 7: Add Settings module
+const CACHE_NAME = 'tbfs-loan-manager-v39'; // v1.7.11 - Phase 8: Dashboard Refactor + Phase 9: Service Worker Update
 const urlsToCache = [
   './',
-  './index.html',
-  './active-loans.html',
-  './stockvel.html',
-  './reports.html',
-  './calculator.html',
-  './clients.html',
-  './settings.html',
-  './shared/app-state.js',
-  './shared/navigation.js',
-  './shared/calculations.js',
-  './shared/styles.css',
-  './manifest.json',
+  './index.html',                    // Dashboard (refactored)
+  './calculator.html',               // Loan Calculator
+  './active-loans.html',             // Active Loans Management
+  './stockvel.html',                 // Stockvel Members
+  './clients.html',                  // Client Database
+  './reports.html',                  // Business Reports
+  './loan-income-calculator.html',  // Income Table Calculator
+  './settings.html',                 // Settings & Backup
+  './shared/app-state.js',           // Shared: State Management
+  './shared/navigation.js',          // Shared: Navigation
+  './shared/calculations.js',        // Shared: Calculations
+  './shared/styles.css',             // Shared: Styles
+  './manifest.json',                 // PWA Manifest
   'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js',
   'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js',
   'https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js',
