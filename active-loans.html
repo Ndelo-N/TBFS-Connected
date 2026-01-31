@@ -1059,6 +1059,54 @@ Click "OK" to process payment or "Cancel" to go back.
                 loan.remaining_principal = 0;
             }
             
+            // CALCULATE AND RECORD BONUS FOR STOCKVEL MEMBERS
+            let bonusEarned = 0;
+            if (loan.memberNumber && AppState.stockvelMembers) {
+                const stockvelMember = AppState.stockvelMembers.find(m => m.memberNumber === loan.memberNumber);
+                
+                if (stockvelMember) {
+                    // Calculate what TBFS is due (tiered interest + fees)
+                    const remainingBalance = loan.remaining_principal + principalPaid; // Balance before this payment
+                    
+                    // Amount due to TBFS = interest + admin fee + initiation fee
+                    const amountDueToTBFS = interestPaid + adminFeePaid + initiationFeePaid;
+                    
+                    // 10% minimum charge
+                    const minimumCharge = remainingBalance * 0.10;
+                    
+                    if (amountDueToTBFS < minimumCharge) {
+                        // Member pays EXACTLY 10% (minimum)
+                        // Bonus = 10% minimum - amount actually due
+                        bonusEarned = minimumCharge - amountDueToTBFS;
+                        
+                        // Add bonus to member's accumulated bonus (NOT to contributions!)
+                        stockvelMember.accumulatedBonus = (stockvelMember.accumulatedBonus || 0) + bonusEarned;
+                        
+                        // Ensure stockvelReceipts array exists
+                        if (!AppState.stockvelReceipts) AppState.stockvelReceipts = [];
+                        
+                        // Record bonus receipt
+                        AppState.stockvelReceipts.push({
+                            id: Date.now(),
+                            memberNumber: stockvelMember.memberNumber,
+                            memberName: stockvelMember.name,
+                            type: 'loan_payment',
+                            amount: amount,
+                            date: paymentDate,
+                            notes: `Loan #${loanId} payment - Bonus earned (paid 10% minimum, saved ${((bonusEarned/minimumCharge)*100).toFixed(1)}%)`,
+                            previousTotal: stockvelMember.totalContributions,
+                            newTotal: stockvelMember.totalContributions, // Contributions stay same!
+                            bonusAmount: bonusEarned,
+                            previousBonus: stockvelMember.accumulatedBonus - bonusEarned
+                        });
+                        
+                        console.log(`🎁 Stockvel Bonus Earned: R${bonusEarned.toFixed(2)}`);
+                    }
+                    // else: amountDueToTBFS >= minimumCharge
+                    // Member pays tiered amount (already > 10%), no bonus
+                }
+            }
+            
             // Update AppState
             AppState.capital = (AppState.capital || 0) + amount;
             AppState.deployed = Math.max(0, (AppState.deployed || 0) - principalPaid);
@@ -1103,6 +1151,17 @@ Click "OK" to process payment or "Cancel" to go back.
             const partialMsg = nextPayment && nextPayment.partial_payment ? '\n⚠️ Partial payment recorded - installment not yet complete' : '';
             const recalcMsg = loan.interest_recalculated ? `\n\n🔄 INTEREST RECALCULATED!\nYour overpayment in the first half reduced future interest.\nNew Max Interest: ${Calculations.formatCurrency(loan.max_interest_allowed)}` : '';
             
+            // Stockvel bonus message
+            let bonusMsg = '';
+            if (bonusEarned > 0 && loan.memberNumber && AppState.stockvelMembers) {
+                const stockvelMember = AppState.stockvelMembers.find(m => m.memberNumber === loan.memberNumber);
+                if (stockvelMember) {
+                    bonusMsg = `\n\n🎁 Stockvel Member Bonus:\n` +
+                              `🎁 Bonus Earned: ${Calculations.formatCurrency(bonusEarned)}\n` +
+                              `• Total Accumulated: ${Calculations.formatCurrency(stockvelMember.accumulatedBonus)}`;
+                }
+            }
+            
             // Format payment date for display
             const paymentDateFormatted = new Date(paymentDate).toLocaleDateString('en-ZA', {
                 year: 'numeric',
@@ -1111,7 +1170,7 @@ Click "OK" to process payment or "Cancel" to go back.
             });
             
             alert(
-                `✅ Payment Processed Successfully!${completionMsg}${partialMsg}${recalcMsg}\n\n` +
+                `✅ Payment Processed Successfully!${completionMsg}${partialMsg}${recalcMsg}${bonusMsg}\n\n` +
                 `📅 Payment Date: ${paymentDateFormatted}\n` +
                 `💰 Total Paid: ${Calculations.formatCurrency(amount)}\n\n` +
                 `📊 Payment Breakdown:\n` +
