@@ -67,10 +67,6 @@ class NavigationManager {
                 <div class="header-content">
                     <div class="logo-section">
                         <img src="TBFS_Logo.png" alt="TBFS" class="logo" onerror="this.style.display='none'">
-                        <div class="company-info">
-                            <h1 class="company-name">TBFS</h1>
-                            <p class="tagline">Your Financial Refuge</p>
-                        </div>
                     </div>
                     
                     <button class="hamburger" onclick="Navigation.toggleMenu()" aria-label="Toggle menu">
@@ -115,6 +111,22 @@ class NavigationManager {
         
         // Handle hash-based redirects (backwards compatibility)
         this.handleLegacyHashRouting();
+        
+        // Ensure hamburger menu works after DOM injection
+        setTimeout(() => {
+            const hamburger = document.querySelector('.hamburger');
+            const nav = document.getElementById('mainNav');
+            if (hamburger && nav) {
+                // Remove any existing listeners and add fresh one
+                const newHamburger = hamburger.cloneNode(true);
+                hamburger.parentNode.replaceChild(newHamburger, hamburger);
+                newHamburger.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    this.toggleMenu();
+                });
+            }
+        }, 100);
         
         console.log(`🧭 Navigation initialized for page: ${currentPageId}`);
     }
@@ -238,8 +250,17 @@ class NavigationManager {
         const hamburger = document.querySelector('.hamburger');
         
         if (nav && hamburger) {
-            nav.classList.toggle('active');
-            hamburger.classList.toggle('active');
+            const isActive = nav.classList.contains('active');
+            if (isActive) {
+                nav.classList.remove('active');
+                hamburger.classList.remove('active');
+            } else {
+                nav.classList.add('active');
+                hamburger.classList.add('active');
+            }
+            console.log('🍔 Menu toggled:', nav.classList.contains('active') ? 'open' : 'closed');
+        } else {
+            console.error('❌ Navigation elements not found:', { nav: !!nav, hamburger: !!hamburger });
         }
     }
     

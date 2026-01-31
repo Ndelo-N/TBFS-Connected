@@ -47,7 +47,7 @@
     --font-size-xxl: 32px;
     
     /* Navigation Height */
-    --nav-height: 60px;
+    --nav-height: 50px; /* Reduced height since logo section removed */
 }
 
 /* ============================================
@@ -99,49 +99,47 @@ body {
 .header-content {
     max-width: 1400px;
     margin: 0 auto;
-    padding: var(--spacing-md) var(--spacing-lg);
+    padding: var(--spacing-sm) var(--spacing-lg);
     display: flex;
     align-items: center;
-    justify-content: space-between;
-    gap: var(--spacing-lg);
+    justify-content: flex-start;
+    gap: var(--spacing-md);
+    min-height: var(--nav-height);
 }
 
 .logo-section {
     display: flex;
     align-items: center;
-    gap: var(--spacing-md);
+    gap: var(--spacing-sm);
 }
 
 .logo {
-    width: 50px;
-    height: 50px;
+    width: 40px;
+    height: 40px;
     border-radius: var(--radius-full);
     object-fit: contain;
     background: white;
-    padding: 5px;
+    padding: 4px;
 }
 
 .company-info {
-    color: white;
+    display: none;
 }
 
 .company-name {
-    font-size: var(--font-size-lg);
-    font-weight: bold;
-    margin-bottom: 2px;
+    display: none;
 }
 
 .tagline {
-    font-size: var(--font-size-xs);
-    opacity: 0.9;
-    font-style: italic;
+    display: none;
 }
 
-/* Main Navigation */
+/* Main Navigation - Desktop: horizontal, Mobile: slide-out menu */
 .main-nav {
     display: flex;
     gap: var(--spacing-sm);
     align-items: center;
+    flex-wrap: wrap;
 }
 
 .nav-item {
@@ -164,15 +162,16 @@ body {
     color: #667eea;
 }
 
-/* Hamburger Menu (Mobile) */
+/* Hamburger Menu - Always visible */
 .hamburger {
-    display: none;
+    display: flex;
     flex-direction: column;
     gap: 4px;
     background: transparent;
     border: none;
     cursor: pointer;
     padding: var(--spacing-sm);
+    z-index: 1001;
 }
 
 .hamburger span {
@@ -506,6 +505,7 @@ tbody tr:last-child td {
 /* ============================================
    RESPONSIVE DESIGN
    ============================================ */
+/* Mobile Navigation - Hamburger menu for all screen sizes */
 @media (max-width: 768px) {
     body {
         padding: var(--spacing-sm);
@@ -516,11 +516,7 @@ tbody tr:last-child td {
         padding: var(--spacing-lg);
     }
     
-    /* Mobile Navigation */
-    .hamburger {
-        display: flex;
-    }
-    
+    /* Mobile Navigation - Slide-out menu */
     .main-nav {
         position: fixed;
         top: var(--nav-height);
@@ -534,16 +530,43 @@ tbody tr:last-child td {
         transition: transform 0.3s ease;
         max-height: calc(100vh - var(--nav-height));
         overflow-y: auto;
+        z-index: 1000;
+        display: none; /* Hidden by default on mobile */
     }
     
     .main-nav.active {
-        transform: translateX(0);
+        transform: translateX(0) !important;
+        display: flex !important;
     }
     
     .nav-item {
         width: 100%;
         text-align: center;
     }
+}
+
+/* Desktop Navigation - Show horizontal menu by default, but allow hamburger toggle */
+@media (min-width: 769px) {
+    .main-nav {
+        display: flex;
+        position: static;
+        transform: none;
+        flex-direction: row;
+        background: transparent;
+        padding: 0;
+        flex: 1; /* Take remaining space */
+    }
+    
+    /* Hamburger visible on desktop */
+    .hamburger {
+        display: flex;
+    }
+    
+    /* On desktop, menu is always visible horizontally */
+    .main-nav.active {
+        display: flex;
+    }
+}
     
     /* Stats Grid */
     .stats-grid {

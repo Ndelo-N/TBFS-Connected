@@ -26,6 +26,10 @@
     <link rel="icon" type="image/png" sizes="32x32" href="icons/icon-32x32.png">
     <link rel="icon" type="image/png" sizes="16x16" href="icons/icon-16x16.png">
     <link rel="shortcut icon" href="icons/favicon.ico">
+    
+    <!-- Shared Styles -->
+    <link rel="stylesheet" href="shared/styles.css">
+    
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
@@ -41,6 +45,7 @@
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             min-height: 100vh;
             padding: 20px;
+            padding-top: calc(60px + 20px); /* Account for fixed navigation header (60px) + spacing */
         }
 
         .container {
@@ -137,13 +142,18 @@
         }
 
         .tab-content {
-            display: none;
+            display: none !important; /* Hide all tabs - they're now separate pages */
             padding: 40px;
             transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.3s ease;
         }
 
         .tab-content.active {
-            display: block;
+            display: none !important; /* Even active tabs are hidden - dashboard is separate */
+        }
+        
+        /* Dashboard content is always visible (not a tab-content) */
+        #dashboard {
+            display: block !important;
         }
 
         /* Swipe Navigation Styles */
@@ -654,41 +664,15 @@
         </div>
     </div>
 
-    <div class="container">
-        <div class="header" id="appHeader">
-            <div class="logo" style="background: none; box-shadow: none;">
-                <img src="./TBFS_Logo.png" 
-                     alt="TBFS Logo" 
-                     style="width: 120px; height: 120px; display: block; margin: 0 auto; border-radius: 50%; background: #f8fbfd; border: 4px solid #e3e8ef; object-fit: contain;" 
-                     onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';" />
-                <div id="logoFallback" style="display: none; width: 120px; height: 120px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border-radius: 50%; margin: 0 auto; align-items: center; justify-content: center; color: white; font-size: 24px; font-weight: bold;"> 
-        TBFS 
-    </div>
-</div>
-            <div class="company-name">Thaba Bosiu Financial Services</div>
-            <div class="tagline">Your Financial Refuge</div>
-        </div>
+    <!-- Navigation Header -->
+    <div id="navigation-header"></div>
+    
+    <!-- Main Container -->
+    <div class="container fade-in">
+        <div class="page-content">
 
-        <div class="tabs" id="appTabs">
-            <button class="tab active" data-tab="calculator">Loan Calculator</button>
-            <button class="tab" data-tab="dashboard">Dashboard</button>
-            <button class="tab" data-tab="clients">Clients</button>
-            <button class="tab" data-tab="stockvel">&#128203; Stockvel</button>
-            <button class="tab" data-tab="loans">Active Loans</button>
-            <button class="tab" data-tab="reports">&#128202; Reports</button>
-            <button class="tab" data-tab="income-table">&#128202; Income Table</button>
-            <button class="tab" data-tab="settings">&#9881; Settings</button>
-        </div>
-
-        <!-- Swipe Indicators -->
-        <div class="swipe-indicator left" id="swipeLeftIndicator">&#8592;</div>
-        <div class="swipe-indicator right" id="swipeRightIndicator">&#8594;</div>
-
-        <!-- Tabs Container for Swipe Detection -->
-        <div class="tabs-container" id="tabsContainer" style="--header-offset: 0px;">
-
-        <!-- CALCULATOR TAB -->
-        <div id="calculator" class="tab-content active">
+        <!-- CALCULATOR TAB (Hidden - moved to calculator.html) -->
+        <div id="calculator" class="tab-content" style="display: none;">
             <div class="form-section">
                 <h2 class="section-title">Loan Application Details</h2>
                 <form id="loanForm">
@@ -862,9 +846,9 @@
             </div>
         </div>
 
-        <!-- DASHBOARD TAB -->
-        <div id="dashboard" class="tab-content">
-            <h2>Portfolio Overview</h2>
+        <!-- DASHBOARD CONTENT -->
+        <div id="dashboard">
+            <h1 class="mb-lg">📊 Portfolio Overview</h1>
             
             <div id="dashboardAlerts"></div>
 
@@ -969,8 +953,8 @@
             </div>
         </div>
 
-        <!-- CLIENTS TAB -->
-        <div id="clients" class="tab-content">
+        <!-- CLIENTS TAB (Hidden - moved to clients.html) -->
+        <div id="clients" class="tab-content" style="display: none;">
             <h2>Client Management</h2>
             <div class="stats-grid">
                 <div class="stat-card">
@@ -1010,8 +994,8 @@
             </div>
         </div>
 
-        <!-- STOCKVEL TAB -->
-        <div id="stockvel" class="tab-content">
+        <!-- STOCKVEL TAB (Hidden - moved to stockvel.html) -->
+        <div id="stockvel" class="tab-content" style="display: none;">
             <h2>&#128203; Stockvel Member Management</h2>
             
             <!-- Stockvel Summary Stats -->
@@ -1222,14 +1206,14 @@
             </div>
         </div>
 
-        <!-- LOANS TAB -->
-        <div id="loans" class="tab-content">
+        <!-- LOANS TAB (Hidden - moved to active-loans.html) -->
+        <div id="loans" class="tab-content" style="display: none;">
             <h2>Active Loans</h2>
             <div id="loansList"></div>
         </div>
 
-        <!-- REPORTS TAB -->
-        <div id="reports" class="tab-content">
+        <!-- REPORTS TAB (Hidden - moved to reports.html) -->
+        <div id="reports" class="tab-content" style="display: none;">
             <h2 class="section-title">&#128202; Business Reports & Analytics</h2>
             
             <!-- Report Period Selector -->
@@ -1414,13 +1398,13 @@
             </div>
         </div>
 
-        <!-- INCOME TABLE TAB -->
-        <div id="income-table" class="tab-content">
+        <!-- INCOME TABLE TAB (Hidden - moved to loan-income-calculator.html) -->
+        <div id="income-table" class="tab-content" style="display: none;">
             <iframe src="loan-income-calculator.html" style="width: 100%; height: 90vh; border: none; border-radius: 10px;"></iframe>
         </div>
 
-        <!-- SETTINGS TAB -->
-        <div id="settings" class="tab-content">
+        <!-- SETTINGS TAB (Hidden - moved to settings.html) -->
+        <div id="settings" class="tab-content" style="display: none;">
             <h2 class="section-title">&#9881; Settings</h2>
             
             <!-- App Version & Updates Section -->
@@ -2459,6 +2443,11 @@
         // Wait for DOM to load
         document.addEventListener('DOMContentLoaded', function() {
             console.log('DOM loaded, setting up event listeners');
+            
+            // Initialize navigation
+            if (typeof Navigation !== 'undefined') {
+                Navigation.init('dashboard');
+            }
             
             // Initialize app state
             AppState.init();
@@ -7453,6 +7442,11 @@
         }, { passive: true });
     })();
 </script>
+
+    <!-- Shared Modules -->
+    <script src="shared/app-state.js"></script>
+    <script src="shared/calculations.js"></script>
+    <script src="shared/navigation.js"></script>
 </body>
 </html>
 
