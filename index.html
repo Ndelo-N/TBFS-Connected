@@ -2821,12 +2821,18 @@
                     const monthsUntilExpiry = Math.floor((membershipExpiry - today) / (1000 * 60 * 60 * 24 * 30));
                     
                     if (monthsUntilExpiry < 1) {
-                        alert('\u26A0\uFE0F Membership has expired! Please renew membership before taking a loan.');
-                        return;
-                    }
-                    
-                    if (term > monthsUntilExpiry) {
-                        alert(`\u26A0\uFE0F Loan term too long!\n\nYour membership expires in ${monthsUntilExpiry} month(s).\nMaximum loan term: ${monthsUntilExpiry} month(s)\n\nPlease reduce the loan term or renew your membership first.`);
+                        // Membership expired - will be treated as standard loan
+                        const proceed = confirm(
+                            '⚠️ Membership has expired!\n\n' +
+                            'This loan will be treated as a STANDARD LOAN (not Stockvel).\n\n' +
+                            'Click OK to proceed with standard loan calculation, or Cancel to renew membership first.'
+                        );
+                        if (!proceed) {
+                            return;
+                        }
+                        // Continue - will be converted to standard loan later
+                    } else if (term > monthsUntilExpiry) {
+                        alert(`⛔ Loan term too long!\n\nYour membership expires in ${monthsUntilExpiry} month(s).\nMaximum loan term: ${monthsUntilExpiry} month(s)\n\nPlease reduce the loan term or renew your membership first.`);
                         return;
                     }
                 }
@@ -4107,16 +4113,17 @@
                     const today = new Date();
                     const membershipExpiry = new Date(possibleMember.membershipEndDate);
                     if (membershipExpiry < today) {
-                        const shouldProceed = confirm(
+                        // Membership expired - treat as standard loan
+                        alert(
                             `⚠️ Membership has expired!\n\n` +
                             `Member: ${possibleMember.name} (#${possibleMember.memberNumber})\n` +
                             `Expiry Date: ${new Date(possibleMember.membershipEndDate).toLocaleDateString()}\n\n` +
-                            `Do you want to proceed with loan creation anyway?`
+                            `This loan will be treated as a STANDARD LOAN (not Stockvel).\n\n` +
+                            `Please renew membership to get Stockvel benefits on future loans.`
                         );
-                        if (!shouldProceed) {
-                            alert('❌ Loan creation cancelled. Please renew membership first.');
-                            return;
-                        }
+                        // Convert to standard loan
+                        loanData.isStockvelMember = false;
+                        memberNumber = null; // Clear member number
                     }
                 }
                 

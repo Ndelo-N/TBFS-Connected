@@ -436,6 +436,9 @@
                 // Link to Stockvel page if stockvel member
                 if (clientType === 'stockvel' && client.memberNumber) {
                     actionsHtml += `<button class="btn btn-warning" style="padding: 5px 10px; font-size: 12px;" onclick="location.href='stockvel.html#member-${client.memberNumber}'">🎁 View Member</button> `;
+                } else if (clientType === 'standard') {
+                    // Add Convert to Stockvel button for standard clients
+                    actionsHtml += `<button class="btn" style="padding: 5px 10px; font-size: 12px; background: #f39c12; color: white;" onclick="convertToStockvelMember('${accountForAttr}')">🎁 Convert to Stockvel</button> `;
                 }
                 
                 if (status !== 'active') {
@@ -549,6 +552,7 @@
         
         /**
          * Navigate to calculator with client details pre-filled
+         * For stockvel members, also includes membership details
          */
         function addNewLoan(firstName, lastName, accountNumber) {
             // Navigate to calculator with URL parameters
@@ -557,6 +561,45 @@
                 lastName: lastName,
                 accountNumber: accountNumber
             });
+            
+            // If client is stockvel member, add membership details (only if membership is still active)
+            const client = AppState.clients.find(c => c.account_number === accountNumber);
+            if (client && (client.client_type || 'standard') === 'stockvel' && client.memberNumber) {
+                const member = (AppState.stockvelMembers || []).find(m => m.memberNumber === client.memberNumber);
+                if (member) {
+                    // Check if membership has expired
+                    const today = new Date();
+                    today.setHours(0, 0, 0, 0); // Reset time to compare dates only
+                    const expiryDate = new Date(member.membershipEndDate);
+                    expiryDate.setHours(0, 0, 0, 0);
+                    const isExpired = expiryDate < today;
+                    
+                    // Only add stockvel details if membership is still active
+                    if (!isExpired) {
+                        // Calculate start date from expiry date (membership period is always 12 months/1 year)
+                        // End date = Start date + 1 year, so Start date = End date - 1 year
+                        const startDate = new Date(
+                            expiryDate.getFullYear() - 1,
+                            expiryDate.getMonth(),
+                            expiryDate.getDate()
+                        );
+                        const startDateStr = startDate.toISOString().split('T')[0];
+                        
+                        // Add stockvel membership details
+                        params.append('isStockvelMember', 'true');
+                        params.append('memberNumber', member.memberNumber.toString());
+                        params.append('membershipStartDate', startDateStr);
+                        params.append('membershipEndDate', member.membershipEndDate || '');
+                        params.append('totalContributions', (member.totalContributions || 0).toString());
+                        params.append('monthlyContribution', (member.monthlyContribution || 0).toString());
+                        params.append('accumulatedBonus', (member.accumulatedBonus || 0).toString());
+                    } else {
+                        // Membership expired - explicitly set to not be stockvel member
+                        params.append('isStockvelMember', 'false');
+                    }
+                }
+            }
+            
             window.location.href = `calculator.html?${params.toString()}`;
         }
         
@@ -602,6 +645,158 @@
                     member.name = `${client.first_name || ''} ${client.last_name || ''}`.trim();
                 }
             }
+        }
+        
+        /**
+         * Convert a standard client to a Stockvel member
+         * Unified Model: Creates stockvel member entry and updates client type
+         */
+        function convertToStockvelMember(accountNumber) {
+            const client = AppState.clients.find(c => c.account_number === accountNumber);
+            if (!client) {
+                alert('❌ Client not found');
+                return;
+            }
+            
+            // Check if already stockvel
+            if ((client.client_type || 'standard') === 'stockvel') {
+                alert('✅ This client is already a Stockvel member!');
+                if (client.memberNumber) {
+                    location.href = `stockvel.html#member-${client.memberNumber}`;
+                }
+                return;
+            }
+            
+            // Check if member already exists
+            if (!AppState.stockvelMembers) AppState.stockvelMembers = [];
+            const existingMember = Calculations.findStockvelMember({
+                phone: client.account_number,
+                accountNumber: client.account_number,
+                name: `${client.first_name || ''} ${client.last_name || ''}`.trim()
+            }, AppState.stockvelMembers);
+            
+            if (existingMember) {
+                // Member exists but client not linked - just link them
+                client.client_type = 'stockvel';
+                client.memberNumber = existingMember.memberNumber;
+                AppStateManager.save(AppState);
+                loadClients();
+                alert(`✅ Client linked to existing Stockvel member #${existingMember.memberNumber}!`);
+                return;
+            }
+            
+            // Prompt for membership details
+            const membershipStartDate = prompt(
+                '📅 Enter Membership Start Date (YYYY-MM-DD):\n\n' +
+                'Leave blank to use today\'s date.',
+                new Date().toISOString().split('T')[0]
+            );
+            
+            if (membershipStartDate === null) {
+                return; // User cancelled
+            }
+            
+            const startDate = membershipStartDate.trim() || new Date().toISOString().split('T')[0];
+            
+            // Validate date
+            if (!/^\d{4}-\d{2}-\d{2}$/.test(startDate)) {
+                alert('❌ Invalid date format. Please use YYYY-MM-DD');
+                return;
+            }
+            
+            const monthlyContribInput = prompt(
+                '💰 Enter Monthly Contribution Amount (R):\n\n' +
+                'This is the amount the member contributes each month.',
+                '0'
+            );
+            
+            if (monthlyContribInput === null) {
+                return; // User cancelled
+            }
+            
+            const monthlyContrib = parseFloat(monthlyContribInput) || 0;
+            
+            const initialContribInput = prompt(
+                '💰 Enter Initial/Total Contributions to Date (R):\n\n' +
+                'Leave blank or 0 if no contributions yet.',
+                '0'
+            );
+            
+            if (initialContribInput === null) {
+                return; // User cancelled
+            }
+            
+            const initialContrib = parseFloat(initialContribInput) || 0;
+            
+            const emailInput = prompt(
+                '📧 Enter Email Address (optional):\n\n' +
+                'Leave blank if not available.',
+                ''
+            );
+            
+            if (emailInput === null) {
+                return; // User cancelled
+            }
+            
+            const email = emailInput.trim();
+            
+            // Confirm conversion
+            const confirmMsg = 
+                `📋 Confirm Stockvel Membership Registration:\n\n` +
+                `Client: ${client.first_name} ${client.last_name}\n` +
+                `Account: ${client.account_number}\n` +
+                `Start Date: ${startDate}\n` +
+                `Monthly Contribution: R${monthlyContrib.toFixed(2)}\n` +
+                `Initial Contributions: R${initialContrib.toFixed(2)}\n\n` +
+                `Click OK to register as Stockvel member.`;
+            
+            if (!confirm(confirmMsg)) {
+                return; // User cancelled
+            }
+            
+            // Ensure arrays exist
+            if (!AppState.stockvelMembers) AppState.stockvelMembers = [];
+            if (!AppState.nextMemberNumber) AppState.nextMemberNumber = 1001;
+            
+            // Generate member number
+            const memberNumber = AppState.nextMemberNumber++;
+            
+            // Calculate membership end date (12 months from start)
+            const endDate = Calculations.calculateMembershipEndDate(startDate);
+            
+            // Create stockvel member entry
+            const newMember = {
+                memberNumber: memberNumber,
+                name: `${client.first_name || ''} ${client.last_name || ''}`.trim(),
+                phone: client.account_number,
+                email: email,
+                account_number: client.account_number,
+                membershipStartDate: startDate,
+                membershipEndDate: endDate,
+                monthlyContribution: monthlyContrib,
+                totalContributions: initialContrib,
+                accumulatedBonus: 0,
+                registeredDate: new Date().toISOString(),
+                status: client.status || 'active'
+            };
+            
+            AppState.stockvelMembers.push(newMember);
+            
+            // Update client to stockvel type
+            client.client_type = 'stockvel';
+            client.memberNumber = memberNumber;
+            
+            // Save state
+            AppStateManager.save(AppState);
+            loadClients();
+            
+            alert(
+                `✅ Client converted to Stockvel member!\n\n` +
+                `Member #: ${memberNumber}\n` +
+                `Name: ${newMember.name}\n` +
+                `Membership Expires: ${new Date(endDate).toLocaleDateString()}\n\n` +
+                `The client can now receive Stockvel loan benefits.`
+            );
         }
         
         /**
