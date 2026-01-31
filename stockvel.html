@@ -198,6 +198,11 @@
                                 <input type="tel" id="newMemberPhone" class="form-input" required placeholder="e.g. 0821234567">
                             </div>
                             <div class="form-group">
+                                <label class="form-label">Account Number:</label>
+                                <input type="text" id="newMemberAccountNumber" class="form-input" placeholder="e.g. ACC001 (links to Client)">
+                                <small style="color: #666; font-size: 11px;">Leave blank to use phone number. Use this to link to existing client.</small>
+                            </div>
+                            <div class="form-group">
                                 <label class="form-label">Email (Optional):</label>
                                 <input type="email" id="newMemberEmail" class="form-input" placeholder="e.g. john@example.com">
                             </div>
@@ -232,6 +237,7 @@
                             <tr>
                                 <th>Member #</th>
                                 <th>Name</th>
+                                <th>Account #</th>
                                 <th>Phone</th>
                                 <th>Total Contributions</th>
                                 <th>Accumulated Bonus</th>
@@ -244,7 +250,7 @@
                         </thead>
                         <tbody id="memberRegistryBody">
                             <tr>
-                                <td colspan="10" style="text-align: center; color: #7f8c8d; padding: 40px;">
+                                <td colspan="11" style="text-align: center; color: #7f8c8d; padding: 40px;">
                                     No members registered yet. Register your first member above!
                                 </td>
                             </tr>
@@ -518,6 +524,7 @@
         function registerNewMember() {
             const name = document.getElementById('newMemberName').value.trim();
             const phone = document.getElementById('newMemberPhone').value.trim();
+            const accountNumber = document.getElementById('newMemberAccountNumber').value.trim();
             const email = document.getElementById('newMemberEmail').value.trim();
             const startDate = document.getElementById('newMemberStartDate').value;
             const monthlyContrib = parseFloat(document.getElementById('newMemberMonthlyContrib').value);
@@ -527,6 +534,9 @@
                 alert('❌ Please fill in all required fields!');
                 return;
             }
+            
+            // Use account number if provided, otherwise use phone number
+            const finalAccountNumber = accountNumber || phone;
             
             // Ensure arrays exist
             if (!AppState.stockvelMembers) AppState.stockvelMembers = [];
@@ -545,9 +555,10 @@
             const firstName = nameParts[0] || '';
             const lastName = nameParts.slice(1).join(' ') || '';
             
-            // Unified Model: Check if client already exists
+            // Unified Model: Check if client already exists by account_number or phone
             let existingClient = AppState.clients.find(c => 
-                c.account_number === phone || 
+                c.account_number === finalAccountNumber || 
+                c.account_number === phone ||
                 (c.memberNumber === memberNumber)
             );
             
@@ -555,7 +566,7 @@
             if (!existingClient) {
                 // Create new client
                 existingClient = {
-                    account_number: phone,
+                    account_number: finalAccountNumber,
                     first_name: firstName,
                     last_name: lastName,
                     phone_number: phone,
@@ -570,6 +581,7 @@
                 // Update existing client to stockvel type
                 existingClient.client_type = 'stockvel';
                 existingClient.memberNumber = memberNumber;
+                existingClient.account_number = finalAccountNumber; // Update account number to match
                 if (!existingClient.phone_number) existingClient.phone_number = phone;
             }
             
@@ -579,7 +591,7 @@
                 name: name,
                 phone: phone,
                 email: email,
-                account_number: phone, // Link to client
+                account_number: finalAccountNumber, // Strong link to client via account_number
                 membershipStartDate: startDate,
                 membershipEndDate: endDate,
                 monthlyContribution: monthlyContrib,
@@ -630,7 +642,7 @@
             const tbody = document.getElementById('memberRegistryBody');
             
             if (!AppState.stockvelMembers || AppState.stockvelMembers.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="10" style="text-align: center; color: #7f8c8d; padding: 40px;">No members registered yet. Register your first member above!</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="11" style="text-align: center; color: #7f8c8d; padding: 40px;">No members registered yet. Register your first member above!</td></tr>';
                 return;
             }
             
@@ -680,6 +692,7 @@
                     <tr>
                         <td><strong>${member.memberNumber}</strong></td>
                         <td>${member.name || 'Unknown'}</td>
+                        <td><strong style="color: #667eea;">${member.account_number || member.phone || 'N/A'}</strong></td>
                         <td>${member.phone || 'N/A'}</td>
                         <td style="color: #27ae60; font-weight: 600;">${Calculations.formatCurrency(member.totalContributions || 0)}</td>
                         <td style="color: #f39c12; font-weight: 600;">${Calculations.formatCurrency(member.accumulatedBonus || 0)}</td>
@@ -690,6 +703,7 @@
                         <td>
                             ${clientLink}<br>
                             <button onclick="viewMemberDetails(${member.memberNumber})" class="btn btn-secondary" style="padding: 6px 12px; font-size: 12px; margin-top: 5px;">👁️ View</button>
+                            <button onclick="editMemberAccountNumber(${member.memberNumber})" class="btn" style="padding: 6px 12px; font-size: 12px; margin-top: 5px; background: #3498db; color: white;">🔗 Set Account #</button>
                             <button onclick="renewMembership(${member.memberNumber})" class="btn btn-success" style="padding: 6px 12px; font-size: 12px; margin-top: 5px;">🔄 Renew</button>
                         </td>
                     </tr>
@@ -992,11 +1006,19 @@
             const receipts = (AppState.stockvelReceipts || []).filter(r => r.memberNumber === memberNumber);
             const receiptCount = receipts.length;
             
+            // Find linked client
+            const client = (AppState.clients || []).find(c => 
+                c.memberNumber === memberNumber ||
+                c.account_number === member.account_number ||
+                c.account_number === member.phone
+            );
+            
             const details = `
 👤 Member Details
 
 Member #: ${member.memberNumber}
 Name: ${member.name}
+Account #: ${member.account_number || member.phone || 'Not set'}
 Phone: ${member.phone || 'Not provided'}
 Email: ${member.email || 'Not provided'}
 
@@ -1012,9 +1034,87 @@ Status: ${member.status}
 
 📊 Activity:
 Total Receipts: ${receiptCount}
+Client Linked: ${client ? 'Yes (' + client.account_number + ')' : 'No'}
             `.trim();
             
             alert(details);
+        }
+        
+        /**
+         * Edit/Update member account number
+         * Allows adding or updating account_number for existing members to strengthen client link
+         */
+        function editMemberAccountNumber(memberNumber) {
+            const member = Calculations.findStockvelMember({ memberNumber }, AppState.stockvelMembers);
+            if (!member) {
+                alert('❌ Member not found!');
+                return;
+            }
+            
+            const currentAccountNumber = member.account_number || member.phone || '';
+            const promptMessage = 
+                `🔗 Update Account Number for Member #${memberNumber}\n\n` +
+                `Member: ${member.name}\n` +
+                `Current Account #: ${currentAccountNumber}\n\n` +
+                `Enter new account number (or leave blank to use phone number):`;
+            
+            const newAccountNumber = prompt(promptMessage, currentAccountNumber);
+            
+            if (newAccountNumber === null) {
+                return; // User cancelled
+            }
+            
+            const finalAccountNumber = newAccountNumber.trim() || member.phone;
+            
+            if (!finalAccountNumber) {
+                alert('❌ Account number cannot be empty!');
+                return;
+            }
+            
+            // Update member account_number
+            member.account_number = finalAccountNumber;
+            
+            // Also update linked client if exists
+            const client = (AppState.clients || []).find(c => 
+                c.memberNumber === memberNumber ||
+                c.account_number === member.phone ||
+                (member.account_number && c.account_number === member.account_number)
+            );
+            
+            if (client) {
+                client.account_number = finalAccountNumber;
+                // Ensure client is linked to this member
+                client.memberNumber = memberNumber;
+                client.client_type = 'stockvel';
+            } else {
+                // Create client entry if doesn't exist
+                const nameParts = member.name.split(' ');
+                const firstName = nameParts[0] || '';
+                const lastName = nameParts.slice(1).join(' ') || '';
+                
+                const newClient = {
+                    account_number: finalAccountNumber,
+                    first_name: firstName,
+                    last_name: lastName,
+                    phone_number: member.phone,
+                    client_type: 'stockvel',
+                    memberNumber: memberNumber,
+                    total_loans: 0,
+                    total_repayment: 0,
+                    status: 'active'
+                };
+                
+                if (!AppState.clients) AppState.clients = [];
+                AppState.clients.push(newClient);
+            }
+            
+            // Save state
+            AppStateManager.save(AppState);
+            
+            // Reload dashboard
+            loadStockvelDashboard();
+            
+            alert(`✅ Account number updated!\n\nMember: ${member.name}\nAccount #: ${finalAccountNumber}\n\nClient link has been updated.`);
         }
         
         /**

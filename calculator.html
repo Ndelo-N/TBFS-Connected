@@ -377,7 +377,10 @@
             const firstName = urlParams.get('firstName');
             const lastName = urlParams.get('lastName');
             const accountNumber = urlParams.get('accountNumber');
-            const isStockvelMember = urlParams.get('isStockvelMember') === 'true';
+            const isStockvelMemberParam = urlParams.get('isStockvelMember');
+            const isStockvelMember = isStockvelMemberParam === 'true';
+            
+            // Retrieve debug info from clients.html
             
             if (firstName || lastName || accountNumber) {
                 // Auto-fill client details
@@ -392,42 +395,79 @@
                 }
                 
                 // Check for stockvel membership details in URL parameters (from clients.html)
-                if (isStockvelMember) {
-                    const memberNumber = urlParams.get('memberNumber');
-                    const membershipStartDate = urlParams.get('membershipStartDate');
-                    const membershipEndDate = urlParams.get('membershipEndDate');
-                    const totalContributions = urlParams.get('totalContributions');
-                    const monthlyContribution = urlParams.get('monthlyContribution');
-                    const accumulatedBonus = urlParams.get('accumulatedBonus');
-                    
-                    // Enable stockvel fields
-                    document.getElementById('stockvelMember').checked = true;
-                    toggleStockvelFields();
-                    
-                    // Pre-fill all stockvel membership details
-                    if (memberNumber) {
-                        document.getElementById('memberNumber').value = memberNumber;
+                // Priority: Explicit parameter > fallback logic
+                const stockvelCheckbox = document.getElementById('stockvelMember');
+                if (!stockvelCheckbox) {
+                    console.error('Stockvel checkbox element not found!');
+                    return; // Can't proceed without checkbox
+                }
+                
+                if (isStockvelMemberParam !== null) {
+                    // Explicit parameter set - use it
+                    if (isStockvelMember) {
+                        const memberNumber = urlParams.get('memberNumber');
+                        const membershipStartDate = urlParams.get('membershipStartDate');
+                        const membershipEndDate = urlParams.get('membershipEndDate');
+                        const totalContributions = urlParams.get('totalContributions');
+                        const monthlyContribution = urlParams.get('monthlyContribution');
+                        const accumulatedBonus = urlParams.get('accumulatedBonus');
+                        
+                        // Enable stockvel fields - set checkbox first, then toggle
+                        // Use setAttribute to ensure it's properly set
+                        stockvelCheckbox.setAttribute('checked', 'checked');
+                        stockvelCheckbox.checked = true;
+                        
+                        // Immediately toggle fields to show them
+                        toggleStockvelFields();
+                        
+                        // Use setTimeout to ensure DOM is updated
+                        setTimeout(() => {
+                            if (!stockvelCheckbox.checked) {
+                                stockvelCheckbox.checked = true;
+                                stockvelCheckbox.setAttribute('checked', 'checked');
+                            }
+                            toggleStockvelFields();
+                        }, 50);
+                        
+                        // Pre-fill all stockvel membership details
+                        if (memberNumber) {
+                            document.getElementById('memberNumber').value = memberNumber;
+                        }
+                        if (membershipStartDate) {
+                            document.getElementById('membershipStartDate').value = membershipStartDate;
+                        }
+                        if (membershipEndDate) {
+                            document.getElementById('membershipEndDate').value = membershipEndDate;
+                        }
+                        if (totalContributions !== null && totalContributions !== '') {
+                            document.getElementById('totalContributions').value = totalContributions;
+                        }
+                        if (monthlyContribution !== null && monthlyContribution !== '') {
+                            document.getElementById('monthlyContribution').value = monthlyContribution;
+                        }
+                        if (accumulatedBonus !== null && accumulatedBonus !== '') {
+                            document.getElementById('accumulatedBonus').value = accumulatedBonus;
+                        }
+                    } else {
+                        // Explicitly uncheck stockvel member checkbox (membership expired)
+                        // Remove checked attribute and set property
+                        stockvelCheckbox.removeAttribute('checked');
+                        stockvelCheckbox.checked = false;
+                        
+                        // Immediately toggle fields to hide them
+                        toggleStockvelFields();
+                        
+                        // Use setTimeout to ensure DOM is updated
+                        setTimeout(() => {
+                            if (stockvelCheckbox.checked) {
+                                stockvelCheckbox.checked = false;
+                                stockvelCheckbox.removeAttribute('checked');
+                            }
+                            toggleStockvelFields();
+                        }, 50);
                     }
-                    if (membershipStartDate) {
-                        document.getElementById('membershipStartDate').value = membershipStartDate;
-                    }
-                    if (membershipEndDate) {
-                        document.getElementById('membershipEndDate').value = membershipEndDate;
-                    }
-                    if (totalContributions !== null) {
-                        document.getElementById('totalContributions').value = totalContributions;
-                    }
-                    if (monthlyContribution !== null) {
-                        document.getElementById('monthlyContribution').value = monthlyContribution;
-                    }
-                    if (accumulatedBonus !== null) {
-                        document.getElementById('accumulatedBonus').value = accumulatedBonus;
-                    }
-                } else if (urlParams.get('isStockvelMember') === 'false') {
-                    // Explicitly uncheck stockvel member checkbox (membership expired)
-                    document.getElementById('stockvelMember').checked = false;
-                    toggleStockvelFields();
                 } else {
+                    // No explicit parameter - use fallback logic
                     // Fallback: Check if this client is a stockvel member and auto-fill if so (only if active)
                     const accountNum = decodeURIComponent(accountNumber);
                     const client = (AppState.clients || []).find(c => c.account_number === accountNum);
@@ -446,20 +486,31 @@
                             const isExpired = expiryDate < today;
                             
                             if (!isExpired) {
-                                document.getElementById('stockvelMember').checked = true;
-                                toggleStockvelFields();
-                                document.getElementById('memberNumber').value = member.memberNumber;
-                                loadMemberData(); // This will auto-fill stockvel fields
+                                stockvelCheckbox.setAttribute('checked', 'checked');
+                                stockvelCheckbox.checked = true;
+                                setTimeout(() => {
+                                    toggleStockvelFields();
+                                    document.getElementById('memberNumber').value = member.memberNumber;
+                                    loadMemberData(); // This will auto-fill stockvel fields
+                                }, 10);
                             } else {
                                 // Membership expired - leave checkbox unchecked
-                                document.getElementById('stockvelMember').checked = false;
-                                toggleStockvelFields();
+                                stockvelCheckbox.removeAttribute('checked');
+                                stockvelCheckbox.checked = false;
+                                setTimeout(() => toggleStockvelFields(), 10);
                             }
                         } else {
                             // Client is stockvel but not in member registry - check the box anyway
-                            document.getElementById('stockvelMember').checked = true;
-                            toggleStockvelFields();
+                            stockvelCheckbox.setAttribute('checked', 'checked');
+                            stockvelCheckbox.checked = true;
+                            setTimeout(() => toggleStockvelFields(), 10);
                         }
+                    } else {
+                        // Client is not stockvel - ensure checkbox is unchecked
+                        console.log('Fallback: Client is not stockvel - ensuring checkbox is FALSE');
+                        stockvelCheckbox.removeAttribute('checked');
+                        stockvelCheckbox.checked = false;
+                        setTimeout(() => toggleStockvelFields(), 10);
                     }
                 }
                 

@@ -3,7 +3,17 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#667eea">
     <title>TBFS Loan Income Calculator</title>
+    
+    <!-- PWA Meta Tags -->
+    <link rel="manifest" href="manifest.json">
+    <link rel="apple-touch-icon" href="icons/icon-192x192.png">
+    <link rel="icon" type="image/png" sizes="32x32" href="icons/icon-32x32.png">
+    
+    <!-- Shared Styles -->
+    <link rel="stylesheet" href="shared/styles.css">
+    
     <style>
         * {
             margin: 0;
@@ -16,6 +26,7 @@
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             min-height: 100vh;
             padding: 20px;
+            padding-top: calc(60px + 20px); /* Account for fixed navigation header (60px) + spacing */
         }
 
         .container {
@@ -351,6 +362,9 @@
     </style>
 </head>
 <body>
+    <!-- Navigation Header -->
+    <div id="navigation-header"></div>
+    
     <div class="container">
         <div class="header">
             <h1>💰 TBFS Loan Income Calculator</h1>
@@ -676,8 +690,15 @@
 
         // Generate table on page load with default values
         window.addEventListener('load', function() {
+            // Initialize navigation
+            if (typeof Navigation !== 'undefined') {
+                Navigation.init('income-table');
+            }
             // Don't auto-generate, let user click the button
         });
     </script>
+    
+    <!-- Shared Modules -->
+    <script src="shared/navigation.js"></script>
 </body>
 </html>
