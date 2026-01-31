@@ -19,6 +19,63 @@ const Calculations = {
     },
     
     /**
+     * Standardized Stockvel Member Lookup
+     * Finds member by memberNumber, phone, account_number, or name
+     * Used across all modules for consistent member finding
+     * 
+     * @param {object} searchCriteria - Search parameters
+     * @param {number} searchCriteria.memberNumber - Member number to find
+     * @param {string} searchCriteria.phone - Phone number to match
+     * @param {string} searchCriteria.accountNumber - Account number to match
+     * @param {string} searchCriteria.name - Full name to match
+     * @param {array} stockvelMembers - Array of stockvel members to search
+     * @returns {object|null} - Found member or null
+     */
+    findStockvelMember(searchCriteria, stockvelMembers) {
+        if (!stockvelMembers || !Array.isArray(stockvelMembers)) {
+            return null;
+        }
+        
+        const { memberNumber, phone, accountNumber, name } = searchCriteria;
+        
+        // Priority 1: Find by memberNumber (most reliable)
+        if (memberNumber) {
+            const byNumber = stockvelMembers.find(m => m.memberNumber === parseInt(memberNumber));
+            if (byNumber) return byNumber;
+        }
+        
+        // Priority 2: Find by phone
+        if (phone) {
+            const byPhone = stockvelMembers.find(m => 
+                m.phone === phone || 
+                m.phone === accountNumber ||
+                m.account_number === phone
+            );
+            if (byPhone) return byPhone;
+        }
+        
+        // Priority 3: Find by account_number
+        if (accountNumber) {
+            const byAccount = stockvelMembers.find(m => 
+                m.account_number === accountNumber ||
+                m.phone === accountNumber
+            );
+            if (byAccount) return byAccount;
+        }
+        
+        // Priority 4: Find by name (least reliable, may have duplicates)
+        if (name) {
+            const byName = stockvelMembers.find(m => 
+                m.name === name ||
+                m.name.toLowerCase() === name.toLowerCase()
+            );
+            if (byName) return byName;
+        }
+        
+        return null;
+    },
+    
+    /**
      * Round to 2 decimal places
      */
     round(value) {

@@ -371,6 +371,36 @@
                     </table>
                 </div>
             </div>
+            
+            <!-- Contribution Payout Report -->
+            <div class="card">
+                <h2 class="card-header">💵 Contribution Payout Report</h2>
+                <div class="mb-md">
+                    <button onclick="generateContributionPayoutReport()" class="btn btn-primary">📊 Generate Report</button>
+                    <button onclick="exportContributionPayoutReport()" class="btn btn-success" style="margin-left: 10px;">📥 Export to Excel</button>
+                </div>
+                <div class="table-container">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Member</th>
+                                <th>Current Contributions</th>
+                                <th>Total Contributions Paid Out</th>
+                                <th>Last Contribution Payout</th>
+                                <th>Payout Count</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="contributionPayoutReportBody">
+                            <tr>
+                                <td colspan="6" style="text-align: center; color: #7f8c8d; padding: 40px;">
+                                    Click "Generate Report" to view contribution payout history
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
         </div>
     </div>
     
@@ -679,7 +709,7 @@
                 return;
             }
             
-            const member = AppState.stockvelMembers.find(m => m.memberNumber === memberNumber);
+            const member = Calculations.findStockvelMember({ memberNumber }, AppState.stockvelMembers);
             if (!member) return;
             
             document.getElementById('memberCurrentContribs').textContent = Calculations.formatCurrency(member.totalContributions || 0);
@@ -705,7 +735,7 @@
                 return;
             }
             
-            const member = AppState.stockvelMembers.find(m => m.memberNumber === memberNumber);
+            const member = Calculations.findStockvelMember({ memberNumber }, AppState.stockvelMembers);
             if (!member) {
                 alert('❌ Member not found!');
                 return;
@@ -941,7 +971,8 @@
                         <td style="color: #f39c12; font-weight: 600;">${Calculations.formatCurrency(pending)}</td>
                         <td>${lastBonus}</td>
                         <td>
-                            ${pending > 0 ? `<button onclick="payoutBonus(${member.memberNumber}, ${pending})" class="btn btn-success" style="padding: 6px 12px; font-size: 12px;">💰 Payout</button>` : '-'}
+                            ${pending > 0 ? `<button onclick="payoutBonus(${member.memberNumber}, ${pending})" class="btn btn-success" style="padding: 6px 12px; font-size: 12px; margin-right: 5px;">💰 Payout Bonus</button>` : '-'}
+                            ${member.totalContributions > 0 ? `<button onclick="payoutContributions(${member.memberNumber})" class="btn" style="padding: 6px 12px; font-size: 12px; background: #3498db; color: white;">💵 Payout Contributions</button>` : '-'}
                         </td>
                     </tr>
                 `;
@@ -952,7 +983,7 @@
          * View member details
          */
         function viewMemberDetails(memberNumber) {
-            const member = AppState.stockvelMembers.find(m => m.memberNumber === memberNumber);
+            const member = Calculations.findStockvelMember({ memberNumber }, AppState.stockvelMembers);
             if (!member) {
                 alert('❌ Member not found!');
                 return;
@@ -990,7 +1021,7 @@ Total Receipts: ${receiptCount}
          * Renew membership
          */
         function renewMembership(memberNumber) {
-            const member = AppState.stockvelMembers.find(m => m.memberNumber === memberNumber);
+            const member = Calculations.findStockvelMember({ memberNumber }, AppState.stockvelMembers);
             if (!member) {
                 alert('❌ Member not found!');
                 return;
@@ -1022,7 +1053,7 @@ Total Receipts: ${receiptCount}
          * Payout bonus
          */
         function payoutBonus(memberNumber, amount) {
-            const member = AppState.stockvelMembers.find(m => m.memberNumber === memberNumber);
+            const member = Calculations.findStockvelMember({ memberNumber }, AppState.stockvelMembers);
             if (!member) {
                 alert('❌ Member not found!');
                 return;
@@ -1060,6 +1091,149 @@ Total Receipts: ${receiptCount}
             
             // Reload displays
             loadStockvelDashboard();
+        }
+        
+        /**
+         * Payout contributions - Resets totalContributions to zero
+         * This is used when a member withdraws all their contributions
+         */
+        function payoutContributions(memberNumber) {
+            const member = Calculations.findStockvelMember({ memberNumber }, AppState.stockvelMembers);
+            if (!member) {
+                alert('❌ Member not found!');
+                return;
+            }
+            
+            const currentContributions = member.totalContributions || 0;
+            
+            if (currentContributions <= 0) {
+                alert('❌ Member has no contributions to payout!');
+                return;
+            }
+            
+            if (!confirm(`💰 Payout ALL contributions to ${member.name}?\n\nAmount: ${Calculations.formatCurrency(currentContributions)}\n\n⚠️ This will reset their contribution total to zero.`)) {
+                return;
+            }
+            
+            // Record as contribution payout
+            const receipt = {
+                id: Date.now(),
+                memberNumber: memberNumber,
+                memberName: member.name,
+                type: 'contribution_payout',
+                amount: currentContributions,
+                date: new Date().toISOString().split('T')[0],
+                notes: 'Full contribution payout - contributions reset to zero',
+                previousTotal: currentContributions,
+                newTotal: 0,
+                bonusAmount: 0
+            };
+            
+            // Reset contributions to zero
+            member.totalContributions = 0;
+            
+            // Save receipt
+            if (!AppState.stockvelReceipts) AppState.stockvelReceipts = [];
+            AppState.stockvelReceipts.push(receipt);
+            
+            // Save state
+            AppStateManager.save(AppState);
+            
+            alert(`✅ Contributions paid out successfully!\n\nAmount: ${Calculations.formatCurrency(currentContributions)}\n\nMember's contribution total has been reset to zero.`);
+            
+            // Reload displays
+            loadStockvelDashboard();
+        }
+        
+        /**
+         * Generate contribution payout report
+         */
+        function generateContributionPayoutReport() {
+            const tbody = document.getElementById('contributionPayoutReportBody');
+            const members = AppState.stockvelMembers || [];
+            
+            if (members.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="6" style="text-align: center; color: #7f8c8d; padding: 40px;">No members to report on.</td></tr>';
+                return;
+            }
+            
+            tbody.innerHTML = members.map(member => {
+                // Get all contribution payout receipts
+                const payoutReceipts = (AppState.stockvelReceipts || []).filter(r => 
+                    r.memberNumber === member.memberNumber && r.type === 'contribution_payout'
+                );
+                
+                // Calculate total paid out
+                const totalPaidOut = payoutReceipts.reduce((sum, r) => sum + (r.amount || 0), 0);
+                
+                // Get last payout date
+                const lastPayout = payoutReceipts.length > 0 ? 
+                    payoutReceipts.sort((a, b) => new Date(b.date) - new Date(a.date))[0] : null;
+                const lastPayoutDate = lastPayout ? 
+                    new Date(lastPayout.date).toLocaleDateString() : 'Never';
+                
+                // Current contributions
+                const currentContributions = member.totalContributions || 0;
+                
+                return `
+                    <tr>
+                        <td><strong>${member.name}</strong> (#${member.memberNumber})</td>
+                        <td style="color: #27ae60; font-weight: 600;">${Calculations.formatCurrency(currentContributions)}</td>
+                        <td style="color: #e74c3c; font-weight: 600;">${Calculations.formatCurrency(totalPaidOut)}</td>
+                        <td>${lastPayoutDate}</td>
+                        <td>${payoutReceipts.length}</td>
+                        <td>
+                            ${currentContributions > 0 ? `<button onclick="payoutContributions(${member.memberNumber})" class="btn" style="padding: 6px 12px; font-size: 12px; background: #3498db; color: white;">💵 Payout Contributions</button>` : '-'}
+                        </td>
+                    </tr>
+                `;
+            }).join('');
+        }
+        
+        /**
+         * Export contribution payout report to Excel
+         */
+        function exportContributionPayoutReport() {
+            const members = AppState.stockvelMembers || [];
+            
+            if (members.length === 0) {
+                alert('No members to export');
+                return;
+            }
+            
+            const headers = ['Member #', 'Member Name', 'Phone', 'Current Contributions', 'Total Paid Out', 'Last Payout Date', 'Payout Count'];
+            const rows = members.map(member => {
+                const payoutReceipts = (AppState.stockvelReceipts || []).filter(r => 
+                    r.memberNumber === member.memberNumber && r.type === 'contribution_payout'
+                );
+                const totalPaidOut = payoutReceipts.reduce((sum, r) => sum + (r.amount || 0), 0);
+                const lastPayout = payoutReceipts.length > 0 ? 
+                    payoutReceipts.sort((a, b) => new Date(b.date) - new Date(a.date))[0] : null;
+                const lastPayoutDate = lastPayout ? 
+                    new Date(lastPayout.date).toLocaleDateString() : 'Never';
+                
+                return [
+                    member.memberNumber,
+                    member.name,
+                    member.phone || 'N/A',
+                    (member.totalContributions || 0).toFixed(2),
+                    totalPaidOut.toFixed(2),
+                    lastPayoutDate,
+                    payoutReceipts.length
+                ];
+            });
+            
+            // Create CSV
+            const csv = [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
+            
+            // Download
+            const blob = new Blob([csv], { type: 'text/csv' });
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `Contribution_Payout_Report_${new Date().toISOString().split('T')[0]}.csv`;
+            a.click();
+            window.URL.revokeObjectURL(url);
         }
         
         /**

@@ -1208,16 +1208,27 @@
                 // Find stockvel member by name, phone, or account number
                 const memberName = `${loanData.firstName} ${loanData.lastName}`;
                 const stockvelMembers = AppState.stockvelMembers || [];
-                let possibleMember = stockvelMembers.find(m => 
-                    m.name === memberName || 
-                    m.phone === loanData.accountNumber ||
-                    m.account_number === loanData.accountNumber
-                );
+                let possibleMember = Calculations.findStockvelMember({
+                    phone: loanData.accountNumber,
+                    accountNumber: loanData.accountNumber,
+                    name: memberName
+                }, stockvelMembers);
                 
-                // If member found, use their memberNumber
-                if (possibleMember) {
-                    memberNumber = possibleMember.memberNumber;
-                } else {
+                // VALIDATION: Ensure member exists before creating stockvel loan
+                if (!possibleMember) {
+                    const shouldCreate = confirm(
+                        `⚠️ Stockvel member not found in registry!\n\n` +
+                        `Name: ${memberName}\n` +
+                        `Account: ${loanData.accountNumber}\n\n` +
+                        `Would you like to automatically register this member?\n\n` +
+                        `Click OK to auto-register, or Cancel to abort loan creation.`
+                    );
+                    
+                    if (!shouldCreate) {
+                        alert('❌ Loan creation cancelled. Please register the member first in the Stockvel section.');
+                        throw new Error('Member registration required');
+                    }
+                    
                     // Unified Model: Create stockvel member entry if doesn't exist
                     if (!AppState.nextMemberNumber) AppState.nextMemberNumber = 1001;
                     memberNumber = AppState.nextMemberNumber++;
@@ -1237,6 +1248,51 @@
                         status: 'active'
                     };
                     AppState.stockvelMembers.push(possibleMember);
+                    
+                    // Also create client entry (unified model)
+                    let existingClient = (AppState.clients || []).find(c => 
+                        c.account_number === loanData.accountNumber || 
+                        c.memberNumber === memberNumber
+                    );
+                    
+                    if (!existingClient) {
+                        existingClient = {
+                            account_number: loanData.accountNumber,
+                            first_name: loanData.firstName,
+                            last_name: loanData.lastName,
+                            phone_number: loanData.accountNumber,
+                            client_type: 'stockvel',
+                            memberNumber: memberNumber,
+                            total_loans: 0,
+                            total_repayment: 0,
+                            status: 'active'
+                        };
+                        if (!AppState.clients) AppState.clients = [];
+                        AppState.clients.push(existingClient);
+                    } else {
+                        existingClient.client_type = 'stockvel';
+                        existingClient.memberNumber = memberNumber;
+                    }
+                    
+                    alert(`✅ Member auto-registered!\n\nMember #: ${memberNumber}\nName: ${memberName}\n\nLoan creation will proceed.`);
+                } else {
+                    memberNumber = possibleMember.memberNumber;
+                    
+                    // Validate membership is still active
+                    const today = new Date();
+                    const membershipExpiry = new Date(possibleMember.membershipEndDate);
+                    if (membershipExpiry < today) {
+                        const shouldProceed = confirm(
+                            `⚠️ Membership has expired!\n\n` +
+                            `Member: ${possibleMember.name} (#${possibleMember.memberNumber})\n` +
+                            `Expiry Date: ${new Date(possibleMember.membershipEndDate).toLocaleDateString()}\n\n` +
+                            `Do you want to proceed with loan creation anyway?`
+                        );
+                        if (!shouldProceed) {
+                            alert('❌ Loan creation cancelled. Please renew membership first.');
+                            throw new Error('Membership expired');
+                        }
+                    }
                 }
                 
                 // Calculate tiered rate for bonus calculation
@@ -1340,7 +1396,7 @@
             
             // Unified Model: Sync member's contribution data if stockvel loan
             if (loanData.isStockvelMember && memberNumber) {
-                const member = AppState.stockvelMembers.find(m => m.memberNumber === memberNumber);
+                const member = Calculations.findStockvelMember({ memberNumber }, AppState.stockvelMembers);
                 if (member) {
                     // Update member's total contributions if loan includes contributions
                     if (loanData.totalContributions > 0) {
