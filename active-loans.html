@@ -277,48 +277,276 @@
         }
         
         /**
+         * Generate payment schedule for a loan that doesn't have one
+         * This ensures all loans have schedules for accurate payment allocation
+         * 
+         * @param {object} loan - Loan object to generate schedule for
+         * @returns {array} - Array of payment schedule entries
+         */
+        function generateLoanSchedule(loan) {
+            try {
+                // Extract loan details
+                const principal = loan.principal_amount || loan.principal || 0;
+                const term = loan.term_months || loan.term || 0;
+                const startMonthIndex = loan.start_month_index || 0;
+                const loanDate = loan.created_at ? new Date(loan.created_at) : new Date();
+                const currentYear = loanDate.getFullYear();
+                
+                // Determine if this is a stockvel loan
+                const isStockvel = loan.loan_type === 'stockvel' || loan.isStockvelLoan;
+                
+                let schedule = [];
+                
+                if (isStockvel && loan.total_contributions) {
+                    // STOCKVEL LOAN: Use tiered interest calculation
+                    const totalContributions = loan.total_contributions || 0;
+                    const monthlyContribution = loan.monthly_contribution || 0;
+                    
+                    // Calculate tiered interest for each month
+                    const principalPerMonth = principal / term;
+                    let balance = principal;
+                    let currentSavings = totalContributions;
+                    
+                    // Calculate total interest using tiered method
+                    const interestPeriod = loan.interest_calculation_months || Calculations.calculateInterestPeriod(term).interestMonths;
+                    let totalInterest = 0;
+                    
+                    for (let month = 1; month <= interestPeriod; month++) {
+                        const tieredResult = Calculations.calculateTieredStockvelInterest(balance, currentSavings);
+                        const minimumInterest = balance * 0.10;
+                        const monthInterest = Math.max(tieredResult.tiers1to4Interest, minimumInterest);
+                        totalInterest += monthInterest;
+                        balance -= principalPerMonth;
+                        currentSavings += monthlyContribution;
+                    }
+                    
+                    // Equalize interest across all months
+                    const equalizedInterest = totalInterest / term;
+                    
+                    // Calculate initiation fee (0% if principal <= contributions, 12% on excess)
+                    const totalInitiationFee = principal <= totalContributions ? 0 : (principal - totalContributions) * 0.12;
+                    const monthlyInitiationFee = totalInitiationFee / term;
+                    
+                    // Calculate admin fee (reduced for stockvel based on contributions)
+                    let adminFee = 60; // Default
+                    if (totalContributions >= 20000) adminFee = 45;
+                    else if (totalContributions >= 10000) adminFee = 50;
+                    
+                    // Build schedule
+                    balance = principal;
+                    for (let month = 1; month <= term; month++) {
+                        const dueDate = Calculations.calculateDueDate(currentYear, startMonthIndex, month);
+                        schedule.push({
+                            payment_number: month,
+                            due_date: dueDate,
+                            monthly_payment: (principalPerMonth + equalizedInterest + adminFee + monthlyInitiationFee),
+                            principal_payment: principalPerMonth,
+                            interest_payment: equalizedInterest,
+                            admin_fee: adminFee,
+                            initiation_fee: monthlyInitiationFee,
+                            outstanding_balance: Math.max(0, balance - principalPerMonth),
+                            status: 'pending'
+                        });
+                        balance -= principalPerMonth;
+                    }
+                } else {
+                    // STANDARD LOAN: Use 30% Income Table method
+                    const standardResult = Calculations.calculateStandardLoan(principal, term);
+                    
+                    if (standardResult && standardResult.breakdown) {
+                        // Transform breakdown into schedule format
+                        schedule = standardResult.breakdown.map((item) => {
+                            const dueDate = Calculations.calculateDueDate(currentYear, startMonthIndex, item.month);
+                            return {
+                                payment_number: item.month,
+                                due_date: dueDate,
+                                monthly_payment: item.totalPayment || standardResult.monthlyPayment,
+                                principal_payment: item.principal,
+                                interest_payment: item.interest,
+                                admin_fee: item.adminFee,
+                                initiation_fee: item.initiationFee,
+                                outstanding_balance: item.outstandingBalance,
+                                status: 'pending'
+                            };
+                        });
+                    } else {
+                        // Fallback: Simple schedule if calculation fails
+                        const principalPerMonth = principal / term;
+                        const monthlyPayment = loan.monthly_payment || (principal * 1.3 / term); // Rough estimate
+                        const adminFee = 60;
+                        const initiationFee = (principal * 0.12) / term;
+                        const estimatedInterest = (monthlyPayment - principalPerMonth - adminFee - initiationFee);
+                        
+                        let balance = principal;
+                        for (let month = 1; month <= term; month++) {
+                            const dueDate = Calculations.calculateDueDate(currentYear, startMonthIndex, month);
+                            schedule.push({
+                                payment_number: month,
+                                due_date: dueDate,
+                                monthly_payment: monthlyPayment,
+                                principal_payment: principalPerMonth,
+                                interest_payment: estimatedInterest,
+                                admin_fee: adminFee,
+                                initiation_fee: initiationFee,
+                                outstanding_balance: Math.max(0, balance - principalPerMonth),
+                                status: 'pending'
+                            });
+                            balance -= principalPerMonth;
+                        }
+                    }
+                }
+                
+                // Mark payments as paid if loan has payment history
+                if (loan.payment_history && loan.payment_history.length > 0) {
+                    const paymentsMade = loan.payments_made || 0;
+                    for (let i = 0; i < Math.min(paymentsMade, schedule.length); i++) {
+                        schedule[i].status = 'paid';
+                        if (loan.payment_history[i]) {
+                            schedule[i].payment_date = loan.payment_history[i].date;
+                            schedule[i].amount_paid = loan.payment_history[i].amount;
+                        }
+                    }
+                }
+                
+                return schedule;
+            } catch (error) {
+                console.error('Error generating schedule for loan:', loan.loan_id, error);
+                // Return empty schedule on error - will trigger validation
+                return [];
+            }
+        }
+        
+        /**
+         * Ensure all loans have payment schedules
+         * Generates schedules for loans that don't have them
+         * This is critical for accurate payment allocation
+         */
+        function ensureAllLoansHaveSchedules() {
+            let schedulesGenerated = 0;
+            
+            allLoans.forEach(loan => {
+                // Check if loan needs a schedule
+                if (!loan.schedule || !Array.isArray(loan.schedule) || loan.schedule.length === 0) {
+                    console.log(`📋 Generating schedule for Loan #${loan.loan_id} (${loan.client_name})`);
+                    loan.schedule = generateLoanSchedule(loan);
+                    schedulesGenerated++;
+                    
+                    // Update total_interest from schedule if not set
+                    if (!loan.total_interest && loan.schedule.length > 0) {
+                        loan.total_interest = loan.schedule.reduce((sum, payment) => {
+                            return sum + (payment.interest_payment || 0);
+                        }, 0);
+                    }
+                } else {
+                    // Validate existing schedule has correct structure
+                    const needsRegeneration = loan.schedule.some(p => 
+                        !p.payment_number || 
+                        !p.principal_payment || 
+                        !p.interest_payment === undefined ||
+                        !p.admin_fee === undefined ||
+                        !p.initiation_fee === undefined
+                    );
+                    
+                    if (needsRegeneration) {
+                        console.log(`⚠️ Regenerating incomplete schedule for Loan #${loan.loan_id}`);
+                        loan.schedule = generateLoanSchedule(loan);
+                        schedulesGenerated++;
+                    }
+                }
+            });
+            
+            if (schedulesGenerated > 0) {
+                console.log(`✅ Generated ${schedulesGenerated} payment schedule(s)`);
+                // Save state after generating schedules
+                AppStateManager.save(AppState);
+            }
+        }
+        
+        /**
          * Load and display all loans
+         * Also ensures all loans have payment schedules for accurate payment processing
          */
         function loadLoans() {
+            // Load loans from AppState
             allLoans = AppState.loans || [];
+            
+            // CRITICAL: Ensure all loans have schedules before processing payments
+            // This prevents payment allocation errors and ensures accurate calculations
+            ensureAllLoansHaveSchedules();
+            
+            // Update statistics dashboard
             updateStats();
+            
+            // Filter and display loans
             filterLoans();
         }
         
         /**
-         * Update statistics
+         * Update statistics dashboard
+         * 
+         * Calculates and displays key metrics:
+         * - Active loans count
+         * - Total outstanding principal
+         * - Overdue loans count
+         * - This month's revenue
+         * 
+         * This provides a quick overview of the loan portfolio status
          */
         function updateStats() {
+            // STEP 1: FILTER ACTIVE LOANS
+            // Only count loans that are currently active (not completed, defaulted, etc.)
             const activeLoans = allLoans.filter(l => l.status === 'active');
+            
+            // STEP 2: CALCULATE TOTAL OUTSTANDING PRINCIPAL
+            // Sum of all remaining principal on active loans
+            // This represents the total amount currently loaned out
             const totalOutstanding = activeLoans.reduce((sum, l) => sum + (l.remaining_principal || 0), 0);
             
-            // Calculate overdue loans
+            // STEP 3: CALCULATE OVERDUE LOANS
+            // A loan is overdue if its due date has passed
+            // Due date is calculated based on loan start date, start month index, and payments made
             const today = new Date();
             const overdueLoans = activeLoans.filter(l => {
+                // Skip loans without required date information
                 if (!l.created_at || !l.start_month_index) return false;
+                
+                // Calculate due date for next payment
                 const loanDate = new Date(l.created_at);
                 const paymentsMade = l.payments_made || 0;
                 const targetMonthOffset = l.start_month_index + paymentsMade;
                 const targetYear = loanDate.getFullYear() + Math.floor(targetMonthOffset / 12);
                 const targetMonth = targetMonthOffset % 12;
+                
+                // Due date is the last day of the target month
                 const dueDate = new Date(targetYear, targetMonth + 1, 0);
+                
+                // Loan is overdue if due date is in the past
                 return dueDate < today;
             });
             
-            // Calculate this month's revenue (from transactions)
+            // STEP 4: CALCULATE THIS MONTH'S REVENUE
+            // Revenue = Interest + Admin Fees + Initiation Fees from payments this month
+            // This gives a snapshot of current month's income
             const thisMonth = new Date().getMonth();
             const thisYear = new Date().getFullYear();
             const transactions = AppState.transactions || [];
             const monthRevenue = transactions
                 .filter(t => {
+                    // Filter transactions from this month
                     const tDate = new Date(t.date);
                     return tDate.getMonth() === thisMonth && 
                            tDate.getFullYear() === thisYear &&
                            t.type === 'payment';
                 })
-                .reduce((sum, t) => sum + (t.data?.interestPaid || 0) + (t.data?.adminFeePaid || 0) + (t.data?.initiationFeePaid || 0), 0);
+                .reduce((sum, t) => 
+                    sum + (t.data?.interestPaid || 0) + 
+                    (t.data?.adminFeePaid || 0) + 
+                    (t.data?.initiationFeePaid || 0), 
+                    0
+                );
             
-            // Update display
+            // STEP 5: UPDATE DISPLAY
+            // Update the statistics dashboard with calculated values
             document.getElementById('activeLoansCount').textContent = activeLoans.length;
             document.getElementById('totalOutstanding').textContent = Calculations.formatCurrency(totalOutstanding);
             document.getElementById('overdueCount').textContent = overdueLoans.length;
@@ -522,6 +750,10 @@
                                             onclick="markAsDefaulted(${loan.loan_id})">
                                         ⚠️ Mark Default
                                     </button>
+                                    <button class="btn" style="padding: 8px 12px; font-size: 13px; background: #16a085; color: white;"
+                                            onclick="adjustLoan(${loan.loan_id})">
+                                        🔧 Adjust Loan
+                                    </button>
                                 ` : `
                                     <button class="btn btn-secondary" style="padding: 8px 12px; font-size: 13px;"
                                             onclick="viewLoanDetails(${loan.loan_id})">
@@ -643,12 +875,24 @@ Click "OK" to process payment or "Cancel" to go back.
         
         /**
          * Process early payoff payment
+         * 
+         * This function finalizes the early payoff transaction:
+         * - Updates loan status to 'completed'
+         * - Records early payoff details
+         * - Updates all balances to zero
+         * - Updates AppState financial metrics
+         * - Logs transaction for audit trail
+         * 
+         * @param {object} loan - The loan object being paid off
+         * @param {number} payoffMonth - The month the loan is being paid off
+         * @param {object} payoffData - Calculated payoff breakdown from calculateEarlyPayoff()
          */
         function processEarlyPayoff(loan, payoffMonth, payoffData) {
             try {
                 const totalPayoff = payoffData.totalPayoff;
                 
-                // Confirm final amount
+                // STEP 1: FINAL CONFIRMATION
+                // Early payoff is a significant transaction - require explicit confirmation
                 const finalConfirm = confirm(
                     `💰 Final Confirmation\n\n` +
                     `You are about to pay off Loan #${loan.loan_id}\n\n` +
@@ -663,19 +907,34 @@ Click "OK" to process payment or "Cancel" to go back.
                     return;
                 }
                 
-                // Update loan record
+                // STEP 2: UPDATE LOAN RECORD
+                // Mark loan as completed and record early payoff details
                 loan.status = 'completed';
                 loan.completion_date = new Date().toISOString();
-                loan.remaining_principal = 0;
+                loan.remaining_principal = 0; // Loan fully paid
+                
+                // Update interest paid (add prorated interest for payoff month)
                 loan.interest_paid = (loan.interest_paid || 0) + payoffData.interestOwed;
+                
+                // Initiation fee must be paid in full for early payoff
                 loan.initiation_fee_paid = loan.total_initiation_fee || 0;
+                
+                // Record early payoff metadata
                 loan.early_payoff = true;
                 loan.payoff_month = payoffMonth;
                 loan.payoff_date = new Date().toISOString();
                 loan.payoff_amount = totalPayoff;
                 loan.savings_from_early_payoff = payoffData.savings;
                 
-                // Update AppState
+                // Mark all schedule entries as paid
+                if (loan.schedule) {
+                    loan.schedule.forEach(payment => {
+                        payment.status = 'paid';
+                    });
+                }
+                
+                // STEP 3: UPDATE APPSTATE (GLOBAL FINANCIAL TRACKING)
+                // Update system-wide financial metrics
                 AppState.capital = (AppState.capital || 0) + totalPayoff;
                 AppState.deployed = Math.max(0, (AppState.deployed || 0) - loan.principal_amount);
                 AppState.totalInterestEarned = (AppState.totalInterestEarned || 0) + payoffData.interestOwed;
@@ -728,20 +987,67 @@ Click "OK" to process payment or "Cancel" to go back.
         
         /**
          * Make payment on a loan
+         * 
+         * This is the core payment processing function that handles:
+         * - Payment validation and input
+         * - Payment allocation (waterfall method)
+         * - Interest recalculation for early overpayments
+         * - Stockvel bonus calculation
+         * - State updates and transaction logging
+         * 
+         * Payment Allocation Order (Waterfall Method):
+         * 1. Initiation Fee (monthly portion)
+         * 2. Admin Fee (R60 per month, or reduced for stockvel)
+         * 3. Interest (from schedule)
+         * 4. Principal (remaining amount)
+         * 
+         * Overpayment Handling:
+         * - First Half: Applied to principal (triggers interest recalculation)
+         * - Second Half: Applied to fees/interest first, then principal
+         * 
+         * @param {number} loanId - The ID of the loan to make payment on
          */
         function makePayment(loanId) {
+            // STEP 1: VALIDATION - Find and validate loan
             const loan = allLoans.find(l => l.loan_id === loanId);
             if (!loan) {
                 alert('❌ Loan not found!');
                 return;
             }
             
+            // Only active loans can receive payments
             if (loan.status !== 'active') {
                 alert('⚠️ Can only make payments on active loans!');
                 return;
             }
             
-            // Initialize tracking fields if not set
+            // STEP 2: CRITICAL VALIDATION - Ensure payment schedule exists
+            // Payment schedules are required for accurate payment allocation
+            // Without a schedule, we cannot properly allocate payments to fees, interest, and principal
+            if (!loan.schedule || !Array.isArray(loan.schedule) || loan.schedule.length === 0) {
+                console.warn(`⚠️ Loan #${loanId} missing schedule. Generating now...`);
+                
+                // Attempt to generate schedule
+                loan.schedule = generateLoanSchedule(loan);
+                
+                // If generation failed, abort payment
+                if (!loan.schedule || loan.schedule.length === 0) {
+                    alert(
+                        '❌ Payment Schedule Error!\n\n' +
+                        `Loan #${loanId} does not have a payment schedule and could not be generated.\n\n` +
+                        'Please contact support or regenerate the loan schedule.\n\n' +
+                        'Payment cannot be processed without a valid schedule.'
+                    );
+                    return;
+                }
+                
+                // Save state after generating schedule
+                AppStateManager.save(AppState);
+                console.log(`✅ Schedule generated for Loan #${loanId}`);
+            }
+            
+            // STEP 3: INITIALIZE TRACKING FIELDS
+            // These fields track payment progress and must be initialized for older loans
             if (!loan.remaining_principal) {
                 loan.remaining_principal = loan.principal_amount || loan.principal || 0;
             }
@@ -752,40 +1058,47 @@ Click "OK" to process payment or "Cancel" to go back.
                 loan.interest_paid = 0;
             }
             
-            // Calculate total initiation fee if not set
+            // STEP 4: CALCULATE TOTAL INITIATION FEE (if not already set)
+            // Initiation fee calculation differs for stockvel vs standard loans
             if (!loan.total_initiation_fee) {
                 const principal = loan.principal_amount || loan.principal || 0;
                 if (loan.loan_type === 'stockvel' && loan.total_contributions) {
-                    // Stockvel: 0% if principal <= contributions, 12% on excess
+                    // Stockvel Rule: 0% initiation fee if principal <= total contributions
+                    // 12% initiation fee on the excess amount above contributions
                     loan.total_initiation_fee = principal <= loan.total_contributions ? 0 : (principal - loan.total_contributions) * 0.12;
                 } else {
-                    // Standard: 12% of principal
+                    // Standard Rule: 12% of principal
                     loan.total_initiation_fee = principal * 0.12;
                 }
             }
             
-            // Calculate total interest if not set
+            // STEP 5: CALCULATE TOTAL INTEREST (if not already set)
+            // Total interest should come from the payment schedule for accuracy
             if (!loan.total_interest) {
                 if (loan.schedule && loan.schedule.length > 0) {
-                    // Sum interest from schedule
+                    // Sum interest from schedule (most accurate method)
                     loan.total_interest = loan.schedule.reduce((sum, payment) => {
                         return sum + (payment.interest_payment || 0);
                     }, 0);
                 } else {
-                    // Estimate from monthly payment
+                    // Fallback: Estimate from monthly payment (less accurate)
+                    // This should rarely be needed if schedules are properly generated
                     const principal = loan.principal_amount || loan.principal || 0;
                     const monthlyPayment = loan.monthly_payment || 0;
                     const totalPayments = monthlyPayment * loan.term_months;
                     const totalFees = loan.total_initiation_fee + (60 * loan.term_months); // Admin fees
                     loan.total_interest = Math.max(0, totalPayments - principal - totalFees);
+                    console.warn(`⚠️ Loan #${loanId}: Estimated interest (schedule not available)`);
                 }
             }
             
-            // Calculate remaining amounts
+            // STEP 6: CALCULATE REMAINING AMOUNTS
+            // These are displayed to the user before payment input
             const remainingInitiationFee = Math.max(0, loan.total_initiation_fee - loan.initiation_fee_paid);
             const remainingInterest = Math.max(0, loan.total_interest - loan.interest_paid);
             
-            // Get payment amount
+            // STEP 7: GET PAYMENT AMOUNT FROM USER
+            // Display loan details and prompt for payment amount
             const expectedPayment = loan.monthly_payment || 0;
             const remainingPrincipal = loan.remaining_principal;
             const paymentsRemaining = loan.term_months - (loan.payments_made || 0);
@@ -800,6 +1113,7 @@ Click "OK" to process payment or "Cancel" to go back.
                 `💡 You can make partial or overpayments`
             );
             
+            // Validate payment amount input
             if (!paymentAmount || isNaN(paymentAmount) || parseFloat(paymentAmount) <= 0) {
                 alert('❌ Invalid payment amount!');
                 return;
@@ -807,8 +1121,9 @@ Click "OK" to process payment or "Cancel" to go back.
             
             const amount = parseFloat(paymentAmount);
             
-            // Get payment date
-            const today = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
+            // STEP 8: GET PAYMENT DATE FROM USER
+            // Payment date allows backdating or future-dating payments
+            const today = new Date().toISOString().split('T')[0]; // YYYY-MM-DD format
             const paymentDateInput = prompt(
                 `📅 Enter payment date for Loan #${loanId}\n\n` +
                 `Amount: ${Calculations.formatCurrency(amount)}\n\n` +
@@ -821,7 +1136,7 @@ Click "OK" to process payment or "Cancel" to go back.
                 return;
             }
             
-            // Validate and parse date
+            // Validate and parse payment date
             let paymentDate;
             try {
                 paymentDate = new Date(paymentDateInput);
@@ -835,107 +1150,138 @@ Click "OK" to process payment or "Cancel" to go back.
                 return;
             }
             
-            // Allocate payment properly
+            // STEP 9: PAYMENT ALLOCATION (WATERFALL METHOD)
+            // Initialize allocation variables
             let remainingAmount = amount;
             let principalPaid = 0;
             let interestPaid = 0;
             let adminFeePaid = 0;
             let initiationFeePaid = 0;
             
-            // Track principal before payment for recalculation check
+            // Track principal before payment for interest recalculation check
             const principalBeforePayment = loan.remaining_principal;
             
-            // Get next pending payment from schedule
-            const nextPayment = (loan.schedule || []).find(p => p.status === 'pending');
+            // STEP 10: GET NEXT PENDING PAYMENT FROM SCHEDULE
+            // The schedule contains the expected payment breakdown for each month
+            // We find the next unpaid payment to allocate against
+            let nextPayment = loan.schedule.find(p => p.status === 'pending');
             
-            if (nextPayment) {
-                // Pay in order: Initiation Fee → Admin Fee → Interest → Principal
-                
-                // 1. Pay initiation fee (monthly portion)
-                const initiationDue = nextPayment.initiation_fee || 0;
-                if (remainingAmount > 0 && initiationDue > 0) {
-                    initiationFeePaid = Math.min(remainingAmount, initiationDue);
-                    remainingAmount -= initiationFeePaid;
+            // VALIDATION: Ensure we have a valid next payment
+            if (!nextPayment) {
+                // Check if all payments are marked as paid
+                const allPaid = loan.schedule.every(p => p.status === 'paid');
+                if (allPaid && loan.remaining_principal <= 0.01) {
+                    alert('✅ This loan is already fully paid!');
+                    return;
+                } else {
+                    // Schedule exists but no pending payment found - regenerate schedule
+                    console.warn(`⚠️ No pending payment found in schedule for Loan #${loanId}. Regenerating...`);
+                    loan.schedule = generateLoanSchedule(loan);
+                    nextPayment = loan.schedule.find(p => p.status === 'pending');
+                    if (!nextPayment) {
+                        alert('❌ Error: Could not find next payment in schedule. Please contact support.');
+                        return;
+                    }
+                    // Continue with regenerated schedule
                 }
+            }
+            
+            // STEP 11: ALLOCATE PAYMENT USING WATERFALL METHOD
+            // Payment allocation follows a strict order to ensure fees are paid first
+            // This order is: Initiation Fee → Admin Fee → Interest → Principal
+            
+            // ALLOCATION 1: Pay Initiation Fee (monthly portion)
+            // Initiation fee is spread across all months of the loan term
+            const initiationDue = nextPayment.initiation_fee || 0;
+            if (remainingAmount > 0 && initiationDue > 0) {
+                initiationFeePaid = Math.min(remainingAmount, initiationDue);
+                remainingAmount -= initiationFeePaid;
+            }
+            
+            // ALLOCATION 2: Pay Admin Fee
+            // Admin fee is R60 per month for standard loans
+            // Reduced for stockvel members (R45 if contributions >= R20k, R50 if >= R10k)
+            const adminDue = nextPayment.admin_fee || 0;
+            if (remainingAmount > 0 && adminDue > 0) {
+                adminFeePaid = Math.min(remainingAmount, adminDue);
+                remainingAmount -= adminFeePaid;
+            }
+            
+            // ALLOCATION 3: Pay Interest
+            // Interest is calculated based on loan type (standard 30% income table or stockvel tiered)
+            // Interest is equalized across all months for client convenience
+            const interestDue = nextPayment.interest_payment || 0;
+            if (remainingAmount > 0 && interestDue > 0) {
+                interestPaid = Math.min(remainingAmount, interestDue);
+                remainingAmount -= interestPaid;
+            }
+            
+            // ALLOCATION 4: Pay Principal
+            // Principal payment reduces the outstanding loan balance
+            // This is the actual loan amount being repaid
+            const principalDue = nextPayment.principal_payment || 0;
+            if (remainingAmount > 0 && principalDue > 0) {
+                principalPaid = Math.min(remainingAmount, principalDue, loan.remaining_principal);
+                remainingAmount -= principalPaid;
+            }
+            
+            // STEP 12: HANDLE OVERPAYMENT
+            // Overpayments are handled differently depending on when they occur in the loan term
+            // This rewards early overpayments with interest recalculation
+            if (remainingAmount > 0 && loan.remaining_principal > principalPaid) {
+                // Calculate which payment number we're on
+                const halfwayPoint = Math.ceil(loan.term_months / 2);
+                const principalPerMonth = (loan.original_principal || loan.principal_amount) / loan.term_months;
+                const currentPaymentNumber = Math.floor((loan.original_principal - loan.remaining_principal) / principalPerMonth) + 1;
                 
-                // 2. Pay admin fee
-                const adminDue = nextPayment.admin_fee || 0;
-                if (remainingAmount > 0 && adminDue > 0) {
-                    adminFeePaid = Math.min(remainingAmount, adminDue);
-                    remainingAmount -= adminFeePaid;
-                }
-                
-                // 3. Pay interest
-                const interestDue = nextPayment.interest_payment || 0;
-                if (remainingAmount > 0 && interestDue > 0) {
-                    interestPaid = Math.min(remainingAmount, interestDue);
-                    remainingAmount -= interestPaid;
-                }
-                
-                // 4. Pay principal
-                const principalDue = nextPayment.principal_payment || 0;
-                if (remainingAmount > 0 && principalDue > 0) {
-                    principalPaid = Math.min(remainingAmount, principalDue, loan.remaining_principal);
-                    remainingAmount -= principalPaid;
-                }
-                
-                // 5. Handle overpayment
-                if (remainingAmount > 0 && loan.remaining_principal > principalPaid) {
-                    // Check if we're in first half of loan period
-                    const halfwayPoint = Math.ceil(loan.term_months / 2);
-                    const principalPerMonth = (loan.original_principal || loan.principal_amount) / loan.term_months;
-                    const currentPaymentNumber = Math.floor((loan.original_principal - loan.remaining_principal) / principalPerMonth) + 1;
+                if (currentPaymentNumber <= halfwayPoint) {
+                    // FIRST HALF OVERPAYMENT: Apply extra to principal
+                    // This triggers interest recalculation, rewarding early overpayments
+                    const additionalPrincipal = Math.min(remainingAmount, loan.remaining_principal - principalPaid);
+                    principalPaid += additionalPrincipal;
+                    remainingAmount -= additionalPrincipal;
                     
-                    if (currentPaymentNumber <= halfwayPoint) {
-                        // FIRST HALF: Apply extra to principal (will trigger interest recalculation)
+                    console.log(`💡 Overpayment in first half (month ${currentPaymentNumber}/${halfwayPoint})`);
+                    console.log(`Extra principal paid: R${additionalPrincipal.toFixed(2)}`);
+                    console.log(`Interest will be recalculated on reduced balance`);
+                } else {
+                    // SECOND HALF OVERPAYMENT: Apply to fees/interest first, then principal
+                    // In the second half, we prioritize paying off fees and interest before principal
+                    console.log(`📊 Overpayment in second half (month ${currentPaymentNumber}/${halfwayPoint})`);
+                    
+                    // Apply to remaining initiation fee balance first
+                    const remainingInitiationFee = Math.max(0, (loan.total_initiation_fee || 0) - (loan.initiation_fee_paid || 0));
+                    if (remainingAmount > 0 && remainingInitiationFee > 0) {
+                        const extraInitiation = Math.min(remainingAmount, remainingInitiationFee);
+                        initiationFeePaid += extraInitiation;
+                        remainingAmount -= extraInitiation;
+                        console.log(`Applied R${extraInitiation.toFixed(2)} to initiation fee balance`);
+                    }
+                    
+                    // Apply to remaining interest balance
+                    const remainingInterest = Math.max(0, (loan.total_interest || 0) - (loan.interest_paid || 0));
+                    if (remainingAmount > 0 && remainingInterest > 0) {
+                        const extraInterest = Math.min(remainingAmount, remainingInterest);
+                        interestPaid += extraInterest;
+                        remainingAmount -= extraInterest;
+                        console.log(`Applied R${extraInterest.toFixed(2)} to interest balance`);
+                    }
+                    
+                    // Finally apply to principal
+                    if (remainingAmount > 0) {
                         const additionalPrincipal = Math.min(remainingAmount, loan.remaining_principal - principalPaid);
                         principalPaid += additionalPrincipal;
                         remainingAmount -= additionalPrincipal;
-                        
-                        console.log(`💡 Overpayment in first half (month ${currentPaymentNumber}/${halfwayPoint})`);
-                        console.log(`Extra principal paid: R${additionalPrincipal.toFixed(2)}`);
-                        console.log(`Interest will be recalculated on reduced balance`);
-                    } else {
-                        // SECOND HALF: Apply to remaining fees/interest first, then principal
-                        console.log(`📊 Overpayment in second half (month ${currentPaymentNumber}/${halfwayPoint})`);
-                        
-                        // Apply to remaining initiation fee balance
-                        const remainingInitiationFee = Math.max(0, (loan.total_initiation_fee || 0) - (loan.initiation_fee_paid || 0));
-                        if (remainingAmount > 0 && remainingInitiationFee > 0) {
-                            const extraInitiation = Math.min(remainingAmount, remainingInitiationFee);
-                            initiationFeePaid += extraInitiation;
-                            remainingAmount -= extraInitiation;
-                            console.log(`Applied R${extraInitiation.toFixed(2)} to initiation fee balance`);
-                        }
-                        
-                        // Apply to remaining interest balance
-                        const remainingInterest = Math.max(0, (loan.total_interest || 0) - (loan.interest_paid || 0));
-                        if (remainingAmount > 0 && remainingInterest > 0) {
-                            const extraInterest = Math.min(remainingAmount, remainingInterest);
-                            interestPaid += extraInterest;
-                            remainingAmount -= extraInterest;
-                            console.log(`Applied R${extraInterest.toFixed(2)} to interest balance`);
-                        }
-                        
-                        // Finally apply to principal
-                        if (remainingAmount > 0) {
-                            const additionalPrincipal = Math.min(remainingAmount, loan.remaining_principal - principalPaid);
-                            principalPaid += additionalPrincipal;
-                            remainingAmount -= additionalPrincipal;
-                            console.log(`Applied R${additionalPrincipal.toFixed(2)} to principal`);
-                        }
+                        console.log(`Applied R${additionalPrincipal.toFixed(2)} to principal`);
                     }
                 }
-                
-                // Mark payment as paid (don't increment counter here - will be calculated)
-                nextPayment.status = 'paid';
-                nextPayment.payment_date = paymentDate;
-                nextPayment.amount_paid = amount;
-            } else {
-                // No schedule - use simple allocation
-                const principalPerMonth = (loan.principal_amount || loan.principal) / loan.term_months;
-                principalPaid = Math.min(remainingAmount, principalPerMonth, loan.remaining_principal);
             }
+            
+            // STEP 13: UPDATE PAYMENT SCHEDULE ENTRY
+            // Mark the payment as paid in the schedule for tracking
+            nextPayment.status = 'paid';
+            nextPayment.payment_date = paymentDate;
+            nextPayment.amount_paid = amount;
             
             // Track total principal received (not just this payment)
             if (!loan.total_principal_received) {
@@ -966,15 +1312,23 @@ Click "OK" to process payment or "Cancel" to go back.
             loan.initiation_fee_paid = (loan.initiation_fee_paid || 0) + initiationFeePaid;
             loan.interest_paid = (loan.interest_paid || 0) + interestPaid;
             
-            // Calculate payments_made based on principal received
+            // STEP 16: CALCULATE PAYMENTS MADE
+            // Payments are calculated based on principal received, not payment count
+            // This handles partial payments and overpayments correctly
+            // Example: If principal per month is R1,000 and R1,500 was received, that's 1.5 payments
             const principalPerMonth = (loan.original_principal || loan.principal_amount) / loan.term_months;
             loan.payments_made = Math.floor(loan.total_principal_received / principalPerMonth);
             
-            // Update the payment history entry with calculated values
+            // STEP 17: UPDATE PAYMENT HISTORY ENTRY
+            // Record the payment in the loan's payment history for audit trail
+            // This provides a complete record of all transactions on the loan
             const lastPayment = loan.payment_history[loan.payment_history.length - 1];
-            lastPayment.payments_made_after = loan.payments_made;
-            lastPayment.remaining_principal_after = loan.remaining_principal;
+            if (lastPayment) {
+                lastPayment.payments_made_after = loan.payments_made;
+                lastPayment.remaining_principal_after = loan.remaining_principal;
+            }
             
+            // Log principal tracking for debugging and verification
             console.log(`💰 Principal Tracking:`);
             console.log(`Total Principal Received: R${loan.total_principal_received.toFixed(2)}`);
             console.log(`Principal Per Month: R${principalPerMonth.toFixed(2)}`);
@@ -1049,43 +1403,65 @@ Click "OK" to process payment or "Cancel" to go back.
                 }
             }
             
-            // Also update legacy field for backward compatibility
+            // STEP 20: UPDATE LEGACY FIELDS FOR BACKWARD COMPATIBILITY
+            // Some older code may reference total_interest_charged instead of interest_paid
+            // Keep both fields in sync to prevent data inconsistencies
             loan.total_interest_charged = loan.interest_paid;
             
-            // Check if loan is paid off
+            // STEP 21: CHECK IF LOAN IS FULLY PAID OFF
+            // A loan is considered complete when:
+            // - Remaining principal is <= R0.01 (essentially zero)
+            // - OR payments_made >= term_months (all scheduled payments completed)
             if (loan.remaining_principal <= 0.01 || loan.payments_made >= loan.term_months) {
                 loan.status = 'completed';
                 loan.completion_date = new Date().toISOString();
-                loan.remaining_principal = 0;
+                loan.remaining_principal = 0; // Ensure it's exactly zero
+                
+                // Mark all remaining schedule entries as paid
+                loan.schedule.forEach(payment => {
+                    if (payment.status === 'pending') {
+                        payment.status = 'paid';
+                    }
+                });
             }
             
-            // CALCULATE AND RECORD BONUS FOR STOCKVEL MEMBERS
+            // STEP 22: CALCULATE AND RECORD BONUS FOR STOCKVEL MEMBERS
+            // Stockvel members earn bonuses when they pay less than the 10% minimum charge
+            // Bonus = 10% minimum - actual amount due
+            // This rewards members with good savings-to-loan ratios
             let bonusEarned = 0;
             if (loan.memberNumber && AppState.stockvelMembers) {
-                const stockvelMember = AppState.stockvelMembers.find(m => m.memberNumber === loan.memberNumber);
+                // Find the stockvel member using standardized lookup
+                const stockvelMember = Calculations.findStockvelMember(
+                    { memberNumber: loan.memberNumber }, 
+                    AppState.stockvelMembers
+                );
                 
                 if (stockvelMember) {
                     // Calculate what TBFS is due (tiered interest + fees)
-                    const remainingBalance = loan.remaining_principal + principalPaid; // Balance before this payment
+                    // Use balance BEFORE this payment for calculation
+                    const remainingBalance = loan.remaining_principal + principalPaid;
                     
                     // Amount due to TBFS = interest + admin fee + initiation fee
                     const amountDueToTBFS = interestPaid + adminFeePaid + initiationFeePaid;
                     
-                    // 10% minimum charge
+                    // 10% minimum charge rule: Member must pay at least 10% of balance
                     const minimumCharge = remainingBalance * 0.10;
                     
+                    // Bonus is earned when actual amount due is less than minimum charge
                     if (amountDueToTBFS < minimumCharge) {
                         // Member pays EXACTLY 10% (minimum)
-                        // Bonus = 10% minimum - amount actually due
+                        // Bonus = difference between minimum and actual amount due
                         bonusEarned = minimumCharge - amountDueToTBFS;
                         
                         // Add bonus to member's accumulated bonus (NOT to contributions!)
+                        // This keeps contributions pure and bonuses separate
                         stockvelMember.accumulatedBonus = (stockvelMember.accumulatedBonus || 0) + bonusEarned;
                         
                         // Ensure stockvelReceipts array exists
                         if (!AppState.stockvelReceipts) AppState.stockvelReceipts = [];
                         
-                        // Record bonus receipt
+                        // Record bonus receipt for audit trail
                         AppState.stockvelReceipts.push({
                             id: Date.now(),
                             memberNumber: stockvelMember.memberNumber,
@@ -1103,22 +1479,32 @@ Click "OK" to process payment or "Cancel" to go back.
                         console.log(`🎁 Stockvel Bonus Earned: R${bonusEarned.toFixed(2)}`);
                     }
                     // else: amountDueToTBFS >= minimumCharge
-                    // Member pays tiered amount (already > 10%), no bonus
+                    // Member pays tiered amount (already > 10%), no bonus earned
                 }
             }
             
-            // Update AppState
+            // STEP 23: UPDATE APPSTATE (GLOBAL FINANCIAL TRACKING)
+            // Update system-wide financial metrics
+            // Capital: All money received goes to capital
             AppState.capital = (AppState.capital || 0) + amount;
+            
+            // Deployed: Reduce by principal paid (money is no longer loaned out)
             AppState.deployed = Math.max(0, (AppState.deployed || 0) - principalPaid);
+            
+            // Total Interest Earned: Track cumulative interest income
             AppState.totalInterestEarned = (AppState.totalInterestEarned || 0) + interestPaid;
+            
+            // Total Fees Earned: Track cumulative fee income (admin + initiation)
             AppState.totalFeesEarned = (AppState.totalFeesEarned || 0) + adminFeePaid + initiationFeePaid;
             
-            // Log transaction
+            // STEP 24: LOG TRANSACTION FOR AUDIT TRAIL
+            // Transaction history provides a complete record of all financial activity
+            // This is used for reporting, reconciliation, and debugging
             if (!AppState.transactionHistory) AppState.transactionHistory = [];
             AppState.transactionHistory.push({
                 type: 'payment',
-                timestamp: new Date().toISOString(), // When transaction was recorded
-                paymentDate: paymentDate, // When payment was actually received
+                timestamp: new Date().toISOString(), // When transaction was recorded in system
+                paymentDate: paymentDate, // When payment was actually received (may be backdated)
                 details: {
                     loanId: loanId,
                     clientName: loan.client_name,
@@ -1138,7 +1524,9 @@ Click "OK" to process payment or "Cancel" to go back.
                 }
             });
             
-            // Save state
+            // STEP 25: SAVE STATE TO PERSISTENCE
+            // Save all changes to localStorage for persistence
+            // This also triggers cross-tab synchronization via AppStateManager
             AppStateManager.save(AppState);
             
             // Calculate remaining amounts for display
@@ -1193,8 +1581,20 @@ Click "OK" to process payment or "Cancel" to go back.
         
         /**
          * Download loan statement as PDF
+         * 
+         * Generates a comprehensive PDF statement for a loan including:
+         * - Loan summary and current status
+         * - Financial breakdown (principal, interest, fees)
+         * - Complete payment history
+         * - Interest recalculation details (if applicable)
+         * - Early payoff information (if applicable)
+         * 
+         * The PDF is optimized for printing and mobile viewing
+         * 
+         * @param {number} loanId - The ID of the loan to generate statement for
          */
         function downloadLoanStatementPDF(loanId) {
+            // STEP 1: VALIDATION - Find loan
             const loan = allLoans.find(l => l.loan_id === loanId);
             if (!loan) {
                 alert('❌ Loan not found!');
@@ -1202,6 +1602,8 @@ Click "OK" to process payment or "Cancel" to go back.
             }
             
             try {
+                // STEP 2: INITIALIZE PDF DOCUMENT
+                // Create new PDF document using jsPDF library
                 const { jsPDF } = window.jspdf;
                 const doc = new jsPDF();
                 
@@ -1909,6 +2311,503 @@ TBFS - Transparent, Fair, Simple
         /**
          * Mark loan as defaulted
          */
+        /**
+         * Main loan adjustment function
+         * Provides options to adjust loan terms and amounts
+         * 
+         * @param {number} loanId - The ID of the loan to adjust
+         */
+        function adjustLoan(loanId) {
+            const loan = allLoans.find(l => l.loan_id === loanId);
+            if (!loan) {
+                alert('❌ Loan not found!');
+                return;
+            }
+            
+            if (loan.status !== 'active') {
+                alert('⚠️ Only active loans can be adjusted!');
+                return;
+            }
+            
+            // Show adjustment options menu
+            const option = prompt(
+                `🔧 Loan Adjustment Options\n\n` +
+                `Loan #${loanId} - ${loan.client_name}\n` +
+                `Current Balance: ${Calculations.formatCurrency(loan.remaining_principal || 0)}\n` +
+                `Current Term: ${loan.term_months} months\n` +
+                `Payments Made: ${loan.payments_made || 0}/${loan.term_months}\n\n` +
+                `Select adjustment:\n` +
+                `1 - Change Repayment Period (Term)\n` +
+                `2 - Add Additional Amount to Loan\n\n` +
+                `Enter option number (1 or 2):`
+            );
+            
+            if (!option) {
+                return; // User cancelled
+            }
+            
+            switch (option.trim()) {
+                case '1':
+                    changeRepaymentPeriod(loanId);
+                    break;
+                case '2':
+                    addAmountToLoan(loanId);
+                    break;
+                default:
+                    alert('❌ Invalid option selected!');
+                    return;
+            }
+        }
+        
+        /**
+         * Change the repayment period (term) for the remaining balance
+         * 
+         * This function recalculates the loan schedule based on the new term
+         * while keeping the remaining principal and interest calculations valid
+         * 
+         * @param {number} loanId - The ID of the loan to adjust
+         */
+        function changeRepaymentPeriod(loanId) {
+            const loan = allLoans.find(l => l.loan_id === loanId);
+            if (!loan) {
+                alert('❌ Loan not found!');
+                return;
+            }
+            
+            const currentTerm = loan.term_months;
+            const paymentsMade = loan.payments_made || 0;
+            const remainingMonths = currentTerm - paymentsMade;
+            const remainingPrincipal = loan.remaining_principal || 0;
+            
+            // Get new term from user
+            const newTermInput = prompt(
+                `📅 Change Repayment Period\n\n` +
+                `Loan #${loanId} - ${loan.client_name}\n\n` +
+                `Current Term: ${currentTerm} months\n` +
+                `Payments Made: ${paymentsMade} months\n` +
+                `Remaining Months: ${remainingMonths} months\n` +
+                `Remaining Principal: ${Calculations.formatCurrency(remainingPrincipal)}\n\n` +
+                `Enter new total term (months):\n` +
+                `💡 Must be greater than ${paymentsMade} (payments already made)`
+            );
+            
+            if (!newTermInput) {
+                return; // User cancelled
+            }
+            
+            const newTerm = parseInt(newTermInput);
+            
+            // VALIDATION: New term must be valid
+            if (isNaN(newTerm) || newTerm <= 0) {
+                alert('❌ Invalid term! Please enter a positive number.');
+                return;
+            }
+            
+            if (newTerm <= paymentsMade) {
+                alert(`❌ Invalid term!\n\nNew term (${newTerm} months) must be greater than payments already made (${paymentsMade} months).`);
+                return;
+            }
+            
+            if (newTerm > 60) {
+                const confirm = window.confirm(
+                    `⚠️ Warning: Very Long Term\n\n` +
+                    `You're setting a term of ${newTerm} months (${(newTerm/12).toFixed(1)} years).\n\n` +
+                    `This is unusually long. Are you sure?`
+                );
+                if (!confirm) {
+                    return;
+                }
+            }
+            
+            // Calculate new monthly payment based on remaining balance
+            const remainingMonthsNew = newTerm - paymentsMade;
+            
+            // Get reason for adjustment
+            const reason = prompt(
+                `📝 Enter reason for changing repayment period:\n` +
+                `(e.g., "Client requested extension", "Financial hardship", etc.)`
+            );
+            
+            if (!reason || reason.trim() === '') {
+                alert('❌ Reason is required. Adjustment cancelled.');
+                return;
+            }
+            
+            // Store old values for comparison
+            const oldTerm = loan.term_months;
+            const oldMonthlyPayment = loan.monthly_payment || 0;
+            
+            // STEP 1: UPDATE LOAN TERM
+            loan.term_months = newTerm;
+            
+            // STEP 2: RECALCULATE INTEREST FOR REMAINING BALANCE
+            // We need to recalculate interest based on the new term for the remaining principal
+            const isStockvel = loan.loan_type === 'stockvel' || loan.isStockvelLoan;
+            let newTotalInterest = 0;
+            let newMonthlyPayment = 0;
+            
+            if (isStockvel && loan.total_contributions) {
+                // STOCKVEL: Recalculate using tiered interest method
+                const principalPerMonth = remainingPrincipal / remainingMonthsNew;
+                const interestPeriod = Calculations.calculateInterestPeriod(remainingMonthsNew).interestMonths;
+                let balance = remainingPrincipal;
+                let currentSavings = (loan.total_contributions || 0) + ((loan.monthly_contribution || 0) * paymentsMade);
+                
+                // Calculate interest for remaining period
+                for (let i = 0; i < interestPeriod; i++) {
+                    const tieredResult = Calculations.calculateTieredStockvelInterest(balance, currentSavings);
+                    const minimumInterest = balance * 0.10;
+                    const monthInterest = Math.max(tieredResult.tiers1to4Interest, minimumInterest);
+                    newTotalInterest += monthInterest;
+                    balance -= principalPerMonth;
+                    currentSavings += (loan.monthly_contribution || 0);
+                }
+                
+                // Calculate new monthly payment
+                const adminFee = (loan.total_contributions >= 20000) ? 45 : (loan.total_contributions >= 10000) ? 50 : 60;
+                const remainingInitiationFee = Math.max(0, (loan.total_initiation_fee || 0) - (loan.initiation_fee_paid || 0));
+                const monthlyInitiationFee = remainingInitiationFee / remainingMonthsNew;
+                const equalizedInterest = newTotalInterest / remainingMonthsNew;
+                
+                newMonthlyPayment = principalPerMonth + equalizedInterest + adminFee + monthlyInitiationFee;
+            } else {
+                // STANDARD: Recalculate using 30% Income Table method
+                const standardResult = Calculations.calculateStandardLoan(remainingPrincipal, remainingMonthsNew);
+                newTotalInterest = standardResult.totalInterest;
+                newMonthlyPayment = standardResult.monthlyPayment;
+            }
+            
+            // STEP 3: UPDATE INTEREST TRACKING
+            // Total interest = interest already paid + new interest for remaining period
+            const interestAlreadyPaid = loan.interest_paid || 0;
+            loan.total_interest = interestAlreadyPaid + newTotalInterest;
+            
+            // Update interest cap
+            const interestPeriod = Calculations.calculateInterestPeriod(remainingMonthsNew).interestMonths;
+            loan.interest_calculation_months = interestPeriod;
+            loan.max_interest_allowed = Math.min(loan.total_interest, remainingPrincipal);
+            loan.expected_monthly_interest = loan.max_interest_allowed / remainingMonthsNew;
+            
+            // STEP 4: UPDATE MONTHLY PAYMENT
+            loan.monthly_payment = newMonthlyPayment;
+            
+            // STEP 5: REGENERATE PAYMENT SCHEDULE
+            // This is critical - the schedule must reflect the new term
+            console.log(`🔄 Regenerating schedule for Loan #${loanId} with new term: ${newTerm} months`);
+            loan.schedule = generateLoanSchedule(loan);
+            
+            // Mark payments already made as paid
+            if (loan.schedule && loan.payment_history) {
+                for (let i = 0; i < Math.min(paymentsMade, loan.schedule.length); i++) {
+                    loan.schedule[i].status = 'paid';
+                    if (loan.payment_history[i]) {
+                        loan.schedule[i].payment_date = loan.payment_history[i].date;
+                        loan.schedule[i].amount_paid = loan.payment_history[i].amount;
+                    }
+                }
+            }
+            
+            // STEP 6: LOG TRANSACTION
+            if (!AppState.transactionHistory) AppState.transactionHistory = [];
+            AppState.transactionHistory.push({
+                type: 'loan_adjustment',
+                timestamp: new Date().toISOString(),
+                details: {
+                    loanId: loanId,
+                    clientName: loan.client_name,
+                    adjustmentType: 'change_repayment_period',
+                    oldTerm: oldTerm,
+                    newTerm: newTerm,
+                    oldMonthlyPayment: oldMonthlyPayment,
+                    newMonthlyPayment: newMonthlyPayment,
+                    remainingPrincipal: remainingPrincipal,
+                    newTotalInterest: loan.total_interest,
+                    reason: reason
+                }
+            });
+            
+            // STEP 7: SAVE STATE
+            AppStateManager.save(AppState);
+            
+            // STEP 8: RELOAD LOANS TO REFLECT CHANGES
+            loadLoans();
+            
+            // Show success message
+            alert(
+                `✅ Repayment Period Changed Successfully!\n\n` +
+                `Loan #${loanId} - ${loan.client_name}\n\n` +
+                `Term: ${oldTerm} → ${newTerm} months\n` +
+                `Monthly Payment: ${Calculations.formatCurrency(oldMonthlyPayment)} → ${Calculations.formatCurrency(newMonthlyPayment)}\n` +
+                `Remaining Months: ${remainingMonthsNew} months\n` +
+                `New Total Interest: ${Calculations.formatCurrency(loan.total_interest)}\n\n` +
+                `Reason: ${reason}\n\n` +
+                `💡 Payment schedule has been regenerated.`
+            );
+        }
+        
+        /**
+         * Add additional amount to an existing loan
+         * 
+         * This function adds money to the loan principal with proper validation:
+         * - Checks available capital
+         * - Validates interest recalculation
+         * - Updates all related fields
+         * - Regenerates payment schedule
+         * 
+         * @param {number} loanId - The ID of the loan to add amount to
+         */
+        function addAmountToLoan(loanId) {
+            const loan = allLoans.find(l => l.loan_id === loanId);
+            if (!loan) {
+                alert('❌ Loan not found!');
+                return;
+            }
+            
+            const currentPrincipal = loan.principal_amount || loan.principal || 0;
+            const remainingPrincipal = loan.remaining_principal || 0;
+            const currentTerm = loan.term_months;
+            const paymentsMade = loan.payments_made || 0;
+            const remainingMonths = currentTerm - paymentsMade;
+            
+            // Get amount to add
+            const amountInput = prompt(
+                `💰 Add Amount to Loan\n\n` +
+                `Loan #${loanId} - ${loan.client_name}\n\n` +
+                `Current Principal: ${Calculations.formatCurrency(currentPrincipal)}\n` +
+                `Remaining Principal: ${Calculations.formatCurrency(remainingPrincipal)}\n` +
+                `Term: ${currentTerm} months\n` +
+                `Payments Made: ${paymentsMade}\n\n` +
+                `Enter amount to add:\n` +
+                `(This will increase the loan principal)`
+            );
+            
+            if (!amountInput) {
+                return; // User cancelled
+            }
+            
+            const amount = parseFloat(amountInput);
+            
+            // VALIDATION 1: Amount must be valid
+            if (isNaN(amount) || amount <= 0) {
+                alert('❌ Invalid amount! Please enter a positive number.');
+                return;
+            }
+            
+            // VALIDATION 2: Check available capital
+            const availableCapital = AppState.capital || 0;
+            if (availableCapital < amount) {
+                alert(
+                    `❌ Insufficient Capital!\n\n` +
+                    `Available Capital: ${Calculations.formatCurrency(availableCapital)}\n` +
+                    `Requested Amount: ${Calculations.formatCurrency(amount)}\n` +
+                    `Shortfall: ${Calculations.formatCurrency(amount - availableCapital)}\n\n` +
+                    `Please ensure sufficient capital before adding to loan.`
+                );
+                return;
+            }
+            
+            // VALIDATION 3: Check if new total would be reasonable
+            const newTotalPrincipal = currentPrincipal + amount;
+            if (newTotalPrincipal > 1000000) {
+                const confirm = window.confirm(
+                    `⚠️ Very Large Loan Amount\n\n` +
+                    `New total principal would be: ${Calculations.formatCurrency(newTotalPrincipal)}\n\n` +
+                    `This is a very large loan. Are you sure?`
+                );
+                if (!confirm) {
+                    return;
+                }
+            }
+            
+            // Get reason for addition
+            const reason = prompt(
+                `📝 Enter reason for adding amount to loan:\n` +
+                `(e.g., "Top-up requested", "Additional capital needed", etc.)`
+            );
+            
+            if (!reason || reason.trim() === '') {
+                alert('❌ Reason is required. Adjustment cancelled.');
+                return;
+            }
+            
+            // STEP 1: CALCULATE NEW VALUES
+            const newPrincipal = currentPrincipal + amount;
+            const newRemainingPrincipal = remainingPrincipal + amount;
+            
+            // STEP 2: RECALCULATE INTEREST FOR ENTIRE LOAN
+            // This is critical - we need to recalculate interest based on the new principal
+            const isStockvel = loan.loan_type === 'stockvel' || loan.isStockvelLoan;
+            let recalculatedInterest = 0;
+            let newMonthlyPayment = 0;
+            let additionalInitiationFee = 0;
+            
+            if (isStockvel && loan.total_contributions) {
+                // STOCKVEL: Recalculate using tiered interest
+                // Initiation fee: 0% if new principal <= contributions, 12% on excess
+                const totalContributions = loan.total_contributions || 0;
+                const newTotalInitiationFee = newPrincipal <= totalContributions ? 0 : (newPrincipal - totalContributions) * 0.12;
+                additionalInitiationFee = newTotalInitiationFee - (loan.total_initiation_fee || 0);
+                
+                // Recalculate interest for remaining months with new principal
+                const principalPerMonth = newRemainingPrincipal / remainingMonths;
+                const interestPeriod = Calculations.calculateInterestPeriod(remainingMonths).interestMonths;
+                let balance = newRemainingPrincipal;
+                let currentSavings = totalContributions + ((loan.monthly_contribution || 0) * paymentsMade);
+                
+                // Calculate interest for remaining period
+                let remainingInterest = 0;
+                for (let i = 0; i < interestPeriod; i++) {
+                    const tieredResult = Calculations.calculateTieredStockvelInterest(balance, currentSavings);
+                    const minimumInterest = balance * 0.10;
+                    const monthInterest = Math.max(tieredResult.tiers1to4Interest, minimumInterest);
+                    remainingInterest += monthInterest;
+                    balance -= principalPerMonth;
+                    currentSavings += (loan.monthly_contribution || 0);
+                }
+                
+                // Total interest = interest already paid + new interest for remaining period
+                recalculatedInterest = (loan.interest_paid || 0) + remainingInterest;
+                
+                // Calculate new monthly payment
+                const adminFee = (totalContributions >= 20000) ? 45 : (totalContributions >= 10000) ? 50 : 60;
+                const monthlyInitiationFee = newTotalInitiationFee / currentTerm;
+                const equalizedInterest = remainingInterest / remainingMonths;
+                
+                newMonthlyPayment = principalPerMonth + equalizedInterest + adminFee + monthlyInitiationFee;
+                
+                // Update initiation fee
+                loan.total_initiation_fee = newTotalInitiationFee;
+            } else {
+                // STANDARD: Recalculate using 30% Income Table method
+                // Calculate interest for remaining months with new remaining principal
+                const standardResult = Calculations.calculateStandardLoan(newRemainingPrincipal, remainingMonths);
+                
+                // Total interest = interest already paid + new interest for remaining period
+                recalculatedInterest = (loan.interest_paid || 0) + standardResult.totalInterest;
+                
+                // Additional initiation fee: 12% of added amount
+                additionalInitiationFee = amount * 0.12;
+                loan.total_initiation_fee = (loan.total_initiation_fee || 0) + additionalInitiationFee;
+                
+                // New monthly payment based on new remaining principal
+                newMonthlyPayment = standardResult.monthlyPayment;
+            }
+            
+            // STEP 3: VALIDATE RECALCULATION
+            // Check if the recalculation is valid
+            const oldTotalInterest = loan.total_interest || 0;
+            const interestIncrease = recalculatedInterest - oldTotalInterest;
+            const interestIncreasePercent = oldTotalInterest > 0 ? (interestIncrease / oldTotalInterest) * 100 : 0;
+            
+            // Show validation summary
+            const validationSummary = 
+                `📊 Recalculation Validation\n\n` +
+                `Amount to Add: ${Calculations.formatCurrency(amount)}\n\n` +
+                `INTEREST CALCULATION:\n` +
+                `Old Total Interest: ${Calculations.formatCurrency(oldTotalInterest)}\n` +
+                `New Total Interest: ${Calculations.formatCurrency(recalculatedInterest)}\n` +
+                `Interest Increase: ${Calculations.formatCurrency(interestIncrease)} (${interestIncreasePercent.toFixed(1)}%)\n\n` +
+                `MONTHLY PAYMENT:\n` +
+                `Old Monthly Payment: ${Calculations.formatCurrency(loan.monthly_payment || 0)}\n` +
+                `New Monthly Payment: ${Calculations.formatCurrency(newMonthlyPayment)}\n\n` +
+                `ADDITIONAL FEES:\n` +
+                `Additional Initiation Fee: ${Calculations.formatCurrency(additionalInitiationFee)}\n\n` +
+                `PRINCIPAL:\n` +
+                `Old Principal: ${Calculations.formatCurrency(currentPrincipal)}\n` +
+                `New Principal: ${Calculations.formatCurrency(newPrincipal)}\n` +
+                `New Remaining: ${Calculations.formatCurrency(newRemainingPrincipal)}\n\n` +
+                `CAPITAL IMPACT:\n` +
+                `Current Capital: ${Calculations.formatCurrency(availableCapital)}\n` +
+                `After Addition: ${Calculations.formatCurrency(availableCapital - amount)}\n` +
+                `Deployed: ${Calculations.formatCurrency((AppState.deployed || 0) + amount)}\n\n` +
+                `Reason: ${reason}\n\n` +
+                `✅ Recalculation validated. Proceed?`;
+            
+            const confirm = window.confirm(validationSummary);
+            
+            if (!confirm) {
+                alert('⏸️ Adjustment cancelled.');
+                return;
+            }
+            
+            // STEP 4: UPDATE LOAN FIELDS
+            loan.principal_amount = newPrincipal;
+            loan.original_principal = newPrincipal; // Update original too
+            loan.remaining_principal = newRemainingPrincipal;
+            loan.total_interest = recalculatedInterest;
+            loan.monthly_payment = newMonthlyPayment;
+            
+            // Update interest cap
+            const interestPeriod = Calculations.calculateInterestPeriod(remainingMonths).interestMonths;
+            loan.interest_calculation_months = interestPeriod;
+            loan.max_interest_allowed = Math.min(recalculatedInterest, newRemainingPrincipal);
+            loan.expected_monthly_interest = loan.max_interest_allowed / remainingMonths;
+            
+            // STEP 5: UPDATE APPSTATE
+            AppState.capital = availableCapital - amount;
+            AppState.deployed = (AppState.deployed || 0) + amount;
+            
+            // STEP 6: REGENERATE PAYMENT SCHEDULE
+            // Critical: Schedule must reflect new principal and terms
+            console.log(`🔄 Regenerating schedule for Loan #${loanId} with added amount: ${Calculations.formatCurrency(amount)}`);
+            loan.schedule = generateLoanSchedule(loan);
+            
+            // Mark payments already made as paid
+            if (loan.schedule && loan.payment_history) {
+                for (let i = 0; i < Math.min(paymentsMade, loan.schedule.length); i++) {
+                    loan.schedule[i].status = 'paid';
+                    if (loan.payment_history[i]) {
+                        loan.schedule[i].payment_date = loan.payment_history[i].date;
+                        loan.schedule[i].amount_paid = loan.payment_history[i].amount;
+                    }
+                }
+            }
+            
+            // STEP 7: LOG TRANSACTION
+            if (!AppState.transactionHistory) AppState.transactionHistory = [];
+            AppState.transactionHistory.push({
+                type: 'loan_adjustment',
+                timestamp: new Date().toISOString(),
+                details: {
+                    loanId: loanId,
+                    clientName: loan.client_name,
+                    adjustmentType: 'add_amount',
+                    amount: amount,
+                    oldPrincipal: currentPrincipal,
+                    newPrincipal: newPrincipal,
+                    oldRemainingPrincipal: remainingPrincipal,
+                    newRemainingPrincipal: newRemainingPrincipal,
+                    oldTotalInterest: oldTotalInterest,
+                    newTotalInterest: recalculatedInterest,
+                    interestIncrease: interestIncrease,
+                    additionalInitiationFee: additionalInitiationFee,
+                    oldMonthlyPayment: loan.monthly_payment,
+                    newMonthlyPayment: newMonthlyPayment,
+                    reason: reason
+                }
+            });
+            
+            // STEP 8: SAVE STATE
+            AppStateManager.save(AppState);
+            
+            // STEP 9: RELOAD LOANS TO REFLECT CHANGES
+            loadLoans();
+            
+            // Show success message
+            alert(
+                `✅ Amount Added to Loan Successfully!\n\n` +
+                `Loan #${loanId} - ${loan.client_name}\n\n` +
+                `Amount Added: ${Calculations.formatCurrency(amount)}\n` +
+                `Principal: ${Calculations.formatCurrency(currentPrincipal)} → ${Calculations.formatCurrency(newPrincipal)}\n` +
+                `Remaining: ${Calculations.formatCurrency(remainingPrincipal)} → ${Calculations.formatCurrency(newRemainingPrincipal)}\n` +
+                `Total Interest: ${Calculations.formatCurrency(oldTotalInterest)} → ${Calculations.formatCurrency(recalculatedInterest)}\n` +
+                `Monthly Payment: ${Calculations.formatCurrency(loan.monthly_payment)} → ${Calculations.formatCurrency(newMonthlyPayment)}\n` +
+                `Additional Initiation Fee: ${Calculations.formatCurrency(additionalInitiationFee)}\n\n` +
+                `Reason: ${reason}\n\n` +
+                `💡 Payment schedule has been regenerated.`
+            );
+        }
+        
         function markAsDefaulted(loanId) {
             if (!confirm('⚠️ Are you sure you want to mark this loan as DEFAULTED?\n\nThis action can be reversed later if needed.')) {
                 return;
