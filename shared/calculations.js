@@ -344,8 +344,9 @@ const Calculations = {
         
         // STEP 3: Calculate remaining admin fees
         // Admin fees are for actual months only (not the full term)
+        const scheduleAdminFee = loan.schedule && loan.schedule.length > 0 ? loan.schedule[0].admin_fee : undefined;
         const adminFeePerMonth = isStockvel ? 
-            (loan.schedule ? loan.schedule[0].admin_fee : 60) : 
+            (typeof scheduleAdminFee === 'number' ? scheduleAdminFee : 60) : 
             60;
         const adminFeesPaid = (loan.payments_made || 0) * adminFeePerMonth;
         const adminFeesForPayoffMonth = payoffMonth * adminFeePerMonth;

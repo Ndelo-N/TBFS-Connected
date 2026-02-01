@@ -511,6 +511,10 @@ tbody tr:last-child td {
         padding: var(--spacing-sm);
         padding-top: calc(var(--nav-height) + var(--spacing-sm));
     }
+
+    body.nav-open {
+        overflow: hidden;
+    }
     
     .page-content {
         padding: var(--spacing-lg);
@@ -527,16 +531,22 @@ tbody tr:last-child td {
         padding: var(--spacing-lg);
         gap: var(--spacing-md);
         transform: translateX(-100%);
-        transition: transform 0.3s ease;
+        transition: transform 0.3s ease, opacity 0.3s ease, visibility 0.3s ease;
         max-height: calc(100vh - var(--nav-height));
         overflow-y: auto;
         z-index: 1000;
-        display: none; /* Hidden by default on mobile */
+        display: flex; /* Keep in DOM for reliable toggling */
+        opacity: 0;
+        visibility: hidden;
+        pointer-events: none;
     }
     
-    .main-nav.active {
-        transform: translateX(0) !important;
-        display: flex !important;
+    .main-nav.active,
+    body.nav-open .main-nav {
+        transform: translateX(0);
+        opacity: 1;
+        visibility: visible;
+        pointer-events: auto;
     }
     
     .nav-item {

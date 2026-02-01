@@ -223,6 +223,34 @@
                     </form>
                 </div>
             </div>
+
+            <!-- Member Lookup -->
+            <div class="card">
+                <h2 class="card-header">🔍 Member Lookup</h2>
+                <div class="form-grid">
+                    <div class="form-group">
+                        <label class="form-label">Member #</label>
+                        <input type="number" id="lookupMemberNumber" class="form-input" placeholder="e.g. 1001">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Account #</label>
+                        <input type="text" id="lookupAccountNumber" class="form-input" placeholder="e.g. ACC001">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Phone</label>
+                        <input type="tel" id="lookupPhone" class="form-input" placeholder="e.g. 0821234567">
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">Full Name</label>
+                        <input type="text" id="lookupName" class="form-input" placeholder="e.g. John Doe">
+                    </div>
+                </div>
+                <div class="mt-md" style="display: flex; gap: 10px; flex-wrap: wrap;">
+                    <button onclick="lookupMember()" class="btn btn-primary">🔍 Search</button>
+                    <button onclick="clearMemberLookup()" class="btn btn-secondary">🧹 Clear</button>
+                </div>
+                <div id="memberLookupResult" class="member-info-panel" style="display: none;"></div>
+            </div>
             
             <!-- Member Registry -->
             <div class="card">
@@ -703,12 +731,74 @@
                         <td>
                             ${clientLink}<br>
                             <button onclick="viewMemberDetails(${member.memberNumber})" class="btn btn-secondary" style="padding: 6px 12px; font-size: 12px; margin-top: 5px;">👁️ View</button>
-                            <button onclick="editMemberAccountNumber(${member.memberNumber})" class="btn" style="padding: 6px 12px; font-size: 12px; margin-top: 5px; background: #3498db; color: white;">🔗 Set Account #</button>
+                            <button onclick="editMemberAccountNumber(${member.memberNumber})" class="btn" style="padding: 6px 12px; font-size: 12px; margin-top: 5px; background: #3498db; color: white;">✏️ Edit Account #</button>
                             <button onclick="renewMembership(${member.memberNumber})" class="btn btn-success" style="padding: 6px 12px; font-size: 12px; margin-top: 5px;">🔄 Renew</button>
                         </td>
                     </tr>
                 `;
             }).join('');
+        }
+
+        /**
+         * Quick member lookup by member #, account #, phone, or name
+         */
+        function lookupMember() {
+            const memberNumberValue = document.getElementById('lookupMemberNumber').value.trim();
+            const accountNumber = document.getElementById('lookupAccountNumber').value.trim();
+            const phone = document.getElementById('lookupPhone').value.trim();
+            const name = document.getElementById('lookupName').value.trim();
+            const memberNumber = memberNumberValue ? parseInt(memberNumberValue, 10) : undefined;
+            const result = document.getElementById('memberLookupResult');
+
+            if (!memberNumber && !accountNumber && !phone && !name) {
+                alert('⚠️ Enter at least one lookup field.');
+                return;
+            }
+
+            const member = Calculations.findStockvelMember(
+                { memberNumber, accountNumber, phone, name },
+                AppState.stockvelMembers
+            );
+
+            if (!member) {
+                result.style.display = 'block';
+                result.innerHTML = '<p style="margin: 0; color: #e74c3c;">❌ No member found with those details.</p>';
+                return;
+            }
+
+            const client = (AppState.clients || []).find(c =>
+                c.memberNumber === member.memberNumber ||
+                c.account_number === member.account_number ||
+                c.account_number === member.phone
+            );
+
+            result.style.display = 'block';
+            result.innerHTML = `
+                <h4>✅ Member Found</h4>
+                <div class="info-grid">
+                    <div><strong>Member #:</strong> ${member.memberNumber}</div>
+                    <div><strong>Name:</strong> ${member.name}</div>
+                    <div><strong>Account #:</strong> ${member.account_number || member.phone || 'N/A'}</div>
+                    <div><strong>Phone:</strong> ${member.phone || 'N/A'}</div>
+                    <div><strong>Status:</strong> ${member.status}</div>
+                    <div><strong>Expires:</strong> ${new Date(member.membershipEndDate).toLocaleDateString()}</div>
+                    <div><strong>Client Link:</strong> ${client ? '✅ Linked' : '❌ Not linked'}</div>
+                </div>
+                <div style="margin-top: 12px; display: flex; gap: 10px; flex-wrap: wrap;">
+                    <button onclick="viewMemberDetails(${member.memberNumber})" class="btn btn-secondary">👁️ View Details</button>
+                    <button onclick="editMemberAccountNumber(${member.memberNumber})" class="btn" style="background: #3498db; color: white;">✏️ Edit Account #</button>
+                </div>
+            `;
+        }
+
+        function clearMemberLookup() {
+            document.getElementById('lookupMemberNumber').value = '';
+            document.getElementById('lookupAccountNumber').value = '';
+            document.getElementById('lookupPhone').value = '';
+            document.getElementById('lookupName').value = '';
+            const result = document.getElementById('memberLookupResult');
+            result.style.display = 'none';
+            result.innerHTML = '';
         }
         
         /**
