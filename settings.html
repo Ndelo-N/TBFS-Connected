@@ -220,6 +220,13 @@
                     🚀 Update Now
                 </button>
             </div>
+
+            <div class="info-box info" style="margin-top: 15px;">
+                <strong>🧩 Service Worker Status</strong>
+                <p id="swStatus" style="margin: 8px 0 4px 0; color: #2c3e50;">Checking service worker...</p>
+                <p id="swCacheStatus" style="margin: 0 0 10px 0; color: #7f8c8d; font-size: 13px;">Cache: unknown</p>
+                <button class="btn btn-secondary" onclick="refreshServiceWorkerStatus()">🔍 Refresh Status</button>
+            </div>
         </div>
         
         <!-- Cloud Backup Settings -->
@@ -353,6 +360,7 @@
     <script>
         // App Version
         const APP_VERSION = '1.7.11';
+        const CACHE_NAME = 'tbfs-loan-manager-v39';
         
         // Global state
         let AppState = {};
@@ -380,6 +388,9 @@
             
             // Check for service worker updates
             checkServiceWorkerUpdate();
+
+            // Update service worker status details
+            refreshServiceWorkerStatus();
             
             // Update sync time every minute
             setInterval(() => CloudBackup.updateSyncTime(), 60000);
@@ -619,6 +630,48 @@
                 } catch (error) {
                     console.error('Service worker check failed:', error);
                 }
+            }
+        }
+
+        /**
+         * Refresh service worker status and cache visibility
+         */
+        async function refreshServiceWorkerStatus() {
+            const statusEl = document.getElementById('swStatus');
+            const cacheEl = document.getElementById('swCacheStatus');
+
+            if (!statusEl || !cacheEl) return;
+
+            if (!('serviceWorker' in navigator)) {
+                statusEl.textContent = '❌ Service worker not supported in this browser.';
+                cacheEl.textContent = 'Cache: unsupported';
+                return;
+            }
+
+            try {
+                const registration = await navigator.serviceWorker.getRegistration();
+                if (!registration) {
+                    statusEl.textContent = '⚠️ Service worker not registered. Use HTTPS or localhost.';
+                } else {
+                    const state = registration.active?.state || registration.waiting?.state || registration.installing?.state || 'unknown';
+                    const scope = registration.scope || 'unknown';
+                    const hasController = navigator.serviceWorker.controller ? 'Yes' : 'No';
+                    statusEl.textContent = `✅ Registered (state: ${state}, controller: ${hasController}, scope: ${scope})`;
+                }
+
+                if ('caches' in window) {
+                    const keys = await caches.keys();
+                    const hasExpected = keys.includes(CACHE_NAME);
+                    cacheEl.textContent = hasExpected
+                        ? `Cache: ✅ ${CACHE_NAME}`
+                        : `Cache: ⚠️ ${CACHE_NAME} not found (found: ${keys.join(', ') || 'none'})`;
+                } else {
+                    cacheEl.textContent = 'Cache: unsupported';
+                }
+            } catch (error) {
+                console.error('Service worker status check failed:', error);
+                statusEl.textContent = '⚠️ Unable to read service worker status.';
+                cacheEl.textContent = 'Cache: unknown';
             }
         }
         
