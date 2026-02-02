@@ -7,6 +7,8 @@
  */
 
 class NavigationManager {
+    static swipeEnabled = false;
+    static lastHamburgerToggle = 0;
     static pages = [
         { 
             id: 'dashboard', 
@@ -69,7 +71,7 @@ class NavigationManager {
                         <img src="TBFS_Logo.png" alt="TBFS" class="logo" onerror="this.style.display='none'">
                     </div>
                     
-                    <button class="hamburger" onclick="Navigation.toggleMenu()" aria-label="Toggle menu">
+                    <button class="hamburger" type="button" aria-label="Toggle menu" aria-controls="mainNav" aria-expanded="false">
                         <span></span>
                         <span></span>
                         <span></span>
@@ -103,30 +105,21 @@ class NavigationManager {
         // Set up keyboard shortcuts
         this.setupKeyboardNav();
         
-        // Set up swipe gestures for mobile
-        this.setupSwipeNav();
+        // Set up swipe gestures for mobile (disabled by default)
+        if (this.swipeEnabled) {
+            this.setupSwipeNav();
+        } else {
+            console.log('👆 Swipe navigation disabled');
+        }
         
         // Set up responsive menu
         this.setupResponsiveMenu();
+
+        // Set up hamburger toggle handlers
+        this.setupHamburgerToggle();
         
         // Handle hash-based redirects (backwards compatibility)
         this.handleLegacyHashRouting();
-        
-        // Ensure hamburger menu works after DOM injection
-        setTimeout(() => {
-            const hamburger = document.querySelector('.hamburger');
-            const nav = document.getElementById('mainNav');
-            if (hamburger && nav) {
-                // Remove any existing listeners and add fresh one
-                const newHamburger = hamburger.cloneNode(true);
-                hamburger.parentNode.replaceChild(newHamburger, hamburger);
-                newHamburger.addEventListener('click', (e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    this.toggleMenu();
-                });
-            }
-        }, 100);
         
         console.log(`🧭 Navigation initialized for page: ${currentPageId}`);
     }
@@ -204,6 +197,39 @@ class NavigationManager {
         
         console.log('⌨️ Keyboard navigation enabled (Arrow Left/Right)');
     }
+
+    /**
+     * Set up hamburger menu toggle handlers
+     */
+    static setupHamburgerToggle() {
+        const hamburger = document.querySelector('.hamburger');
+        const nav = document.getElementById('mainNav');
+        
+        if (!hamburger || !nav) {
+            console.error('❌ Hamburger or navigation element not found');
+            return;
+        }
+
+        // Ensure ARIA state is initialized
+        hamburger.setAttribute('aria-expanded', 'false');
+        nav.setAttribute('aria-hidden', 'true');
+
+        const handler = (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+
+            const now = Date.now();
+            if (now - this.lastHamburgerToggle < 300) {
+                return;
+            }
+            this.lastHamburgerToggle = now;
+            this.toggleMenu();
+        };
+
+        hamburger.addEventListener('click', handler);
+        hamburger.addEventListener('pointerup', handler);
+        hamburger.addEventListener('touchend', handler, { passive: false });
+    }
     
     /**
      * Set up swipe navigation for mobile
@@ -258,6 +284,9 @@ class NavigationManager {
                 nav.classList.add('active');
                 hamburger.classList.add('active');
             }
+            hamburger.setAttribute('aria-expanded', (!isActive).toString());
+            nav.setAttribute('aria-hidden', isActive ? 'true' : 'false');
+            document.body.classList.toggle('nav-open', !isActive);
             console.log('🍔 Menu toggled:', nav.classList.contains('active') ? 'open' : 'closed');
         } else {
             console.error('❌ Navigation elements not found:', { nav: !!nav, hamburger: !!hamburger });
