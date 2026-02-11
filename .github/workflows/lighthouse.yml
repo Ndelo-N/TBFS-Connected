@@ -1,0 +1,47 @@
+name: Lighthouse CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  lighthouse:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install Lighthouse CI
+        run: npm install -g @lhci/cli@0.13.x
+
+      - name: Run Lighthouse CI
+        run: |
+          lhci autorun \
+            --collect.staticDistDir=. \
+            --collect.url=index.html \
+            --collect.url=calculator.html \
+            --collect.url=active-loans.html \
+            --collect.numberOfRuns=1 \
+            --assert.preset=lighthouse:no-pwa-installable \
+            --assert.assertions.categories:performance=off \
+            --assert.assertions.categories:accessibility=warn \
+            --assert.assertions.categories:best-practices=warn \
+            --assert.assertions.categories:seo=warn \
+            --assert.assertions.service-worker=warn \
+            --assert.assertions.themed-omnibox=warn \
+            --assert.assertions.splash-screen=warn \
+            --assert.assertions.installable-manifest=warn \
+            --upload.target=temporary-public-storage
+        env:
+          LHCI_GITHUB_APP_TOKEN: ${{ secrets.LHCI_GITHUB_APP_TOKEN }}
