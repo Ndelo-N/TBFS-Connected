@@ -2,14 +2,27 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self' https://ndelo-n.github.io https://api.github.com; font-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none';">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="theme-color" content="#667eea">
+    <meta name="description" content="TBFS Income Calculator - Project loan income across different capital amounts">
     <title>TBFS Loan Income Calculator</title>
     
     <!-- PWA Meta Tags -->
+    <meta name="application-name" content="TBFS Loan Manager">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="default">
+    <meta name="apple-mobile-web-app-title" content="TBFS Loan Manager">
+    <meta name="format-detection" content="telephone=no">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="msapplication-TileColor" content="#667eea">
+    <meta name="msapplication-tap-highlight" content="no">
+    
     <link rel="manifest" href="manifest.json">
     <link rel="apple-touch-icon" href="icons/icon-192x192.png">
     <link rel="icon" type="image/png" sizes="32x32" href="icons/icon-32x32.png">
+    <link rel="icon" type="image/png" sizes="16x16" href="icons/icon-16x16.png">
+    <link rel="icon" href="icons/favicon.ico" sizes="any">
     
     <!-- Shared Styles -->
     <link rel="stylesheet" href="shared/styles.css">
@@ -96,7 +109,7 @@
 
         .input-group .unit {
             font-size: 12px;
-            color: #7f8c8d;
+            color: #636e72;
             margin-top: 4px;
         }
 
@@ -232,7 +245,7 @@
         }
 
         .breakdown-card h4 {
-            color: #7f8c8d;
+            color: #636e72;
             font-size: 12px;
             font-weight: 600;
             margin-bottom: 8px;
@@ -351,7 +364,7 @@
         .no-results {
             text-align: center;
             padding: 60px 20px;
-            color: #7f8c8d;
+            color: #636e72;
         }
 
         .no-results i {
@@ -365,7 +378,7 @@
     <!-- Navigation Header -->
     <div id="navigation-header"></div>
     
-    <div class="container">
+    <main class="container" role="main">
         <div class="header">
             <h1>💰 TBFS Loan Income Calculator</h1>
             <p>Calculate expected income across different loan amounts and terms</p>
@@ -411,10 +424,10 @@
             <div class="highlight-control">
                 <label for="roiThreshold">💡 Highlight ROI Above:</label>
                 <input type="number" id="roiThreshold" value="30" min="0" max="1000" step="1">
-                <span style="color: #7f8c8d;">%</span>
+                <span style="color: #636e72;">%</span>
                 <button onclick="applyHighlight()">🎨 Apply Highlight</button>
                 <button onclick="clearHighlight()" style="background: #e9ecef; color: #2c3e50;">Clear</button>
-                <span style="color: #7f8c8d; font-size: 13px; margin-left: auto;">
+                <span style="color: #636e72; font-size: 13px; margin-left: auto;">
                     ROI = (Income ÷ Loan Amount) × 100
                 </span>
             </div>
@@ -439,7 +452,7 @@
 
             <div class="breakdown-section">
                 <h3>📊 Sample Calculation Breakdown</h3>
-                <p style="color: #7f8c8d; margin-bottom: 15px;">Example based on your current settings:</p>
+                <p style="color: #636e72; margin-bottom: 15px;">Example based on your current settings:</p>
                 <div class="breakdown-grid" id="sampleBreakdown">
                 </div>
             </div>
@@ -461,7 +474,7 @@
             <h3>Ready to Calculate</h3>
             <p>Set your parameters above and click "Generate Income Table"</p>
         </div>
-    </div>
+    </main>
 
     <script>
         function calculateLoanIncome(principal, term) {
@@ -700,5 +713,7 @@
     
     <!-- Shared Modules -->
     <script src="shared/navigation.js"></script>
+    <!-- Service Worker Registration -->
+    <script src="shared/sw-register.js"></script>
 </body>
 </html>
