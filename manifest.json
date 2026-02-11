@@ -109,5 +109,14 @@
         }
       ]
     }
-  ]
+  ],
+  "share_target": {
+    "action": "./calculator.html",
+    "method": "GET",
+    "params": {
+      "title": "clientName",
+      "text": "loanDetails",
+      "url": "referralUrl"
+    }
+  }
 }
