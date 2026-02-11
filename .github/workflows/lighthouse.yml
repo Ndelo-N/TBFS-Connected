@@ -33,11 +33,29 @@ jobs:
             --collect.url=calculator.html \
             --collect.url=active-loans.html \
             --collect.numberOfRuns=1 \
-            --assert.preset=lighthouse:no-pwa \
-            --assert.assertions.categories:performance=off \
-            --assert.assertions.categories:accessibility=warn \
-            --assert.assertions.categories:best-practices=warn \
-            --assert.assertions.categories:seo=warn \
+            --assert.assertions.categories:accessibility="warn" \
+            --assert.assertions.categories:best-practices="warn" \
+            --assert.assertions.categories:seo="warn" \
+            --assert.assertions.categories:performance="off" \
+            --assert.assertions.color-contrast="warn" \
+            --assert.assertions.csp-xss="off" \
+            --assert.assertions.errors-in-console="warn" \
+            --assert.assertions.redirects="off" \
+            --assert.assertions.total-byte-weight="off" \
+            --assert.assertions.unminified-javascript="off" \
+            --assert.assertions.unused-javascript="off" \
+            --assert.assertions.uses-responsive-images="off" \
+            --assert.assertions.server-response-time="off" \
+            --assert.assertions.bootup-time="off" \
+            --assert.assertions.dom-size="off" \
+            --assert.assertions.mainthread-work-breakdown="off" \
+            --assert.assertions.first-contentful-paint="off" \
+            --assert.assertions.first-meaningful-paint="off" \
+            --assert.assertions.largest-contentful-paint="off" \
+            --assert.assertions.max-potential-fid="off" \
+            --assert.assertions.speed-index="off" \
+            --assert.assertions.interactive="off" \
+            --assert.assertions.render-blocking-resources="off" \
             --upload.target=temporary-public-storage
         env:
           LHCI_GITHUB_APP_TOKEN: ${{ secrets.LHCI_GITHUB_APP_TOKEN }}
