@@ -33,15 +33,11 @@ jobs:
             --collect.url=calculator.html \
             --collect.url=active-loans.html \
             --collect.numberOfRuns=1 \
-            --assert.preset=lighthouse:no-pwa-installable \
+            --assert.preset=lighthouse:no-pwa \
             --assert.assertions.categories:performance=off \
             --assert.assertions.categories:accessibility=warn \
             --assert.assertions.categories:best-practices=warn \
             --assert.assertions.categories:seo=warn \
-            --assert.assertions.service-worker=warn \
-            --assert.assertions.themed-omnibox=warn \
-            --assert.assertions.splash-screen=warn \
-            --assert.assertions.installable-manifest=warn \
             --upload.target=temporary-public-storage
         env:
           LHCI_GITHUB_APP_TOKEN: ${{ secrets.LHCI_GITHUB_APP_TOKEN }}
