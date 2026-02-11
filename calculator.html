@@ -148,7 +148,7 @@
     <div id="navigation-header"></div>
     
     <!-- Main Container -->
-    <div class="container fade-in">
+    <main class="container fade-in" role="main">
         <div class="page-content">
             <h1 class="mb-lg">💳 Loan Calculator</h1>
             
@@ -158,36 +158,36 @@
                 <form id="loanForm">
                     <div class="form-grid">
                         <div class="form-group">
-                            <label class="form-label">First Name:</label>
+                            <label class="form-label" for="firstName">First Name:</label>
                             <input type="text" id="firstName" class="form-input" required>
                         </div>
                         <div class="form-group">
-                            <label class="form-label">Last Name:</label>
+                            <label class="form-label" for="lastName">Last Name:</label>
                             <input type="text" id="lastName" class="form-input" required>
                         </div>
                         <div class="form-group">
-                            <label class="form-label">Account Number:</label>
+                            <label class="form-label" for="accountNumber">Account Number:</label>
                             <input type="text" id="accountNumber" class="form-input" required>
                         </div>
                         <div class="form-group">
-                            <label class="form-label">Member # (Optional):</label>
+                            <label class="form-label" for="memberNumber">Member # (Optional):</label>
                             <input type="number" id="memberNumber" class="form-input" placeholder="e.g. 1001 - auto-fills stockvel data">
-                            <small style="color: #7f8c8d; font-size: 11px;">💡 Enter Member # to auto-populate stockvel fields</small>
+                            <small style="color: #636e72; font-size: 11px;">💡 Enter Member # to auto-populate stockvel fields</small>
                         </div>
                         <div class="form-group">
-                            <label class="form-label">Loan Amount (R):</label>
+                            <label class="form-label" for="principal">Loan Amount (R):</label>
                             <input type="number" id="principal" class="form-input" min="100" step="100" required>
                         </div>
                         <div class="form-group">
-                            <label class="form-label">Loan Term (months):</label>
+                            <label class="form-label" for="term">Loan Term (months):</label>
                             <input type="number" id="term" class="form-input" min="1" required>
                         </div>
                         <div class="form-group">
-                            <label class="form-label">Loan Disbursement Date:</label>
+                            <label class="form-label" for="loanDate">Loan Disbursement Date:</label>
                             <input type="date" id="loanDate" class="form-input" required>
                         </div>
                         <div class="form-group">
-                            <label class="form-label">Start Month:</label>
+                            <label class="form-label" for="startMonth">Start Month:</label>
                             <select id="startMonth" class="form-select" required>
                                 <option value="">Select Month</option>
                                 <option value="0">January</option>
@@ -233,24 +233,24 @@
                             </div>
                             <div class="form-grid">
                                 <div class="form-group">
-                                    <label class="form-label">Membership Start Date:</label>
+                                    <label class="form-label" for="membershipStartDate">Membership Start Date:</label>
                                     <input type="date" id="membershipStartDate" class="form-input" onchange="calculateMembershipEndDate()">
                                 </div>
                                 <div class="form-group">
-                                    <label class="form-label">Membership End Date:</label>
+                                    <label class="form-label" for="membershipEndDate">Membership End Date:</label>
                                     <input type="date" id="membershipEndDate" class="form-input" readonly style="background: #f0f0f0; cursor: not-allowed;" title="Auto-calculated as start date + 12 months">
                                     <small style="color: #666; font-size: 11px;">Automatically calculated (12 months from start)</small>
                                 </div>
                                 <div class="form-group">
-                                    <label class="form-label">Total Contributions to Date (R):</label>
+                                    <label class="form-label" for="totalContributions">Total Contributions to Date (R):</label>
                                     <input type="number" id="totalContributions" class="form-input" min="0" step="100" placeholder="Enter total amount contributed">
                                 </div>
                                 <div class="form-group">
-                                    <label class="form-label">Monthly Contribution (R):</label>
+                                    <label class="form-label" for="monthlyContribution">Monthly Contribution (R):</label>
                                     <input type="number" id="monthlyContribution" class="form-input" min="0" step="50" placeholder="Enter monthly contribution">
                                 </div>
                                 <div class="form-group">
-                                    <label class="form-label">Accumulated Bonus (R):</label>
+                                    <label class="form-label" for="accumulatedBonus">Accumulated Bonus (R):</label>
                                     <input type="number" id="accumulatedBonus" class="form-input" min="0" step="0.01" value="0" placeholder="Bonus from previous loans">
                                     <small style="color: #666; font-size: 11px;">Total bonus accumulated from all loans</small>
                                 </div>
@@ -333,7 +333,7 @@
                 </div>
             </div>
         </div>
-    </div>
+    </main>
     
     <!-- Shared Modules -->
     <script src="shared/app-state.js"></script>

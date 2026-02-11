@@ -110,7 +110,7 @@
         .empty-state {
             text-align: center;
             padding: 60px 20px;
-            color: #7f8c8d;
+            color: #636e72;
         }
         
         .empty-state-icon {
@@ -190,13 +190,13 @@
     <div id="navigation-header"></div>
     
     <!-- Main Container -->
-    <div class="container fade-in">
+    <main class="container fade-in" role="main">
         <div class="page-content">
             <h1 class="mb-lg">💰 Active Loans Management</h1>
             
             <!-- Stats Summary -->
             <div class="stats-summary">
-                <h3>📊 Portfolio Overview</h3>
+                <h2>📊 Portfolio Overview</h2>
                 <div class="stats-row">
                     <div class="stat-item">
                         <div class="stat-label">Active Loans</div>
@@ -219,7 +219,7 @@
             
             <!-- Filter Section -->
             <div class="filter-section">
-                <label><strong>Filter by Status:</strong></label>
+                <label for="statusFilter"><strong>Filter by Status:</strong></label>
                 <select id="statusFilter" onchange="filterLoans()">
                     <option value="all">All Loans</option>
                     <option value="active" selected>Active Only</option>
@@ -229,7 +229,7 @@
                     <option value="overdue">Overdue</option>
                 </select>
                 
-                <label><strong>Sort by:</strong></label>
+                <label for="sortBy"><strong>Sort by:</strong></label>
                 <select id="sortBy" onchange="filterLoans()">
                     <option value="date">Date (Newest First)</option>
                     <option value="amount">Loan Amount</option>
@@ -251,7 +251,7 @@
             <!-- Loans List -->
             <div id="loansList"></div>
         </div>
-    </div>
+    </main>
     
     <!-- Shared Modules -->
     <script src="shared/app-state.js"></script>
@@ -793,7 +793,7 @@
                         
                         <div class="info-row">
                             <span>📅 Loan Date:</span>
-                            <strong style="color: #7f8c8d;">${loanDateStr}</strong>
+                            <strong style="color: #636e72;">${loanDateStr}</strong>
                         </div>
                         
                         ${loan.payment_history && loan.payment_history.length > 0 ? `

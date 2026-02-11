@@ -159,7 +159,7 @@
     <!-- Navigation Header -->
     <div id="navigation-header"></div>
     
-    <div class="container" style="max-width: 900px; margin: 20px auto; padding: 20px;">
+    <main class="container" role="main" style="max-width: 900px; margin: 20px auto; padding: 20px;">
         <h1 class="section-title">⚙️ Settings</h1>
         
         <!-- Capital & Profit Goal Settings -->
@@ -171,7 +171,7 @@
                     <h4>Capital Amount</h4>
                     <input type="number" id="capitalInput" placeholder="Enter capital amount" min="0" step="0.01">
                     <button class="btn btn-primary" onclick="setCapital()" style="width: 100%;">💵 Set Capital</button>
-                    <p style="font-size: 12px; color: #7f8c8d; margin-top: 10px;">
+                    <p style="font-size: 12px; color: #636e72; margin-top: 10px;">
                         Current: <strong id="currentCapital">R0</strong>
                     </p>
                 </div>
@@ -180,7 +180,7 @@
                     <h4>Profit Goal</h4>
                     <input type="number" id="profitGoalInput" placeholder="Enter profit goal" min="0" step="0.01">
                     <button class="btn btn-primary" onclick="setProfitGoal()" style="width: 100%;">🎯 Set Profit Goal</button>
-                    <p style="font-size: 12px; color: #7f8c8d; margin-top: 10px;">
+                    <p style="font-size: 12px; color: #636e72; margin-top: 10px;">
                         Current: <strong id="currentProfitGoal">R0</strong>
                     </p>
                 </div>
@@ -190,13 +190,13 @@
             <div style="background: #f8f9fa; padding: 20px; border-radius: 10px; margin-top: 20px;">
                 <h4 style="color: #2c3e50; margin-bottom: 15px;">📊 Profit Goal Progress</h4>
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
-                    <span style="color: #7f8c8d;">Progress</span>
+                    <span style="color: #636e72;">Progress</span>
                     <strong id="profitProgressPercent" style="font-size: 18px; color: #27ae60;">0%</strong>
                 </div>
                 <div style="background: #e0e6ed; border-radius: 10px; height: 20px; overflow: hidden;">
                     <div id="profitProgressBar" style="background: linear-gradient(135deg, #27ae60 0%, #2ecc71 100%); height: 100%; width: 0%; transition: width 0.5s ease;"></div>
                 </div>
-                <p style="margin: 10px 0 0 0; color: #7f8c8d; font-size: 14px; text-align: center;" id="profitRemaining">Set a profit goal to track progress</p>
+                <p style="margin: 10px 0 0 0; color: #636e72; font-size: 14px; text-align: center;" id="profitRemaining">Set a profit goal to track progress</p>
             </div>
         </div>
         
@@ -206,9 +206,9 @@
             <div style="background: #f8f9fa; padding: 20px; border-radius: 10px; margin-bottom: 20px;">
                 <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 15px;">
                     <div>
-                        <p style="margin: 0; color: #7f8c8d; font-size: 14px;">Current Version</p>
+                        <p style="margin: 0; color: #636e72; font-size: 14px;">Current Version</p>
                         <p style="margin: 5px 0 0 0; font-size: 24px; font-weight: bold; color: #2c3e50;" id="currentVersion">v1.7.11</p>
-                        <p style="margin: 5px 0 0 0; font-size: 12px; color: #95a5a6;" id="updateStatus">Checking for updates...</p>
+                        <p style="margin: 5px 0 0 0; font-size: 12px; color: #636e72;" id="updateStatus">Checking for updates...</p>
                     </div>
                     <button class="btn" onclick="checkForUpdates()" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 12px 24px;">
                         🔄 Check for Updates
@@ -237,7 +237,7 @@
             <div class="info-box info" style="margin-top: 15px;">
                 <strong>🧩 Service Worker Status</strong>
                 <p id="swStatus" style="margin: 8px 0 4px 0; color: #2c3e50;">Checking service worker...</p>
-                <p id="swCacheStatus" style="margin: 0 0 10px 0; color: #7f8c8d; font-size: 13px;">Cache: unknown</p>
+                <p id="swCacheStatus" style="margin: 0 0 10px 0; color: #636e72; font-size: 13px;">Cache: unknown</p>
                 <button class="btn btn-secondary" onclick="refreshServiceWorkerStatus()">🔍 Refresh Status</button>
             </div>
         </div>
@@ -245,7 +245,7 @@
         <!-- Cloud Backup Settings -->
         <div class="form-section">
             <h3 style="color: #2c3e50; margin-bottom: 15px;">☁️ GitHub Cloud Backup</h3>
-            <p style="color: #7f8c8d; margin-bottom: 20px;">Automatically backup your data to a private GitHub repository. Your data syncs across all devices and works offline.</p>
+            <p style="color: #636e72; margin-bottom: 20px;">Automatically backup your data to a private GitHub repository. Your data syncs across all devices and works offline.</p>
             
             <!-- Token Configured State -->
             <div id="tokenConfigured" style="display: none;">
@@ -265,7 +265,7 @@
                     <input type="checkbox" id="autoBackupToggle" onchange="toggleAutoBackup()">
                     <label for="autoBackupToggle">
                         <strong>Enable Auto-Backup on This Device</strong>
-                        <div style="font-size: 12px; color: #7f8c8d; margin-top: 5px;">
+                        <div style="font-size: 12px; color: #636e72; margin-top: 5px;">
                             When enabled, every change automatically syncs to cloud. Leave OFF if this is a secondary device.
                         </div>
                     </label>
@@ -285,7 +285,7 @@
                     <label for="githubToken">GitHub Personal Access Token:</label>
                     <input type="password" id="githubToken" placeholder="github_pat_xxxxx..." 
                            style="font-family: monospace; font-size: 14px;">
-                    <p style="font-size: 12px; color: #7f8c8d; margin-top: 5px;">
+                    <p style="font-size: 12px; color: #636e72; margin-top: 5px;">
                         🔒 Your token is encrypted and stored securely on your device only. Never shared or exposed.
                     </p>
                 </div>
@@ -295,7 +295,7 @@
                     <input type="text" id="backupRepoUrl" 
                            value="https://github.com/Ndelo-N/TBFS-Data-Backup.git" readonly
                            style="background: #f8f9fa; font-family: monospace; font-size: 14px;">
-                    <p style="font-size: 12px; color: #7f8c8d; margin-top: 5px;">
+                    <p style="font-size: 12px; color: #636e72; margin-top: 5px;">
                         ⚠️ Ensure this is your PRIVATE backup repository.
                     </p>
                 </div>
@@ -318,7 +318,7 @@
 
             <div style="margin-top: 20px;">
                 <h4 style="color: #2c3e50;">Cloud Backup Features:</h4>
-                <ul style="color: #7f8c8d; line-height: 1.8;">
+                <ul style="color: #636e72; line-height: 1.8;">
                     <li>✅ Auto-sync on every data change</li>
                     <li>✅ Works offline - queues changes, syncs when online</li>
                     <li>✅ Access from any device</li>
@@ -332,7 +332,7 @@
         <!-- Manual Backup & Restore -->
         <div class="form-section">
             <h3 style="color: #2c3e50; margin-bottom: 15px;">💾 Manual Backup & Restore</h3>
-            <p style="color: #7f8c8d; margin-bottom: 20px;">Download or restore backups manually.</p>
+            <p style="color: #636e72; margin-bottom: 20px;">Download or restore backups manually.</p>
             
             <div style="display: flex; gap: 10px; flex-wrap: wrap;">
                 <button class="btn btn-secondary" onclick="backupData()">💾 Download Local Backup</button>
@@ -354,16 +354,16 @@
         <!-- Data Management -->
         <div class="danger-zone">
             <h3>⚠️ Danger Zone</h3>
-            <p style="color: #7f8c8d; margin-bottom: 15px;">These actions are permanent and cannot be undone. Use with extreme caution.</p>
+            <p style="color: #636e72; margin-bottom: 15px;">These actions are permanent and cannot be undone. Use with extreme caution.</p>
             
             <button class="btn btn-danger" onclick="clearAllData()">
                 🗑️ Clear All Data
             </button>
-            <p style="font-size: 12px; color: #7f8c8d; margin-top: 10px;">
+            <p style="font-size: 12px; color: #636e72; margin-top: 10px;">
                 ⚠️ This will permanently delete ALL loans, clients, and financial data. A backup will be automatically created before clearing.
             </p>
         </div>
-    </div>
+    </main>
 
     <!-- Shared Scripts -->
     <script src="shared/app-state.js"></script>
