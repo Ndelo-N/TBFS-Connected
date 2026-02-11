@@ -1,4 +1,4 @@
-const CACHE_NAME = 'tbfs-loan-manager-v40'; // v1.7.11 - PWA Review: Added offline page, fixed caching, cleanup
+const CACHE_NAME = 'tbfs-loan-manager-v41'; // v1.7.11 - PWA Review Phase 2: Background sync, badge API, security
 const urlsToCache = [
   './',
   './index.html',                    // Dashboard (refactored)
@@ -174,3 +174,38 @@ self.addEventListener('notificationclick', function(event) {
     );
   }
 });
+
+// Background Sync - triggered when connectivity returns after offline queuing
+self.addEventListener('sync', function(event) {
+  if (event.tag === 'cloud-backup-sync') {
+    event.waitUntil(
+      notifyClientsToSync('cloud-backup')
+    );
+  }
+});
+
+// Periodic Background Sync - auto-check for pending backups on schedule
+self.addEventListener('periodicsync', function(event) {
+  if (event.tag === 'periodic-cloud-backup') {
+    event.waitUntil(
+      notifyClientsToSync('periodic-backup')
+    );
+  }
+});
+
+/**
+ * Notify all open client windows to perform a sync operation.
+ * The SW can't access localStorage directly, so it delegates to clients.
+ */
+function notifyClientsToSync(type) {
+  return self.clients.matchAll({ type: 'window', includeUncontrolled: false })
+    .then(function(clientList) {
+      clientList.forEach(function(client) {
+        client.postMessage({
+          type: 'SYNC_REQUESTED',
+          syncType: type,
+          timestamp: Date.now()
+        });
+      });
+    });
+}
