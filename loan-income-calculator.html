@@ -109,7 +109,7 @@
 
         .input-group .unit {
             font-size: 12px;
-            color: #7f8c8d;
+            color: #636e72;
             margin-top: 4px;
         }
 
@@ -245,7 +245,7 @@
         }
 
         .breakdown-card h4 {
-            color: #7f8c8d;
+            color: #636e72;
             font-size: 12px;
             font-weight: 600;
             margin-bottom: 8px;
@@ -364,7 +364,7 @@
         .no-results {
             text-align: center;
             padding: 60px 20px;
-            color: #7f8c8d;
+            color: #636e72;
         }
 
         .no-results i {
@@ -378,7 +378,7 @@
     <!-- Navigation Header -->
     <div id="navigation-header"></div>
     
-    <div class="container">
+    <main class="container" role="main">
         <div class="header">
             <h1>💰 TBFS Loan Income Calculator</h1>
             <p>Calculate expected income across different loan amounts and terms</p>
@@ -424,10 +424,10 @@
             <div class="highlight-control">
                 <label for="roiThreshold">💡 Highlight ROI Above:</label>
                 <input type="number" id="roiThreshold" value="30" min="0" max="1000" step="1">
-                <span style="color: #7f8c8d;">%</span>
+                <span style="color: #636e72;">%</span>
                 <button onclick="applyHighlight()">🎨 Apply Highlight</button>
                 <button onclick="clearHighlight()" style="background: #e9ecef; color: #2c3e50;">Clear</button>
-                <span style="color: #7f8c8d; font-size: 13px; margin-left: auto;">
+                <span style="color: #636e72; font-size: 13px; margin-left: auto;">
                     ROI = (Income ÷ Loan Amount) × 100
                 </span>
             </div>
@@ -452,7 +452,7 @@
 
             <div class="breakdown-section">
                 <h3>📊 Sample Calculation Breakdown</h3>
-                <p style="color: #7f8c8d; margin-bottom: 15px;">Example based on your current settings:</p>
+                <p style="color: #636e72; margin-bottom: 15px;">Example based on your current settings:</p>
                 <div class="breakdown-grid" id="sampleBreakdown">
                 </div>
             </div>
@@ -474,7 +474,7 @@
             <h3>Ready to Calculate</h3>
             <p>Set your parameters above and click "Generate Income Table"</p>
         </div>
-    </div>
+    </main>
 
     <script>
         function calculateLoanIncome(principal, term) {

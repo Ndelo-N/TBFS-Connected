@@ -171,7 +171,7 @@
     <div id="navigation-header"></div>
     
     <!-- Main Container -->
-    <div class="container fade-in">
+    <main class="container fade-in" role="main">
         <div class="page-content">
             <h1 class="mb-lg">🎁 Stockvel Member Management</h1>
             
@@ -291,7 +291,7 @@
                         </thead>
                         <tbody id="memberRegistryBody">
                             <tr>
-                                <td colspan="11" style="text-align: center; color: #7f8c8d; padding: 40px;">
+                                <td colspan="11" style="text-align: center; color: #636e72; padding: 40px;">
                                     No members registered yet. Register your first member above!
                                 </td>
                             </tr>
@@ -374,7 +374,7 @@
                         </thead>
                         <tbody id="contributionHistoryBody">
                             <tr>
-                                <td colspan="7" style="text-align: center; color: #7f8c8d; padding: 40px;">
+                                <td colspan="7" style="text-align: center; color: #636e72; padding: 40px;">
                                     No contribution history yet. Record your first receipt above!
                                 </td>
                             </tr>
@@ -410,7 +410,7 @@
                         </thead>
                         <tbody id="bonusReportBody">
                             <tr>
-                                <td colspan="6" style="text-align: center; color: #7f8c8d; padding: 40px;">
+                                <td colspan="6" style="text-align: center; color: #636e72; padding: 40px;">
                                     Click "Generate Report" to view bonus information
                                 </td>
                             </tr>
@@ -440,7 +440,7 @@
                         </thead>
                         <tbody id="contributionPayoutReportBody">
                             <tr>
-                                <td colspan="6" style="text-align: center; color: #7f8c8d; padding: 40px;">
+                                <td colspan="6" style="text-align: center; color: #636e72; padding: 40px;">
                                     Click "Generate Report" to view contribution payout history
                                 </td>
                             </tr>
@@ -449,7 +449,7 @@
                 </div>
             </div>
         </div>
-    </div>
+    </main>
     
     <!-- Shared Modules -->
     <script src="shared/app-state.js"></script>
@@ -683,7 +683,7 @@
             const tbody = document.getElementById('memberRegistryBody');
             
             if (!AppState.stockvelMembers || AppState.stockvelMembers.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="11" style="text-align: center; color: #7f8c8d; padding: 40px;">No members registered yet. Register your first member above!</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="11" style="text-align: center; color: #636e72; padding: 40px;">No members registered yet. Register your first member above!</td></tr>';
                 return;
             }
             
@@ -727,7 +727,7 @@
                 // Client link badge
                 const clientLink = client 
                     ? `<a href="clients.html" style="color: #667eea; text-decoration: none; font-size: 11px;">👤 View Client</a>`
-                    : '<span style="color: #95a5a6; font-size: 11px;">No client entry</span>';
+                    : '<span style="color: #636e72; font-size: 11px;">No client entry</span>';
                 
                 return `
                     <tr>
@@ -738,7 +738,7 @@
                         <td style="color: #27ae60; font-weight: 600;">${Calculations.formatCurrency(member.totalContributions || 0)}</td>
                         <td style="color: #f39c12; font-weight: 600;">${Calculations.formatCurrency(member.accumulatedBonus || 0)}</td>
                         <td>${Calculations.formatCurrency(member.monthlyContribution || 0)}</td>
-                        <td><strong>${loanCount}</strong> <small style="color: #7f8c8d;">(${Calculations.formatCurrency(totalBorrowed)})</small></td>
+                        <td><strong>${loanCount}</strong> <small style="color: #636e72;">(${Calculations.formatCurrency(totalBorrowed)})</small></td>
                         <td>${statusBadge}</td>
                         <td>${endDate.toLocaleDateString()}</td>
                         <td>
@@ -935,7 +935,7 @@
             const receipts = AppState.stockvelReceipts || [];
             
             if (receipts.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="7" style="text-align: center; color: #7f8c8d; padding: 40px;">No contribution history yet. Record your first receipt above!</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="7" style="text-align: center; color: #636e72; padding: 40px;">No contribution history yet. Record your first receipt above!</td></tr>';
                 return;
             }
             
@@ -979,7 +979,7 @@
             }
             
             if (receipts.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="7" style="text-align: center; color: #7f8c8d; padding: 40px;">No receipts found for selected filter.</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="7" style="text-align: center; color: #636e72; padding: 40px;">No receipts found for selected filter.</td></tr>';
                 return;
             }
             
@@ -1055,7 +1055,7 @@
             const members = AppState.stockvelMembers || [];
             
             if (members.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="6" style="text-align: center; color: #7f8c8d; padding: 40px;">No members to report on.</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="6" style="text-align: center; color: #636e72; padding: 40px;">No members to report on.</td></tr>';
                 return;
             }
             
@@ -1356,7 +1356,7 @@ Client Linked: ${client ? 'Yes (' + client.account_number + ')' : 'No'}
             const members = AppState.stockvelMembers || [];
             
             if (members.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="6" style="text-align: center; color: #7f8c8d; padding: 40px;">No members to report on.</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="6" style="text-align: center; color: #636e72; padding: 40px;">No members to report on.</td></tr>';
                 return;
             }
             

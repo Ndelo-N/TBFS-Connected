@@ -670,7 +670,7 @@
     <div id="navigation-header"></div>
     
     <!-- Main Container -->
-    <div class="container fade-in">
+    <main class="container fade-in" role="main">
         <div class="page-content">
 
         <!-- CALCULATOR TAB (Hidden - moved to calculator.html) -->
@@ -694,7 +694,7 @@
                         <div class="form-group">
                             <label for="memberNumber">Member # (Optional):</label>
                             <input type="number" id="memberNumber" name="memberNumber" placeholder="e.g. 1001 - auto-fills stockvel data">
-                            <small style="color: #7f8c8d; font-size: 11px;">&#128100; Enter Member # to auto-populate stockvel fields</small>
+                            <small style="color: #636e72; font-size: 11px;">&#128100; Enter Member # to auto-populate stockvel fields</small>
                         </div>
                         <div class="form-group">
                             <label for="principal">Loan Amount (R):</label>
@@ -855,7 +855,7 @@
             <div id="dashboardAlerts"></div>
 
             <!-- Financial Overview -->
-            <h3 class="section-title">&#128176; Financial Overview</h3>
+            <h2 class="section-title">&#128176; Financial Overview</h2>
             <div class="stats-grid">
                 <div class="stat-card" style="background: linear-gradient(135deg, #27ae60 0%, #2ecc71 100%);">
                     <h3>Account Balance</h3>
@@ -878,7 +878,7 @@
             </div>
 
             <!-- Profitability Metrics -->
-            <h3 class="section-title" style="margin-top: 30px;">&#128176; Profitability & Earnings</h3>
+            <h2 class="section-title" style="margin-top: 30px;">&#128176; Profitability & Earnings</h2>
             <div class="stats-grid">
                 <div class="stat-card" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);">
                     <h3>Total Interest Earned</h3>
@@ -898,26 +898,26 @@
             </div>
 
             <!-- Profit Goal Progress -->
-            <h3 class="section-title" style="margin-top: 30px;">&#128200; Profit Goal Progress</h3>
+            <h2 class="section-title" style="margin-top: 30px;">&#128200; Profit Goal Progress</h2>
             <div style="background: white; padding: 30px; border-radius: 15px; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);">
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; flex-wrap: wrap; gap: 10px;">
                     <div>
-                        <p style="margin: 0; color: #7f8c8d; font-size: 14px;">Goal: R500,000</p>
+                        <p style="margin: 0; color: #636e72; font-size: 14px;">Goal: R500,000</p>
                         <p style="margin: 5px 0 0 0; font-size: 32px; font-weight: bold; color: #2c3e50;" id="profitAmount">R 0</p>
                     </div>
                     <div style="text-align: right;">
-                        <p style="margin: 0; color: #7f8c8d; font-size: 14px;">Progress</p>
+                        <p style="margin: 0; color: #636e72; font-size: 14px;">Progress</p>
                         <p style="margin: 5px 0 0 0; font-size: 32px; font-weight: bold; color: #27ae60;" id="profitPercentage">0%</p>
                     </div>
                 </div>
                 <div style="background: #e0e6ed; border-radius: 10px; height: 20px; overflow: hidden;">
                     <div id="profitProgressBar" style="background: linear-gradient(135deg, #27ae60 0%, #2ecc71 100%); height: 100%; width: 0%; transition: width 0.5s ease;"></div>
                 </div>
-                <p style="margin: 15px 0 0 0; color: #7f8c8d; font-size: 14px; text-align: center;" id="profitRemaining">R500,000 remaining to reach goal</p>
+                <p style="margin: 15px 0 0 0; color: #636e72; font-size: 14px; text-align: center;" id="profitRemaining">R500,000 remaining to reach goal</p>
             </div>
 
             <!-- Loan Portfolio Stats -->
-            <h3 class="section-title" style="margin-top: 30px;">&#128203; Loan Portfolio</h3>
+            <h2 class="section-title" style="margin-top: 30px;">&#128203; Loan Portfolio</h2>
             <div class="stats-grid">
                 <div class="stat-card">
                     <h3>Total Loans</h3>
@@ -941,16 +941,16 @@
             </div>
 
             <!-- Transaction History Section -->
-            <h3 class="section-title" style="margin-top: 30px;">&#128203; Transaction History</h3>
+            <h2 class="section-title" style="margin-top: 30px;">&#128203; Transaction History</h2>
             <div style="background: white; padding: 20px; border-radius: 15px; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);">
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
-                    <p style="margin: 0; color: #7f8c8d; font-size: 14px;">Last 20 transactions</p>
+                    <p style="margin: 0; color: #636e72; font-size: 14px;">Last 20 transactions</p>
                     <button class="btn" id="undoLastPaymentBtn" onclick="undoLastPayment()" style="background: linear-gradient(135deg, #e74c3c 0%, #c0392b 100%); color: white; padding: 8px 16px; font-size: 14px; display: none;">
                         &#128260; Undo Last Payment
                     </button>
                 </div>
                 <div id="transactionHistoryList" style="max-height: 400px; overflow-y: auto;">
-                    <p style="color: #95a5a6; text-align: center; padding: 20px;">No transactions yet.</p>
+                    <p style="color: #636e72; text-align: center; padding: 20px;">No transactions yet.</p>
                 </div>
             </div>
         </div>
@@ -1022,7 +1022,7 @@
 
             <!-- REGISTER NEW MEMBER SECTION -->
             <div class="form-section" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 25px; border-radius: 15px;">
-                <h3 class="section-title" style="color: white; margin-bottom: 20px;">&#10133; Register New Stockvel Member</h3>
+                <h2 class="section-title" style="color: white; margin-bottom: 20px;">&#10133; Register New Stockvel Member</h2>
                 <p style="margin-bottom: 20px; opacity: 0.9;">Members registered here are SEPARATE from clients. Contributions tracked independently - NO loan required!</p>
                 <form id="registerMemberForm" style="background: white; padding: 20px; border-radius: 10px;">
                     <div class="form-grid">
@@ -1057,7 +1057,7 @@
 
             <!-- MEMBER REGISTRY TABLE -->
             <div class="form-section">
-                <h3 class="section-title">&#128203; Member Registry</h3>
+                <h2 class="section-title">&#128203; Member Registry</h2>
                 <div style="margin-bottom: 15px;">
                     <button onclick="refreshMemberRegistry()" class="export-btn">&#128260; Refresh</button>
                     <button onclick="exportMemberRegistry()" class="export-btn" style="margin-left: 10px;">&#128203; Export Registry</button>
@@ -1079,7 +1079,7 @@
                         </thead>
                         <tbody id="memberRegistryBody">
                             <tr>
-                                <td colspan="9" style="text-align: center; color: #7f8c8d; padding: 40px;">
+                                <td colspan="9" style="text-align: center; color: #636e72; padding: 40px;">
                                     No members registered yet. Register your first member above!
                                 </td>
                             </tr>
@@ -1090,7 +1090,7 @@
 
             <!-- Receipt Recording Section -->
             <div class="form-section">
-                <h3 class="section-title">&#128176; Record Receipt / Contribution</h3>
+                <h2 class="section-title">&#128176; Record Receipt / Contribution</h2>
                 <form id="receiptForm" style="background: #f8f9fa; padding: 20px; border-radius: 10px;">
                     <div class="form-grid">
                         <div class="form-group">
@@ -1139,7 +1139,7 @@
 
             <!-- Contribution History Section -->
             <div class="form-section">
-                <h3 class="section-title">&#128203; Contribution History</h3>
+                <h2 class="section-title">&#128203; Contribution History</h2>
                 <div style="margin-bottom: 15px;">
                     <label for="historyMemberSelect" style="font-weight: 600; margin-right: 10px;">Filter by Member:</label>
                     <select id="historyMemberSelect" style="padding: 8px; border-radius: 5px; border: 2px solid #e9ecef;" onchange="filterContributionHistory()">
@@ -1162,7 +1162,7 @@
                         </thead>
                         <tbody id="contributionHistoryBody">
                             <tr>
-                                <td colspan="7" style="text-align: center; color: #7f8c8d; padding: 40px;">
+                                <td colspan="7" style="text-align: center; color: #636e72; padding: 40px;">
                                     No contribution history yet. Record your first receipt above!
                                 </td>
                             </tr>
@@ -1173,13 +1173,13 @@
 
             <!-- Membership Renewal Notifications -->
             <div class="form-section">
-                <h3 class="section-title">&#128276; Membership Renewal Alerts</h3>
+                <h2 class="section-title">&#128276; Membership Renewal Alerts</h2>
                 <div id="renewalAlerts"></div>
             </div>
 
             <!-- Bonus Payout Report -->
             <div class="form-section">
-                <h3 class="section-title">&#128176; Bonus Payout Report</h3>
+                <h2 class="section-title">&#128176; Bonus Payout Report</h2>
                 <div style="margin-bottom: 15px;">
                     <button onclick="generateBonusReport()" class="export-btn">&#128202; Generate Report</button>
                     <button onclick="exportBonusReport()" class="export-btn" style="margin-left: 10px;">&#128202; Export to Excel</button>
@@ -1198,7 +1198,7 @@
                         </thead>
                         <tbody id="bonusReportBody">
                             <tr>
-                                <td colspan="6" style="text-align: center; color: #7f8c8d; padding: 40px;">
+                                <td colspan="6" style="text-align: center; color: #636e72; padding: 40px;">
                                     Click "Generate Report" to view bonus information
                                 </td>
                             </tr>
@@ -1237,7 +1237,7 @@
                     <div class="stat-card">
                         <h3>Total Revenue</h3>
                         <div class="value" id="reportTotalRevenue">R0.00</div>
-                        <p style="margin-top: 5px; font-size: 12px; color: #7f8c8d;">Interest + Fees</p>
+                        <p style="margin-top: 5px; font-size: 12px; color: #636e72;">Interest + Fees</p>
                     </div>
                     <div class="stat-card">
                         <h3>Interest Earned</h3>
@@ -1270,7 +1270,7 @@
                 <div style="background: white; padding: 20px; border-radius: 15px; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1); margin-bottom: 20px;">
                     <h4 style="color: #2c3e50; margin-bottom: 15px;">&#128200; Revenue Trend (Last 12 Months) - Actual Payments Received</h4>
                     <canvas id="revenueTrendChart" style="max-height: 350px;"></canvas>
-                    <p style="margin-top: 10px; font-size: 12px; color: #7f8c8d; text-align: center;">
+                    <p style="margin-top: 10px; font-size: 12px; color: #636e72; text-align: center;">
                         <strong>Green:</strong> Total Revenue | <strong>Purple:</strong> Interest | <strong>Orange:</strong> Fees
                     </p>
                 </div>
@@ -1296,7 +1296,7 @@
                 <h3 style="color: #2c3e50; margin-bottom: 15px;">&#128176; Cash Flow Projections (Next 6 Months)</h3>
                 <div style="background: white; padding: 20px; border-radius: 15px; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1); margin-bottom: 20px;">
                     <canvas id="cashFlowChart" style="max-height: 300px;"></canvas>
-                    <p style="margin-top: 10px; font-size: 12px; color: #7f8c8d; text-align: center;">
+                    <p style="margin-top: 10px; font-size: 12px; color: #636e72; text-align: center;">
                         Projected cash flows based on scheduled loan payments from active loans
                     </p>
                 </div>
@@ -1342,20 +1342,20 @@
                 <div style="background: white; padding: 20px; border-radius: 15px; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1); margin-bottom: 20px;">
                     <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 20px;">
                         <div>
-                            <p style="color: #7f8c8d; font-size: 14px; margin-bottom: 5px;">Return on Capital Deployed (ROCD)</p>
+                            <p style="color: #636e72; font-size: 14px; margin-bottom: 5px;">Return on Capital Deployed (ROCD)</p>
                             <p style="font-size: 24px; font-weight: bold; color: #27ae60;" id="reportROCD">0%</p>
                             <p style="font-size: 12px; color: #27ae60; margin-top: 5px;" id="rocdTrend">&#128200; Trending</p>
                         </div>
                         <div>
-                            <p style="color: #7f8c8d; font-size: 14px; margin-bottom: 5px;">Default Rate</p>
+                            <p style="color: #636e72; font-size: 14px; margin-bottom: 5px;">Default Rate</p>
                             <p style="font-size: 24px; font-weight: bold; color: #e74c3c;" id="reportDefaultRate">0%</p>
                         </div>
                         <div>
-                            <p style="color: #7f8c8d; font-size: 14px; margin-bottom: 5px;">Portfolio Utilization</p>
+                            <p style="color: #636e72; font-size: 14px; margin-bottom: 5px;">Portfolio Utilization</p>
                             <p style="font-size: 24px; font-weight: bold; color: #3498db;" id="reportUtilization">0%</p>
                         </div>
                         <div>
-                            <p style="color: #7f8c8d; font-size: 14px; margin-bottom: 5px;">Avg Client Lifetime Value</p>
+                            <p style="color: #636e72; font-size: 14px; margin-bottom: 5px;">Avg Client Lifetime Value</p>
                             <p style="font-size: 24px; font-weight: bold; color: #9b59b6;" id="reportCLV">R0.00</p>
                         </div>
                     </div>
@@ -1365,24 +1365,24 @@
                 <div style="background: white; padding: 20px; border-radius: 15px; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);">
                     <h4 style="color: #2c3e50; margin-bottom: 15px;">&#128200; ROCD Performance Trend (Last 12 Months)</h4>
                     <canvas id="rocdTrendChart" style="max-height: 300px;"></canvas>
-                    <p style="margin-top: 10px; font-size: 12px; color: #7f8c8d; text-align: center;">
+                    <p style="margin-top: 10px; font-size: 12px; color: #636e72; text-align: center;">
                         Track your return on capital deployed over time - Higher is better!
                     </p>
                     <div style="margin-top: 15px; padding: 15px; background: #f8f9fa; border-radius: 10px; display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 15px;">
                         <div>
-                            <p style="font-size: 12px; color: #7f8c8d; margin-bottom: 3px;">Best Month</p>
+                            <p style="font-size: 12px; color: #636e72; margin-bottom: 3px;">Best Month</p>
                             <p style="font-size: 16px; font-weight: bold; color: #27ae60;" id="bestROCD">-</p>
                         </div>
                         <div>
-                            <p style="font-size: 12px; color: #7f8c8d; margin-bottom: 3px;">Worst Month</p>
+                            <p style="font-size: 12px; color: #636e72; margin-bottom: 3px;">Worst Month</p>
                             <p style="font-size: 16px; font-weight: bold; color: #e74c3c;" id="worstROCD">-</p>
                         </div>
                         <div>
-                            <p style="font-size: 12px; color: #7f8c8d; margin-bottom: 3px;">Average ROCD</p>
+                            <p style="font-size: 12px; color: #636e72; margin-bottom: 3px;">Average ROCD</p>
                             <p style="font-size: 16px; font-weight: bold; color: #3498db;" id="avgROCD">-</p>
                         </div>
                         <div>
-                            <p style="font-size: 12px; color: #7f8c8d; margin-bottom: 3px;">Current vs Avg</p>
+                            <p style="font-size: 12px; color: #636e72; margin-bottom: 3px;">Current vs Avg</p>
                             <p style="font-size: 16px; font-weight: bold;" id="rocdComparison">-</p>
                         </div>
                     </div>
@@ -1415,9 +1415,9 @@
                 <div style="background: #f8f9fa; padding: 20px; border-radius: 10px; margin-bottom: 20px;">
                     <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 15px;">
                         <div>
-                            <p style="margin: 0; color: #7f8c8d; font-size: 14px;">Current Version</p>
+                            <p style="margin: 0; color: #636e72; font-size: 14px;">Current Version</p>
                             <p style="margin: 5px 0 0 0; font-size: 24px; font-weight: bold; color: #2c3e50;" id="currentVersion">v1.2.0</p>
-                            <p style="margin: 5px 0 0 0; font-size: 12px; color: #95a5a6;" id="updateStatus">Checking for updates...</p>
+                            <p style="margin: 5px 0 0 0; font-size: 12px; color: #636e72;" id="updateStatus">Checking for updates...</p>
                         </div>
                         <button class="btn" onclick="checkForUpdates()" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 12px 24px;">
  &#128260; Check for Updates
@@ -1435,11 +1435,11 @@
                 </div>
             </div>
             
-            <h3 class="section-title">&#128190; Cloud Backup Settings</h3>
+            <h2 class="section-title">&#128190; Cloud Backup Settings</h2>
             
             <div class="form-section">
                 <h3 style="color: #2c3e50; margin-bottom: 15px;">&#128190; GitHub Cloud Backup</h3>
-                <p style="color: #7f8c8d; margin-bottom: 20px;">Automatically backup your data to a private GitHub repository. Your data syncs across all devices and works offline.</p>
+                <p style="color: #636e72; margin-bottom: 20px;">Automatically backup your data to a private GitHub repository. Your data syncs across all devices and works offline.</p>
                 
                 <div id="tokenConfigured" style="display: none;">
                     <div style="padding: 15px; border-radius: 10px; margin-bottom: 20px; background: #f0f4ff; border: 2px solid #667eea;">
@@ -1458,7 +1458,7 @@
                         <input type="checkbox" id="autoBackupToggle" onchange="toggleAutoBackup()">
                         <label for="autoBackupToggle" style="cursor: pointer;">
                             <strong>Enable Auto-Backup on This Device</strong>
-                            <div style="font-size: 12px; color: #7f8c8d; margin-top: 5px;">
+                            <div style="font-size: 12px; color: #636e72; margin-top: 5px;">
                                 When enabled, every change automatically syncs to cloud. Leave OFF if this is a secondary device.
                             </div>
                         </label>
@@ -1477,7 +1477,7 @@
                         <label for="githubToken">GitHub Personal Access Token:</label>
                         <input type="password" id="githubToken" placeholder="github_pat_xxxxx..." 
                                style="font-family: monospace; font-size: 14px;">
-                        <p style="font-size: 12px; color: #7f8c8d; margin-top: 5px;">
+                        <p style="font-size: 12px; color: #636e72; margin-top: 5px;">
  &#128274; Your token is encrypted and stored securely on your device only. Never shared or exposed.
                         </p>
                     </div>
@@ -1487,7 +1487,7 @@
                         <input type="text" id="backupRepoUrl" 
                                value="https://github.com/Ndelo-N/TBFS-Data-Backup.git" readonly
                                style="background: #f8f9fa; font-family: monospace; font-size: 14px;">
-                        <p style="font-size: 12px; color: #7f8c8d; margin-top: 5px;">
+                        <p style="font-size: 12px; color: #636e72; margin-top: 5px;">
  &#9888; Ensure this is your PRIVATE backup repository.
                         </p>
                     </div>
@@ -1510,7 +1510,7 @@
 
                 <div style="margin-top: 20px;">
                     <h4 style="color: #2c3e50;">Cloud Backup Features:</h4>
-                    <ul style="color: #7f8c8d; line-height: 1.8;">
+                    <ul style="color: #636e72; line-height: 1.8;">
                         <li>&#9989; Auto-sync on every data change</li>
                         <li>&#9989; Works offline - queues changes, syncs when online</li>
                         <li>&#9989; Access from any device</li>
@@ -1523,7 +1523,7 @@
 
             <div class="form-section">
                 <h3 style="color: #2c3e50; margin-bottom: 15px;">&#128190; Manual Backup</h3>
-                <p style="color: #7f8c8d; margin-bottom: 20px;">Download or restore backups manually.</p>
+                <p style="color: #636e72; margin-bottom: 20px;">Download or restore backups manually.</p>
                 
                 <div style="display: flex; gap: 10px; flex-wrap: wrap;">
                     <button class="btn btn-secondary" onclick="backupData()">&#128190; Download Local Backup</button>
@@ -1534,7 +1534,7 @@
         </div>
 
         </div> <!-- End tabs-container -->
-    </div>
+    </main>
 
     <script>
         // App Version
@@ -1686,7 +1686,7 @@
                 const undoBtn = document.getElementById('undoLastPaymentBtn');
                 
                 if (this.transactionHistory.length === 0) {
-                    container.innerHTML = '<p style="color: #95a5a6; text-align: center; padding: 20px;">No transactions yet.</p>';
+                    container.innerHTML = '<p style="color: #636e72; text-align: center; padding: 20px;">No transactions yet.</p>';
                     undoBtn.style.display = 'none';
                     return;
                 }
@@ -1738,7 +1738,7 @@
                                 <div style="font-size: 24px;">${icon}</div>
                                 <div style="flex: 1;">
                                     <div style="font-weight: 500; color: #2c3e50; margin-bottom: 4px;">${tx.description}</div>
-                                    <div style="font-size: 12px; color: #7f8c8d;">${timeStr}</div>
+                                    <div style="font-size: 12px; color: #636e72;">${timeStr}</div>
                                 </div>
                             </div>
                         </div>
@@ -2119,7 +2119,7 @@
                 if (!tbody) return;
                 
                 if (this.clients.length === 0) {
-                    tbody.innerHTML = '<tr><td colspan="6" style="text-align: center; color: #95a5a6; padding: 20px;">No clients yet.</td></tr>';
+                    tbody.innerHTML = '<tr><td colspan="6" style="text-align: center; color: #636e72; padding: 20px;">No clients yet.</td></tr>';
                     return;
                 }
                 
@@ -2180,7 +2180,7 @@
                 });
                 
                 if (sortedLoans.length === 0) {
-                    container.innerHTML = '<p style="color: #95a5a6; text-align: center; padding: 20px;">No loans yet.</p>';
+                    container.innerHTML = '<p style="color: #636e72; text-align: center; padding: 20px;">No loans yet.</p>';
                     return;
                 }
                 
@@ -2229,7 +2229,7 @@
                             <h4>Loan #${loan.loan_id} - ${loan.client_name}</h4>
                             <div class="info-row">
                                 <span>\uD83D\uDCC5 Loan Date:</span>
-                                <strong style="color: #7f8c8d;">${loanStartStr}</strong>
+                                <strong style="color: #636e72;">${loanStartStr}</strong>
                             </div>
                             ${loan.status === 'active' ? `
                             <div class="info-row">
@@ -5028,7 +5028,7 @@
             }
             
             if (filtered.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="7" style="text-align: center; color: #7f8c8d; padding: 40px;">No receipts recorded yet</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="7" style="text-align: center; color: #636e72; padding: 40px;">No receipts recorded yet</td></tr>';
                 return;
             }
             
@@ -5130,12 +5130,12 @@
                         <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
                             <div>
                                 <strong style="font-size: 16px;">${member.name}</strong>
-                                <span style="margin-left: 10px; color: #7f8c8d;">(Member #${member.memberNumber})</span>
+                                <span style="margin-left: 10px; color: #636e72;">(Member #${member.memberNumber})</span>
                                 <br>
                                 <span style="color: ${urgency === 'expired' ? '#e74c3c' : urgency === 'urgent' ? '#f39c12' : '#f1c40f'}; font-weight: 600;">
                                     ${isExpired ? `\u26A0\uFE0F EXPIRED ${Math.abs(daysLeft)} days ago` : `\uD83D\uDCC5 ${daysLeft} days left`}
                                 </span>
-                                <span style="margin-left: 10px; color: #7f8c8d;">Expires: ${endDate.toLocaleDateString('en-ZA')}</span>
+                                <span style="margin-left: 10px; color: #636e72;">Expires: ${endDate.toLocaleDateString('en-ZA')}</span>
                             </div>
                             <div style="display: flex; gap: 8px;">
                                 <button onclick="viewMemberDetails(${member.memberNumber})" class="export-btn" style="padding: 8px 16px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);">\uD83D\uDC40 View Details</button>
@@ -5176,7 +5176,7 @@
             const stockvelMembers = AppState.stockvelMembers;
             
             if (stockvelMembers.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="6" style="text-align: center; color: #7f8c8d; padding: 40px;">No stockvel members found</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="6" style="text-align: center; color: #636e72; padding: 40px;">No stockvel members found</td></tr>';
                 return;
             }
             
@@ -5191,7 +5191,7 @@
                 
                 return `
                     <tr>
-                        <td><strong>${member.name}</strong><br><small style="color: #7f8c8d;">#${member.memberNumber} | ${member.phone || member.account_number || 'N/A'}</small></td>
+                        <td><strong>${member.name}</strong><br><small style="color: #636e72;">#${member.memberNumber} | ${member.phone || member.account_number || 'N/A'}</small></td>
                         <td style="color: #27ae60; font-weight: 600;">R${totalBonusesEarned.toFixed(2)}</td>
                         <td style="color: #3498db;">R${bonusesPaidOut.toFixed(2)}</td>
                         <td style="color: #f39c12; font-weight: 600;">R${pendingBonuses.toFixed(2)}</td>
@@ -5302,7 +5302,7 @@
             const stockvelMembers = AppState.stockvelMembers || [];
             
             if (stockvelMembers.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="6" style="text-align: center; color: #7f8c8d; padding: 40px;">No stockvel members found</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="6" style="text-align: center; color: #636e72; padding: 40px;">No stockvel members found</td></tr>';
                 return;
             }
             
@@ -5326,7 +5326,7 @@
                 
                 return `
                     <tr>
-                        <td><strong>${member.name}</strong><br><small style="color: #7f8c8d;">#${member.memberNumber} | ${member.phone || member.account_number || 'N/A'}</small></td>
+                        <td><strong>${member.name}</strong><br><small style="color: #636e72;">#${member.memberNumber} | ${member.phone || member.account_number || 'N/A'}</small></td>
                         <td style="color: #27ae60; font-weight: 600;">R${currentContributions.toFixed(2)}</td>
                         <td style="color: #3498db;">R${totalPaidOut.toFixed(2)}</td>
                         <td>${lastPayoutDate}</td>
@@ -5734,7 +5734,7 @@
             const tbody = document.getElementById('memberRegistryBody');
             
             if (AppState.stockvelMembers.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="9" style="text-align: center; color: #7f8c8d; padding: 40px;">No members registered yet. Register your first member above!</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="9" style="text-align: center; color: #636e72; padding: 40px;">No members registered yet. Register your first member above!</td></tr>';
                 return;
             }
             
