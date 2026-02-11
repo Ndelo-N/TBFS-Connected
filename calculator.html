@@ -360,6 +360,9 @@
             // Set default loan date to today
             document.getElementById('loanDate').valueAsDate = new Date();
             
+            // Handle Web Share Target data (when app receives shared content)
+            handleShareTarget();
+            
             // Auto-fill from URL parameters (if coming from Clients page)
             autoFillFromURL();
             
@@ -383,6 +386,43 @@
         
         /**
          * Auto-fill form fields from URL parameters
+         * Handle Web Share Target - receive data shared to this app
+         */
+        function handleShareTarget() {
+            const urlParams = new URLSearchParams(window.location.search);
+            const sharedName = urlParams.get('clientName');
+            const sharedDetails = urlParams.get('loanDetails');
+            
+            if (sharedName) {
+                // Parse shared client name into first/last name
+                const nameParts = sharedName.trim().split(/\s+/);
+                const firstName = nameParts[0] || '';
+                const lastName = nameParts.slice(1).join(' ') || '';
+                
+                const firstNameEl = document.getElementById('firstName');
+                const lastNameEl = document.getElementById('lastName');
+                if (firstNameEl && firstName) firstNameEl.value = firstName;
+                if (lastNameEl && lastName) lastNameEl.value = lastName;
+                
+                console.log('Web Share Target: Received client name:', sharedName);
+            }
+            
+            if (sharedDetails) {
+                // Try to extract a loan amount from shared text
+                const amountMatch = sharedDetails.match(/R?\s?(\d[\d,]*\.?\d*)/);
+                if (amountMatch) {
+                    const amount = parseFloat(amountMatch[1].replace(/,/g, ''));
+                    const loanAmountEl = document.getElementById('loanAmount');
+                    if (loanAmountEl && amount > 0) {
+                        loanAmountEl.value = amount;
+                        console.log('Web Share Target: Parsed loan amount:', amount);
+                    }
+                }
+                console.log('Web Share Target: Received details:', sharedDetails);
+            }
+        }
+        
+        /**
          * Called when navigating from Clients page with "Add New Loan" button
          */
         function autoFillFromURL() {
