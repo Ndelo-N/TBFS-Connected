@@ -282,7 +282,7 @@ body {
 }
 
 .stat-label {
-    color: #7f8c8d;
+    color: #636e72;
     font-size: var(--font-size-sm);
     font-weight: 600;
     margin-bottom: var(--spacing-sm);
@@ -332,7 +332,7 @@ body {
 
 .form-hint {
     font-size: var(--font-size-xs);
-    color: #7f8c8d;
+    color: #636e72;
     margin-top: var(--spacing-xs);
 }
 
