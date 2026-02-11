@@ -1,4 +1,4 @@
-const CACHE_NAME = 'tbfs-loan-manager-v39'; // v1.7.11 - Phase 8: Dashboard Refactor + Phase 9: Service Worker Update
+const CACHE_NAME = 'tbfs-loan-manager-v40'; // v1.7.11 - PWA Review: Added offline page, fixed caching, cleanup
 const urlsToCache = [
   './',
   './index.html',                    // Dashboard (refactored)
@@ -7,12 +7,15 @@ const urlsToCache = [
   './stockvel.html',                 // Stockvel Members
   './clients.html',                  // Client Database
   './reports.html',                  // Business Reports
-  './loan-income-calculator.html',  // Income Table Calculator
+  './loan-income-calculator.html',   // Income Table Calculator
   './settings.html',                 // Settings & Backup
+  './offline.html',                  // Offline Fallback Page
+  './splash.html',                   // Splash/Loading Screen
   './shared/app-state.js',           // Shared: State Management
   './shared/navigation.js',          // Shared: Navigation
   './shared/calculations.js',        // Shared: Calculations
   './shared/styles.css',             // Shared: Styles
+  './shared/sw-register.js',         // Shared: SW Registration
   './manifest.json',                 // PWA Manifest
   'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js',
   'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js',
@@ -24,56 +27,48 @@ const urlsToCache = [
 
 // Install event - cache resources
 self.addEventListener('install', function(event) {
-  console.log('Service Worker: Install event');
   event.waitUntil(
     caches.open(CACHE_NAME)
       .then(function(cache) {
-        console.log('Service Worker: Caching files');
+        console.log('Service Worker: Caching app shell');
         return cache.addAll(urlsToCache);
       })
       .catch(function(error) {
-        console.log('Service Worker: Cache failed', error);
+        console.error('Service Worker: Cache install failed', error);
       })
   );
 });
 
 // Fetch event - network-first for HTML, cache-first for assets
 self.addEventListener('fetch', function(event) {
-  // Skip caching for chrome-extension and other unsupported schemes
-  const url = new URL(event.request.url);
+  // Skip non-HTTP(S) requests (chrome-extension, etc.)
+  var url = new URL(event.request.url);
   if (url.protocol !== 'http:' && url.protocol !== 'https:') {
-    console.log('Service Worker: Skipping non-http(s) request', event.request.url);
-    return; // Let the browser handle it normally
+    return;
   }
-  
-  console.log('Service Worker: Fetch event for', event.request.url);
   
   // For HTML documents, use network-first strategy to always get fresh code
   if (event.request.destination === 'document' || event.request.mode === 'navigate') {
     event.respondWith(
       fetch(event.request)
         .then(function(response) {
-          console.log('Service Worker: Fetched fresh HTML from network', event.request.url);
-          
           // Cache the fresh response
           if (response && response.status === 200) {
-            const responseToCache = response.clone();
+            var responseToCache = response.clone();
             caches.open(CACHE_NAME)
               .then(function(cache) {
                 cache.put(event.request, responseToCache);
               })
-              .catch(function(error) {
-                console.warn('Service Worker: Cache put failed', error);
+              .catch(function() {
+                // Silently handle cache errors
               });
           }
-          
           return response;
         })
         .catch(function() {
-          // If network fails, fall back to cache (offline mode)
-          console.log('Service Worker: Network failed, serving HTML from cache', event.request.url);
+          // Network failed - try cache, then offline page
           return caches.match(event.request).then(function(response) {
-            return response || caches.match('./index.html');
+            return response || caches.match('./offline.html');
           });
         })
     );
@@ -84,36 +79,29 @@ self.addEventListener('fetch', function(event) {
   event.respondWith(
     caches.match(event.request)
       .then(function(response) {
-        // Return cached version or fetch from network
         if (response) {
-          console.log('Service Worker: Serving from cache', event.request.url);
           return response;
         }
         
-        console.log('Service Worker: Fetching from network', event.request.url);
         return fetch(event.request).then(function(response) {
           // Check if we received a valid response
           if (!response || response.status !== 200 || response.type !== 'basic') {
             return response;
           }
 
-          // Clone the response
-          const responseToCache = response.clone();
-
+          // Clone and cache the response
+          var responseToCache = response.clone();
           caches.open(CACHE_NAME)
             .then(function(cache) {
               cache.put(event.request, responseToCache);
             })
-            .catch(function(error) {
+            .catch(function() {
               // Silently handle cache errors (e.g., quota exceeded)
-              console.warn('Service Worker: Cache put failed', error);
             });
 
           return response;
-        }).catch(function(error) {
-          // Asset not in cache and network failed - no fallback available
-          console.warn('Service Worker: Asset not available offline', event.request.url, error);
-          // Return undefined - let the browser handle the failed request
+        }).catch(function() {
+          // Asset not in cache and network failed
           return undefined;
         });
       })
@@ -122,8 +110,6 @@ self.addEventListener('fetch', function(event) {
 
 // Activate event - clean up old caches
 self.addEventListener('activate', function(event) {
-  console.log('Service Worker: Activate event - new service worker taking control');
-  
   event.waitUntil(
     caches.keys().then(function(cacheNames) {
       return Promise.all(
@@ -134,47 +120,23 @@ self.addEventListener('activate', function(event) {
           }
         })
       );
-    }).then(() => {
-      // Claim all clients immediately
-      console.log('Service Worker: Claiming all clients');
+    }).then(function() {
+      // Claim all clients immediately so the new SW controls all open pages
       return self.clients.claim();
-    }).then(() => {
-      console.log('Service Worker: Activation complete - all clients claimed');
     })
   );
 });
 
-// Listen for skip waiting message
+// Listen for skip waiting message from the app
 self.addEventListener('message', function(event) {
-  console.log('Service Worker: Message received', event.data);
-  
   if (event.data && event.data.type === 'SKIP_WAITING') {
-    console.log('Service Worker: Skip waiting - activating new service worker immediately');
-    self.skipWaiting().then(() => {
-      console.log('Service Worker: Skip waiting completed successfully');
-    }).catch((error) => {
-      console.error('Service Worker: Skip waiting failed', error);
-    });
-  }
-});
-
-// Background sync for offline data
-self.addEventListener('sync', function(event) {
-  console.log('Service Worker: Background sync');
-  
-  if (event.tag === 'background-sync') {
-    event.waitUntil(
-      // Sync any pending data when back online
-      syncPendingData()
-    );
+    self.skipWaiting();
   }
 });
 
 // Push notifications
 self.addEventListener('push', function(event) {
-  console.log('Service Worker: Push event');
-  
-  const options = {
+  var options = {
     body: event.data ? event.data.text() : 'New notification from TBFS',
     icon: './icons/icon-192x192.png',
     badge: './icons/icon-72x72.png',
@@ -204,8 +166,6 @@ self.addEventListener('push', function(event) {
 
 // Notification click
 self.addEventListener('notificationclick', function(event) {
-  console.log('Service Worker: Notification click');
-  
   event.notification.close();
 
   if (event.action === 'explore') {
@@ -214,10 +174,3 @@ self.addEventListener('notificationclick', function(event) {
     );
   }
 });
-
-// Helper function for background sync
-function syncPendingData() {
-  // This would sync any pending loan data, payments, etc.
-  // when the device comes back online
-  return Promise.resolve();
-}
