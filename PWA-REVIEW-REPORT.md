@@ -230,23 +230,32 @@ All critical and high issues have been fixed in this commit:
 11. **Cleaned up no-op background sync** code
 12. **Added `.gitignore`** for desktop.ini files
 
+### Phase 2 Fixes (Future Improvements - Implemented)
+
+13. **Generated favicon.ico** from existing PNG icons (16x16 + 32x32) using Pillow
+14. **Created browserconfig.xml** for Microsoft tile support (70/150/310 sizes)
+15. **Added SRI hashes** (SHA-384) to all CDN script tags (jsPDF, xlsx, Chart.js) with `crossorigin="anonymous"`
+16. **Added Content Security Policy** meta tag to all 9 pages with:
+    - Locked-down `script-src`, `connect-src`, `img-src` origins
+    - `object-src 'none'`, `frame-ancestors 'none'` for XSS/clickjacking protection
+17. **Added Lighthouse CI** GitHub Actions workflow auditing 3 pages
+18. **Implemented Background Sync** - SW notifies clients to trigger pending cloud backups when connectivity returns
+19. **Implemented Periodic Background Sync** - 12-hour automatic backup checks with permission/feature detection
+20. **Implemented App Badge API** - Shows overdue loan count on app icon, auto-refreshes on state changes
+21. **Added Web Share Target** - App can receive shared data; routes to calculator with auto-fill
+22. **Service Worker bumped to v41** with new sync/periodic sync handlers
+
 ---
 
-## Recommended Future Improvements
+## Remaining Future Improvements (3 of 12)
 
-1. **Add real screenshots** to manifest for richer install experience
-2. **Generate proper favicon.ico** from icon assets
-3. **Create browserconfig.xml** for Microsoft tile support
-4. **Add SRI hashes** to all CDN script tags
-5. **Add Content Security Policy** meta tag
-6. **Extract inline JavaScript** from HTML files to reduce file sizes
-7. **Add Lighthouse CI** to the GitHub Actions workflow
-8. **Consider workbox** for more sophisticated service worker caching
-9. **Implement actual background sync** for offline data queuing
-10. **Add periodic background sync** for automatic data refresh
-11. **Add app badge API** for notification counts
-12. **Add Web Share Target** to receive shared content
+These require manual intervention or carry high risk:
+
+1. **Add real screenshots** to manifest - Requires actual browser rendering of the live app
+2. **Extract inline JavaScript** from HTML files - 368KB index.html needs massive refactor with testing
+3. **Migrate to Workbox** - Significant service worker architecture rewrite
 
 ---
 
 *Report generated as part of PWA Review on February 11, 2026*
+*Updated with Phase 2 improvements on February 11, 2026*
