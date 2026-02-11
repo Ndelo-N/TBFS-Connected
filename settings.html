@@ -824,7 +824,9 @@
                 if (!navigator.onLine) {
                     // Queue for later if offline
                     localStorage.setItem('pendingCloudBackup', 'true');
-                    console.log('Offline: Backup queued for when online');
+                    // Register background sync so SW triggers backup when online
+                    if (typeof registerBackgroundSync === 'function') registerBackgroundSync();
+                    console.log('Offline: Backup queued for when online (background sync registered)');
                     return;
                 }
                 
@@ -860,6 +862,8 @@
                 } catch (error) {
                     console.error('Cloud backup failed:', error);
                     localStorage.setItem('pendingCloudBackup', 'true');
+                    // Register background sync to retry when connectivity improves
+                    if (typeof registerBackgroundSync === 'function') registerBackgroundSync();
                 }
             },
             
