@@ -453,6 +453,7 @@ Before moving to the next phase, also verify:
 project/
   index.html              # Entry page (full meta tags + CSP + main landmark)
   offline.html            # Offline fallback (auto-reconnect + branded)
+  pwa-test.html           # Health check dashboard (NOT cached in SW)
   manifest.json           # All required fields, validated, no 404 refs
   sw.js                   # Network-first HTML, cache-first assets, cleanup
   .gitignore              # desktop.ini, .DS_Store, Thumbs.db, node_modules
