@@ -255,6 +255,79 @@ Generate these files with COMPLETE, PRODUCTION-READY content:
     - <script src="shared/sw-register.js"></script> before </body>
     - NavigationManager.init('[pageId]') called on DOMContentLoaded
 
+14. pwa-test.html (PWA Health Check page)
+    A standalone, zero-dependency test page that auto-verifies the entire PWA.
+    CRITICAL: Do NOT cache this file in the service worker (it must always
+    fetch fresh to test caching behaviour from the outside).
+    
+    Must run these automated checks on page load:
+    
+    MANIFEST CHECKS:
+    - manifest.json reachable and valid JSON
+    - All required fields present (name, short_name, start_url, display, theme_color, background_color)
+    - 192x192 icon with purpose "any" exists
+    - 512x512 icon with purpose "any" exists
+    - At least one maskable icon exists
+    - No "maskable any" on same entry
+    - All screenshot files exist (if screenshots array present)
+    - No display_override unless intentional
+    
+    SERVICE WORKER CHECKS:
+    - Service Worker API supported by browser
+    - SW registered with correct scope
+    - SW active (not just installed)
+    - Controller present (SW controlling this page)
+    - No update stuck in waiting state
+    
+    CACHE CHECKS:
+    - Cache API supported
+    - At least one cache exists
+    - Only one cache active (no stale caches)
+    - index.html cached
+    - offline.html cached
+    - manifest.json cached
+    - shared/sw-register.js cached
+    - shared/styles.css cached
+    
+    ICON & ASSET CHECKS:
+    - icons/icon-192x192.png reachable
+    - icons/icon-512x512.png reachable
+    - icons/icon-32x32.png reachable
+    - icons/icon-16x16.png reachable
+    - icons/favicon.ico reachable
+    - icons/browserconfig.xml reachable
+    
+    SECURITY CHECKS:
+    - Secure context (HTTPS or localhost)
+    - SRI hashes present on all CDN scripts in index.html
+    - SRI coverage ratio (X/Y CDN scripts have integrity)
+    
+    PER-PAGE CHECKS (scan each app page by fetching its HTML):
+    - CSP meta tag present
+    - SW registration script present
+    - <main> landmark present
+    
+    VERSION CHECKS:
+    - Extract APP_VERSION from index.html and settings.html
+    - Verify all versions match
+    
+    ACCESSIBILITY QUICK SCAN (on the test page itself):
+    - <main> landmark present
+    - Heading order sequential
+    - All images have alt attributes
+    
+    UI REQUIREMENTS:
+    - Summary cards at top: Passed / Failed / Warnings / Total
+    - Score bar with percentage (green >= 90%, yellow >= 70%, red < 70%)
+    - Collapsible sections for each check category
+    - Pass/fail/warn badges on each check item
+    - Detail text showing actual values found
+    - Page links section showing all app pages with cached/not-cached status
+    - Action buttons: "Re-Run All Checks", "Test Offline Mode" (instructions), "Clear All Caches"
+    - Timestamp of last run
+    - Fully self-contained: ALL styles inline, ALL JS inline, NO external dependencies
+    - Dark header background for visual contrast with app pages
+
 ============================
 CONSTRAINTS
 ============================
