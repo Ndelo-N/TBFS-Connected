@@ -1,0 +1,557 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PWA Health Check</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #2c3e50 0%, #34495e 100%);
+            min-height: 100vh;
+            padding: 20px;
+            color: #2c3e50;
+        }
+        .container {
+            max-width: 900px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 16px;
+            padding: 30px;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.3);
+        }
+        h1 { margin-bottom: 5px; font-size: 24px; }
+        .subtitle { color: #636e72; margin-bottom: 20px; font-size: 14px; }
+        .score-bar {
+            background: #e9ecef;
+            border-radius: 10px;
+            height: 36px;
+            margin-bottom: 25px;
+            overflow: hidden;
+            position: relative;
+        }
+        .score-fill {
+            height: 100%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-weight: bold;
+            font-size: 14px;
+            transition: width 0.6s ease;
+            border-radius: 10px;
+        }
+        .section { margin-bottom: 25px; }
+        .section-title {
+            font-size: 16px;
+            font-weight: 700;
+            margin-bottom: 12px;
+            padding-bottom: 8px;
+            border-bottom: 2px solid #667eea;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .check-list { list-style: none; }
+        .check-item {
+            padding: 10px 14px;
+            margin-bottom: 6px;
+            border-radius: 8px;
+            font-size: 14px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 10px;
+        }
+        .check-item.pass { background: #d4edda; }
+        .check-item.fail { background: #f8d7da; }
+        .check-item.warn { background: #fff3cd; }
+        .check-item.info { background: #e3f2fd; }
+        .check-item.running { background: #f8f9fa; }
+        .badge {
+            display: inline-block;
+            padding: 3px 10px;
+            border-radius: 12px;
+            font-size: 11px;
+            font-weight: 700;
+            text-transform: uppercase;
+            white-space: nowrap;
+            flex-shrink: 0;
+        }
+        .badge.pass { background: #27ae60; color: white; }
+        .badge.fail { background: #e74c3c; color: white; }
+        .badge.warn { background: #f39c12; color: white; }
+        .badge.info { background: #3498db; color: white; }
+        .badge.running { background: #636e72; color: white; }
+        .check-label { flex: 1; }
+        .check-detail { font-size: 12px; color: #636e72; margin-top: 3px; }
+        .actions {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+            margin-top: 20px;
+        }
+        .btn {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 8px;
+            font-weight: 600;
+            font-size: 14px;
+            cursor: pointer;
+            transition: transform 0.2s, opacity 0.2s;
+            text-decoration: none;
+            display: inline-block;
+            color: white;
+        }
+        .btn:hover { transform: translateY(-2px); opacity: 0.9; }
+        .btn-primary { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); }
+        .btn-success { background: #27ae60; }
+        .btn-danger { background: #e74c3c; }
+        .page-links {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+            gap: 8px;
+            margin-top: 10px;
+        }
+        .page-link {
+            padding: 10px;
+            background: #f8f9fa;
+            border-radius: 8px;
+            text-decoration: none;
+            color: #2c3e50;
+            font-size: 13px;
+            font-weight: 600;
+            text-align: center;
+            transition: background 0.2s;
+            border: 2px solid transparent;
+        }
+        .page-link:hover { background: #e3f2fd; }
+        .page-link.cached { border-color: #27ae60; }
+        .page-link.not-cached { border-color: #e74c3c; }
+        .summary-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+        .summary-card {
+            padding: 15px;
+            border-radius: 10px;
+            text-align: center;
+        }
+        .summary-card .number { font-size: 28px; font-weight: bold; }
+        .summary-card .label { font-size: 11px; text-transform: uppercase; margin-top: 4px; }
+        .footer { text-align: center; margin-top: 25px; padding-top: 15px; border-top: 2px solid #e9ecef; font-size: 12px; color: #636e72; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>PWA Health Check</h1>
+        <p class="subtitle" id="timestamp">Running checks...</p>
+
+        <div class="summary-grid" id="summaryGrid"></div>
+        <div class="score-bar"><div class="score-fill" id="scoreFill" style="width:0%">Checking...</div></div>
+
+        <div id="results"></div>
+
+        <div class="section">
+            <div class="section-title">App Pages</div>
+            <div class="page-links" id="pageLinks">Discovering pages...</div>
+        </div>
+
+        <div class="actions">
+            <button class="btn btn-primary" onclick="runAllChecks()">Re-Run All Checks</button>
+            <button class="btn btn-success" onclick="testOffline()">Test Offline Mode</button>
+            <button class="btn btn-danger" onclick="clearCachesAndReload()">Clear All Caches</button>
+        </div>
+
+        <div class="footer">
+            PWA Health Check &mdash; Zero dependencies, runs standalone<br>
+            Include this file in every PWA project. Do NOT cache it in the service worker.
+        </div>
+    </div>
+
+    <script>
+    (function() {
+        'use strict';
+
+        var results = { pass: 0, fail: 0, warn: 0 };
+        var sections = [];
+        var currentSection = null;
+
+        function startSection(icon, title) {
+            currentSection = { icon: icon, title: title, checks: [] };
+            sections.push(currentSection);
+        }
+
+        function addCheck(label, status, detail) {
+            if (status === 'pass') results.pass++;
+            else if (status === 'fail') results.fail++;
+            else if (status === 'warn') results.warn++;
+            currentSection.checks.push({ label: label, status: status, detail: detail || '' });
+        }
+
+        function renderResults() {
+            var total = results.pass + results.fail + results.warn;
+            var score = total > 0 ? Math.round((results.pass / total) * 100) : 0;
+            var color = score >= 90 ? '#27ae60' : score >= 70 ? '#f39c12' : '#e74c3c';
+
+            document.getElementById('scoreFill').style.width = score + '%';
+            document.getElementById('scoreFill').style.background = color;
+            document.getElementById('scoreFill').textContent = score + '% (' + results.pass + '/' + total + ' passed)';
+            document.getElementById('timestamp').textContent = 'Last run: ' + new Date().toLocaleString() + ' | ' + total + ' checks completed';
+
+            document.getElementById('summaryGrid').innerHTML =
+                '<div class="summary-card" style="background:#d4edda"><div class="number" style="color:#155724">' + results.pass + '</div><div class="label" style="color:#155724">Passed</div></div>' +
+                '<div class="summary-card" style="background:#f8d7da"><div class="number" style="color:#721c24">' + results.fail + '</div><div class="label" style="color:#721c24">Failed</div></div>' +
+                '<div class="summary-card" style="background:#fff3cd"><div class="number" style="color:#856404">' + results.warn + '</div><div class="label" style="color:#856404">Warnings</div></div>' +
+                '<div class="summary-card" style="background:#e3f2fd"><div class="number" style="color:#0c5460">' + total + '</div><div class="label" style="color:#0c5460">Total</div></div>';
+
+            var html = '';
+            sections.forEach(function(section) {
+                html += '<div class="section"><div class="section-title">' + section.icon + ' ' + section.title + '</div><ul class="check-list">';
+                section.checks.forEach(function(check) {
+                    html += '<li class="check-item ' + check.status + '">' +
+                        '<div class="check-label">' + check.label + (check.detail ? '<div class="check-detail">' + check.detail + '</div>' : '') + '</div>' +
+                        '<span class="badge ' + check.status + '">' + check.status + '</span></li>';
+                });
+                html += '</ul></div>';
+            });
+            document.getElementById('results').innerHTML = html;
+        }
+
+        // =====================================================
+        // CHECK SUITES
+        // =====================================================
+
+        async function checkManifest() {
+            startSection('&#128196;', 'Manifest');
+            try {
+                var resp = await fetch('./manifest.json');
+                if (!resp.ok) { addCheck('manifest.json reachable', 'fail', 'HTTP ' + resp.status); return; }
+                addCheck('manifest.json reachable', 'pass');
+                var m = await resp.json();
+                addCheck('Valid JSON', 'pass');
+
+                addCheck('"name" present', m.name ? 'pass' : 'fail', m.name || 'Missing');
+                addCheck('"short_name" present', m.short_name ? 'pass' : 'fail', m.short_name || 'Missing');
+                addCheck('"start_url" present', m.start_url ? 'pass' : 'fail', m.start_url || 'Missing');
+                addCheck('"display" is standalone', m.display === 'standalone' ? 'pass' : 'warn', m.display || 'Missing');
+                addCheck('"theme_color" present', m.theme_color ? 'pass' : 'fail', m.theme_color || 'Missing');
+                addCheck('"background_color" present', m.background_color ? 'pass' : 'fail', m.background_color || 'Missing');
+                addCheck('"scope" present', m.scope ? 'pass' : 'warn', m.scope || 'Not set');
+                addCheck('"lang" present', m.lang ? 'pass' : 'warn', m.lang || 'Not set');
+
+                var icons = m.icons || [];
+                addCheck('Icons array exists', icons.length > 0 ? 'pass' : 'fail', icons.length + ' icons');
+                var has192 = icons.some(function(i) { return i.sizes === '192x192' && (i.purpose || 'any').includes('any'); });
+                var has512 = icons.some(function(i) { return i.sizes === '512x512' && (i.purpose || 'any').includes('any'); });
+                var hasMaskable = icons.some(function(i) { return (i.purpose || '').includes('maskable'); });
+                var hasBadPurpose = icons.some(function(i) { return i.purpose === 'maskable any'; });
+                addCheck('192x192 icon with purpose "any"', has192 ? 'pass' : 'fail');
+                addCheck('512x512 icon with purpose "any"', has512 ? 'pass' : 'fail');
+                addCheck('At least one maskable icon', hasMaskable ? 'pass' : 'warn');
+                addCheck('No "maskable any" on same entry', hasBadPurpose ? 'fail' : 'pass', hasBadPurpose ? 'Split into separate entries' : '');
+
+                if (m.screenshots && m.screenshots.length > 0) {
+                    for (var i = 0; i < m.screenshots.length; i++) {
+                        var ss = m.screenshots[i];
+                        try {
+                            var ssResp = await fetch(ss.src, { method: 'HEAD' });
+                            addCheck('Screenshot: ' + ss.src, ssResp.ok ? 'pass' : 'fail', ssResp.ok ? '' : '404 Not Found');
+                        } catch(e) { addCheck('Screenshot: ' + ss.src, 'fail', 'Not reachable'); }
+                    }
+                }
+
+                addCheck('"display_override" absent or intentional', !m.display_override ? 'pass' : 'warn', m.display_override ? JSON.stringify(m.display_override) : 'Not set');
+            } catch (e) {
+                addCheck('manifest.json parseable', 'fail', e.message);
+            }
+        }
+
+        async function checkServiceWorker() {
+            startSection('&#9881;&#65039;', 'Service Worker');
+            if (!('serviceWorker' in navigator)) {
+                addCheck('Service Worker supported', 'fail', 'Browser does not support SW');
+                return;
+            }
+            addCheck('Service Worker API supported', 'pass');
+
+            try {
+                var reg = await navigator.serviceWorker.getRegistration();
+                addCheck('SW registered', reg ? 'pass' : 'fail', reg ? 'Scope: ' + reg.scope : 'Not registered');
+                if (reg) {
+                    addCheck('SW active', reg.active ? 'pass' : 'warn', reg.active ? 'State: ' + reg.active.state : 'No active worker');
+                    addCheck('Controller present', navigator.serviceWorker.controller ? 'pass' : 'warn');
+                    if (reg.waiting) addCheck('Update waiting', 'warn', 'A new SW version is waiting to activate');
+                    if (reg.installing) addCheck('SW installing', 'info', 'A new SW is being installed');
+                }
+            } catch (e) {
+                addCheck('SW registration check', 'fail', e.message);
+            }
+        }
+
+        async function checkCache() {
+            startSection('&#128230;', 'Cache Storage');
+            if (!('caches' in window)) {
+                addCheck('Cache API supported', 'fail');
+                return;
+            }
+            addCheck('Cache API supported', 'pass');
+
+            try {
+                var names = await caches.keys();
+                addCheck('Cache(s) exist', names.length > 0 ? 'pass' : 'fail', names.length + ' cache(s): ' + names.join(', '));
+
+                if (names.length > 1) {
+                    addCheck('Only one cache active', 'warn', 'Multiple caches found -- old caches may not be cleaned up');
+                }
+
+                for (var n = 0; n < names.length; n++) {
+                    var cache = await caches.open(names[n]);
+                    var keys = await cache.keys();
+                    addCheck('Cache "' + names[n] + '" contents', 'info', keys.length + ' URLs cached');
+                }
+
+                // Check specific critical files
+                var criticalFiles = ['./index.html', './offline.html', './manifest.json', './shared/sw-register.js', './shared/styles.css'];
+                for (var c = 0; c < criticalFiles.length; c++) {
+                    var match = await caches.match(criticalFiles[c]);
+                    addCheck(criticalFiles[c] + ' cached', match ? 'pass' : 'fail');
+                }
+            } catch (e) {
+                addCheck('Cache inspection', 'fail', e.message);
+            }
+        }
+
+        async function checkIcons() {
+            startSection('&#127912;', 'Icons & Assets');
+            var iconFiles = [
+                'icons/icon-192x192.png', 'icons/icon-512x512.png',
+                'icons/icon-32x32.png', 'icons/icon-16x16.png',
+                'icons/favicon.ico', 'icons/browserconfig.xml'
+            ];
+            for (var i = 0; i < iconFiles.length; i++) {
+                try {
+                    var r = await fetch(iconFiles[i], { method: 'HEAD' });
+                    addCheck(iconFiles[i], r.ok ? 'pass' : 'fail', r.ok ? '' : 'HTTP ' + r.status);
+                } catch (e) {
+                    addCheck(iconFiles[i], 'fail', 'Not reachable');
+                }
+            }
+        }
+
+        function checkMetaTags() {
+            startSection('&#128295;', 'Meta Tags & Security (This Page)');
+            var checks = [
+                { name: 'theme-color', sel: 'meta[name="theme-color"]', attr: 'content' },
+                { name: 'description', sel: 'meta[name="description"]', attr: 'content' },
+                { name: 'viewport', sel: 'meta[name="viewport"]', attr: 'content' },
+                { name: 'apple-mobile-web-app-capable', sel: 'meta[name="apple-mobile-web-app-capable"]', attr: 'content' },
+                { name: 'manifest link', sel: 'link[rel="manifest"]', attr: 'href' },
+                { name: 'apple-touch-icon', sel: 'link[rel="apple-touch-icon"]', attr: 'href' },
+            ];
+            // Note: this page intentionally has minimal meta tags. The check is informational.
+            addCheck('Note: meta checks below are for THIS page', 'info', 'Run the page-scan below to check your app pages');
+            checks.forEach(function(c) {
+                var el = document.querySelector(c.sel);
+                addCheck(c.name, el ? 'pass' : 'info', el ? el.getAttribute(c.attr) : 'Not found on this test page');
+            });
+
+            var csp = document.querySelector('meta[http-equiv="Content-Security-Policy"]');
+            addCheck('CSP meta tag (this page)', csp ? 'pass' : 'info', csp ? 'Present' : 'Not on test page (check app pages)');
+        }
+
+        function checkAccessibility() {
+            startSection('&#9855;', 'Accessibility Quick Scan');
+            addCheck('Note: these checks scan the CURRENT page', 'info', 'For app pages, open each and run DevTools Lighthouse');
+
+            var main = document.querySelector('main, [role="main"]');
+            addCheck('<main> landmark present', main ? 'pass' : 'info', main ? 'Found' : 'Not on this test page');
+
+            var headings = document.querySelectorAll('h1, h2, h3, h4, h5, h6');
+            var lastLevel = 0;
+            var orderOk = true;
+            headings.forEach(function(h) {
+                var level = parseInt(h.tagName.charAt(1));
+                if (level > lastLevel + 1 && lastLevel > 0) orderOk = false;
+                lastLevel = level;
+            });
+            addCheck('Heading order sequential', orderOk ? 'pass' : 'warn', headings.length + ' headings found');
+
+            var images = document.querySelectorAll('img');
+            var missingAlt = 0;
+            images.forEach(function(img) { if (!img.hasAttribute('alt')) missingAlt++; });
+            addCheck('All images have alt attributes', missingAlt === 0 ? 'pass' : 'warn', missingAlt > 0 ? missingAlt + ' missing' : images.length + ' images checked');
+        }
+
+        async function checkHTTPS() {
+            startSection('&#128274;', 'Security & HTTPS');
+            var isSecure = location.protocol === 'https:' || location.hostname === 'localhost' || location.hostname === '127.0.0.1';
+            addCheck('Secure context (HTTPS or localhost)', isSecure ? 'pass' : 'fail', location.protocol + '//' + location.hostname);
+            addCheck('Online status', navigator.onLine ? 'pass' : 'warn', navigator.onLine ? 'Online' : 'Offline');
+        }
+
+        async function checkSRI() {
+            startSection('&#128737;&#65039;', 'Subresource Integrity');
+            // Fetch index.html and check for SRI on CDN scripts
+            try {
+                var resp = await fetch('./index.html');
+                var html = await resp.text();
+                var parser = new DOMParser();
+                var doc = parser.parseFromString(html, 'text/html');
+                var scripts = doc.querySelectorAll('script[src]');
+                var cdnCount = 0;
+                var sriCount = 0;
+                scripts.forEach(function(s) {
+                    var src = s.getAttribute('src') || '';
+                    if (src.startsWith('http')) {
+                        cdnCount++;
+                        if (s.hasAttribute('integrity')) {
+                            sriCount++;
+                            addCheck('SRI: ' + src.split('/').pop(), 'pass', s.getAttribute('integrity').substring(0, 30) + '...');
+                        } else {
+                            addCheck('SRI: ' + src.split('/').pop(), 'fail', 'No integrity attribute');
+                        }
+                    }
+                });
+                if (cdnCount === 0) addCheck('No CDN scripts found', 'info');
+                else addCheck('SRI coverage', sriCount === cdnCount ? 'pass' : 'fail', sriCount + '/' + cdnCount + ' CDN scripts have SRI');
+            } catch (e) {
+                addCheck('SRI check (index.html)', 'warn', 'Could not fetch index.html: ' + e.message);
+            }
+        }
+
+        async function checkCSPOnPages() {
+            startSection('&#128737;&#65039;', 'CSP on App Pages');
+            var pages = ['index.html', 'offline.html'];
+            // Try to discover pages from manifest shortcuts or navigation
+            try {
+                var mResp = await fetch('./manifest.json');
+                var m = await mResp.json();
+                if (m.shortcuts) {
+                    m.shortcuts.forEach(function(s) {
+                        var url = s.url.replace('./', '');
+                        if (pages.indexOf(url) === -1) pages.push(url);
+                    });
+                }
+            } catch(e) {}
+            // Also try common pages
+            var common = ['calculator.html', 'active-loans.html', 'stockvel.html', 'clients.html', 'reports.html', 'settings.html', 'loan-income-calculator.html'];
+            common.forEach(function(p) { if (pages.indexOf(p) === -1) pages.push(p); });
+
+            for (var i = 0; i < pages.length; i++) {
+                try {
+                    var r = await fetch('./' + pages[i]);
+                    if (!r.ok) continue;
+                    var html = await r.text();
+                    var hasCSP = html.indexOf('Content-Security-Policy') !== -1;
+                    var hasSWReg = html.indexOf('sw-register.js') !== -1 || html.indexOf('serviceWorker.register') !== -1;
+                    var hasMain = html.indexOf('<main') !== -1;
+                    addCheck(pages[i] + ': CSP', hasCSP ? 'pass' : 'fail');
+                    addCheck(pages[i] + ': SW registration', hasSWReg ? 'pass' : 'fail');
+                    addCheck(pages[i] + ': <main> landmark', hasMain ? 'pass' : 'fail');
+                } catch(e) { /* skip unreachable pages */ }
+            }
+        }
+
+        async function checkVersionConsistency() {
+            startSection('&#128196;', 'Version Consistency');
+            var versions = {};
+            var pages = ['index.html', 'settings.html'];
+            for (var i = 0; i < pages.length; i++) {
+                try {
+                    var r = await fetch('./' + pages[i]);
+                    var html = await r.text();
+                    var match = html.match(/APP_VERSION\s*=\s*['"]([^'"]+)['"]/);
+                    if (match) versions[pages[i]] = match[1];
+                } catch(e) {}
+            }
+
+            var uniqueVersions = [];
+            for (var page in versions) {
+                if (uniqueVersions.indexOf(versions[page]) === -1) uniqueVersions.push(versions[page]);
+                addCheck(page + ' version', 'info', 'v' + versions[page]);
+            }
+            addCheck('All versions match', uniqueVersions.length <= 1 ? 'pass' : 'fail',
+                uniqueVersions.length <= 1 ? (uniqueVersions[0] || 'No versions found') : 'Found: ' + uniqueVersions.join(' vs '));
+        }
+
+        async function discoverAndLinkPages() {
+            var container = document.getElementById('pageLinks');
+            var pages = [];
+
+            try {
+                var mResp = await fetch('./manifest.json');
+                var m = await mResp.json();
+                if (m.shortcuts) m.shortcuts.forEach(function(s) { pages.push(s.url.replace('./', '')); });
+            } catch(e) {}
+
+            var common = ['index.html', 'calculator.html', 'active-loans.html', 'stockvel.html',
+                'clients.html', 'reports.html', 'loan-income-calculator.html', 'settings.html', 'offline.html', 'splash.html'];
+            common.forEach(function(p) { if (pages.indexOf(p) === -1) pages.push(p); });
+
+            var html = '';
+            for (var i = 0; i < pages.length; i++) {
+                var cached = await caches.match('./' + pages[i]);
+                var exists = false;
+                try { var r = await fetch('./' + pages[i], { method: 'HEAD' }); exists = r.ok; } catch(e) {}
+                var cls = !exists ? '' : cached ? 'cached' : 'not-cached';
+                var label = pages[i] + (cached ? ' (cached)' : exists ? ' (not cached)' : ' (missing)');
+                html += '<a href="./' + pages[i] + '" class="page-link ' + cls + '">' + label + '</a>';
+            }
+            container.innerHTML = html;
+        }
+
+        // =====================================================
+        // ACTIONS
+        // =====================================================
+
+        window.runAllChecks = async function() {
+            results = { pass: 0, fail: 0, warn: 0 };
+            sections = [];
+            currentSection = null;
+            document.getElementById('results').innerHTML = '<p style="text-align:center;color:#636e72;padding:20px">Running checks...</p>';
+
+            await checkHTTPS();
+            await checkManifest();
+            await checkServiceWorker();
+            await checkCache();
+            await checkIcons();
+            checkMetaTags();
+            checkAccessibility();
+            await checkSRI();
+            await checkCSPOnPages();
+            await checkVersionConsistency();
+            renderResults();
+            await discoverAndLinkPages();
+        };
+
+        window.testOffline = function() {
+            alert('To test offline mode:\n\n' +
+                '1. Open DevTools (F12)\n' +
+                '2. Go to Network tab\n' +
+                '3. Check "Offline" checkbox\n' +
+                '4. Navigate to your app pages\n' +
+                '5. Cached pages should load\n' +
+                '6. Uncached pages should show offline.html\n\n' +
+                'Uncheck "Offline" when done.');
+        };
+
+        window.clearCachesAndReload = async function() {
+            if (!confirm('This will clear ALL service worker caches and unregister the SW.\n\nAre you sure?')) return;
+            var names = await caches.keys();
+            for (var i = 0; i < names.length; i++) await caches.delete(names[i]);
+            var regs = await navigator.serviceWorker.getRegistrations();
+            for (var r = 0; r < regs.length; r++) await regs[r].unregister();
+            alert('Caches cleared and SW unregistered.\nReloading...');
+            location.reload();
+        };
+
+        // Run on load
+        runAllChecks();
+    })();
+    </script>
+</body>
+</html>
