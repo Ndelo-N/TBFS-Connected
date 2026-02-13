@@ -675,19 +675,115 @@ const Calculations = {
     
     /**
      * Calculate late penalty
+     * 0.1% per day on outstanding balance, capped at 7 days
      */
     calculateLatePenalty(daysLate, outstandingBalance) {
-        const maxDays = 7; // Maximum 7 days of penalties
+        const maxDays = 7;
         const dailyRate = 0.001; // 0.1% per day
-        
-        const effectiveDays = Math.min(daysLate, maxDays);
+        const effectiveDays = Math.min(Math.max(0, daysLate), maxDays);
         const penalty = outstandingBalance * dailyRate * effectiveDays;
-        
         return this.round(penalty);
+    },
+
+    /**
+     * Check if a loan is subject to late penalties.
+     * Only loans distributed after 31 January 2026 incur penalties.
+     */
+    isLateFeesEligible(loan) {
+        const cutoffDate = new Date(2026, 0, 31); // Jan 31 2026 (month is 0-indexed)
+        const loanDate = new Date(loan.created_at || loan.loan_date || 0);
+        return loanDate > cutoffDate;
+    },
+
+    /**
+     * Determine payment status relative to due date.
+     * @param {Date|string} paymentDate - When the payment was made
+     * @param {Date|string} dueDate - When the payment was due
+     * @param {number} amountPaid - Amount actually paid
+     * @param {number} amountDue - Amount that was expected
+     * @param {number} gracePeriodDays - Grace period in days (default 3)
+     * @returns {string} 'on-time' | 'late' | 'partial' | 'missed'
+     */
+    getPaymentStatus(paymentDate, dueDate, amountPaid, amountDue, gracePeriodDays) {
+        if (typeof gracePeriodDays !== 'number') gracePeriodDays = 3;
+        const pDate = new Date(paymentDate);
+        const dDate = new Date(dueDate);
+        
+        // Missed: no payment at all (amountPaid is 0 or undefined)
+        if (!amountPaid || amountPaid <= 0) return 'missed';
+        
+        // Partial: paid something but less than 90% of expected amount
+        if (amountPaid < amountDue * 0.9) return 'partial';
+        
+        // Add grace period to due date
+        const graceCutoff = new Date(dDate);
+        graceCutoff.setDate(graceCutoff.getDate() + gracePeriodDays);
+        
+        // Late: paid after grace period
+        if (pDate > graceCutoff) return 'late';
+        
+        // On-time: paid within grace period
+        return 'on-time';
+    },
+
+    /**
+     * Calculate the number of consecutive missed/late payments for a loan.
+     * Counts backwards from the most recent due payment.
+     * @param {object} loan - The loan object
+     * @returns {number} Count of consecutive missed payments
+     */
+    countConsecutiveMissedPayments(loan) {
+        if (!loan.schedule || !Array.isArray(loan.schedule)) return 0;
+        
+        const today = new Date();
+        let consecutiveMissed = 0;
+        
+        // Walk backwards through the schedule from the latest due payment
+        for (let i = loan.schedule.length - 1; i >= 0; i--) {
+            const entry = loan.schedule[i];
+            
+            // Skip future payments that aren't due yet
+            if (entry.due_date) {
+                const dueDate = new Date(entry.due_date);
+                if (dueDate > today) continue;
+            }
+            
+            // If paid, stop counting
+            if (entry.status === 'paid') break;
+            
+            // If pending and due date has passed, it's missed
+            if (entry.status === 'pending') {
+                consecutiveMissed++;
+            }
+        }
+        
+        return consecutiveMissed;
+    },
+
+    /**
+     * Get escalation level based on consecutive missed payments.
+     * @param {number} missedCount - Number of consecutive missed payments
+     * @returns {string} 'none' | 'warning' | 'at-risk' | 'default-suggested'
+     */
+    getEscalationLevel(missedCount) {
+        if (missedCount >= 3) return 'default-suggested';
+        if (missedCount >= 2) return 'at-risk';
+        if (missedCount >= 1) return 'warning';
+        return 'none';
+    },
+
+    /**
+     * Calculate the due date for a specific payment number in a loan
+     */
+    getLoanPaymentDueDate(loan, paymentNumber) {
+        if (!loan.created_at || loan.start_month_index === undefined) return null;
+        const loanDate = new Date(loan.created_at);
+        const startYear = loanDate.getFullYear();
+        const targetMonthOffset = loan.start_month_index + paymentNumber;
+        const targetYear = startYear + Math.floor(targetMonthOffset / 12);
+        const targetMonth = targetMonthOffset % 12;
+        return new Date(targetYear, targetMonth + 1, 0); // Last day of month
     }
-    
-    // NOTE: calculateEarlyPayoff is defined earlier (line ~187) with full functionality
-    // The old duplicate function has been removed
 };
 
 // Make globally available
