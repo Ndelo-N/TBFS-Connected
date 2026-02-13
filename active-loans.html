@@ -842,6 +842,17 @@
                         <div class="info-row">
                             <span>📋 Status:</span>
                             <span class="status-badge status-${loan.status}">${loan.status}</span>
+                            ${(() => {
+                                if (loan.status !== 'active') return '';
+                                const missed = Calculations.countConsecutiveMissedPayments(loan);
+                                const level = Calculations.getEscalationLevel(missed);
+                                loan.escalation_level = level;
+                                loan.missed_payment_count = missed;
+                                if (level === 'warning') return '<span style="background:#f39c12;color:white;padding:3px 8px;border-radius:8px;font-size:11px;font-weight:700;margin-left:6px;">⚠️ 1 MISSED</span>';
+                                if (level === 'at-risk') return '<span style="background:#e67e22;color:white;padding:3px 8px;border-radius:8px;font-size:11px;font-weight:700;margin-left:6px;">🔶 AT RISK (2 MISSED)</span>';
+                                if (level === 'default-suggested') return '<span style="background:#e74c3c;color:white;padding:3px 8px;border-radius:8px;font-size:11px;font-weight:700;margin-left:6px;">🔴 DEFAULT SUGGESTED ('+missed+' MISSED)</span>';
+                                return '';
+                            })()}
                         </div>
                         
                         <div class="info-row">
@@ -863,6 +874,10 @@
                                     <button class="btn" style="padding: 8px 12px; font-size: 13px; background: #9b59b6; color: white;"
                                             onclick="downloadLoanStatementPDF(${loan.loan_id})">
                                         📥 Download PDF
+                                    </button>
+                                    <button class="btn" style="padding: 8px 12px; font-size: 13px; background: #f39c12; color: white;"
+                                            onclick="logPaymentReminder(${loan.loan_id})">
+                                        📞 Log Reminder
                                     </button>
                                     <button class="btn btn-danger" style="padding: 8px 12px; font-size: 13px;"
                                             onclick="markAsDefaulted(${loan.loan_id})">
@@ -1215,11 +1230,35 @@ Click "OK" to process payment or "Cancel" to go back.
             const remainingInitiationFee = Math.max(0, loan.total_initiation_fee - loan.initiation_fee_paid);
             const remainingInterest = Math.max(0, loan.total_interest - loan.interest_paid);
             
-            // STEP 7: GET PAYMENT AMOUNT FROM USER
+            // STEP 7: CALCULATE LATE PENALTY (if applicable)
+            // Late penalties only apply to loans distributed after 31 January 2026
+            const gracePeriodDays = AppState.gracePeriodDays || 3;
+            const nextDueDate = Calculations.getLoanPaymentDueDate(loan, loan.payments_made || 0);
+            let latePenalty = 0;
+            let daysLate = 0;
+            let isPaymentLate = false;
+            
+            if (nextDueDate && Calculations.isLateFeesEligible(loan)) {
+                const graceCutoff = new Date(nextDueDate);
+                graceCutoff.setDate(graceCutoff.getDate() + gracePeriodDays);
+                const todayDate = new Date();
+                
+                if (todayDate > graceCutoff) {
+                    daysLate = Math.floor((todayDate - nextDueDate) / (1000 * 60 * 60 * 24));
+                    latePenalty = Calculations.calculateLatePenalty(daysLate - gracePeriodDays, loan.remaining_principal);
+                    isPaymentLate = true;
+                }
+            }
+            
+            // STEP 7b: GET PAYMENT AMOUNT FROM USER
             // Display loan details and prompt for payment amount
             const expectedPayment = loan.monthly_payment || 0;
             const remainingPrincipal = loan.remaining_principal;
             const paymentsRemaining = loan.term_months - (loan.payments_made || 0);
+            
+            const penaltyLine = latePenalty > 0 
+                ? `\n⚠️ LATE PENALTY: ${Calculations.formatCurrency(latePenalty)} (${daysLate} days late, ${gracePeriodDays}-day grace)\n` 
+                : '';
             
             const paymentAmount = prompt(
                 `💰 Enter payment amount for Loan #${loanId}\n\n` +
@@ -1227,6 +1266,7 @@ Click "OK" to process payment or "Cancel" to go back.
                 `Remaining Principal: ${Calculations.formatCurrency(remainingPrincipal)}\n` +
                 `Remaining Interest: ${Calculations.formatCurrency(remainingInterest)}\n` +
                 `Remaining Initiation Fee: ${Calculations.formatCurrency(remainingInitiationFee)}\n` +
+                penaltyLine +
                 `Payments Made: ${loan.payments_made || 0}/${loan.term_months}\n\n` +
                 `💡 You can make partial or overpayments`
             );
@@ -1275,6 +1315,7 @@ Click "OK" to process payment or "Cancel" to go back.
             let interestPaid = 0;
             let adminFeePaid = 0;
             let initiationFeePaid = 0;
+            let latePenaltyPaid = 0;
             
             // Track principal before payment for interest recalculation check
             const principalBeforePayment = loan.remaining_principal;
@@ -1323,6 +1364,13 @@ Click "OK" to process payment or "Cancel" to go back.
             if (remainingAmount > 0 && adminDue > 0) {
                 adminFeePaid = Math.min(remainingAmount, adminDue);
                 remainingAmount -= adminFeePaid;
+            }
+            
+            // ALLOCATION 2.5: Pay Late Penalty (if applicable)
+            // Late penalties only apply to loans after Jan 31, 2026
+            if (remainingAmount > 0 && latePenalty > 0) {
+                latePenaltyPaid = Math.min(remainingAmount, latePenalty);
+                remainingAmount -= latePenaltyPaid;
             }
             
             // ALLOCATION 3: Pay Interest
@@ -1412,6 +1460,11 @@ Click "OK" to process payment or "Cancel" to go back.
                 loan.payment_history = [];
             }
             
+            // Determine payment status
+            const paymentStatus = nextDueDate 
+                ? Calculations.getPaymentStatus(paymentDate, nextDueDate, amount, expectedPayment, gracePeriodDays)
+                : 'on-time';
+            
             // Add this payment to history
             loan.payment_history.push({
                 date: paymentDate,
@@ -1420,6 +1473,10 @@ Click "OK" to process payment or "Cancel" to go back.
                 interest: interestPaid,
                 admin_fee: adminFeePaid,
                 initiation_fee: initiationFeePaid,
+                late_penalty: latePenaltyPaid,
+                payment_status: paymentStatus,
+                due_date: nextDueDate ? nextDueDate.toISOString() : null,
+                days_late: daysLate,
                 payments_made_after: 0, // Will be updated below
                 remaining_principal_after: 0, // Will be updated below
                 interest_recalculated: false // Will be updated if recalc happens
@@ -1621,8 +1678,8 @@ Click "OK" to process payment or "Cancel" to go back.
             if (!AppState.transactionHistory) AppState.transactionHistory = [];
             AppState.transactionHistory.push({
                 type: 'payment',
-                timestamp: new Date().toISOString(), // When transaction was recorded in system
-                paymentDate: paymentDate, // When payment was actually received (may be backdated)
+                timestamp: new Date().toISOString(),
+                paymentDate: paymentDate,
                 details: {
                     loanId: loanId,
                     clientName: loan.client_name,
@@ -1631,6 +1688,9 @@ Click "OK" to process payment or "Cancel" to go back.
                     interestPaid: interestPaid,
                     adminFeePaid: adminFeePaid,
                     initiationFeePaid: initiationFeePaid,
+                    latePenaltyPaid: latePenaltyPaid,
+                    paymentStatus: paymentStatus,
+                    daysLate: daysLate,
                     overpayment: remainingAmount,
                     remainingPrincipal: loan.remaining_principal,
                     remainingInterest: Math.max(0, loan.total_interest - loan.interest_paid),
@@ -1656,6 +1716,8 @@ Click "OK" to process payment or "Cancel" to go back.
             const overpaymentMsg = remainingAmount > 0.01 ? `\n💡 Overpayment: ${Calculations.formatCurrency(remainingAmount)} (credited to account)` : '';
             const partialMsg = nextPayment && nextPayment.partial_payment ? '\n⚠️ Partial payment recorded - installment not yet complete' : '';
             const recalcMsg = loan.interest_recalculated ? `\n\n🔄 INTEREST RECALCULATED!\nYour overpayment in the first half reduced future interest.\nNew Max Interest: ${Calculations.formatCurrency(loan.max_interest_allowed)}` : '';
+            const penaltyMsg = latePenaltyPaid > 0 ? `\n• Late Penalty: ${Calculations.formatCurrency(latePenaltyPaid)} (${daysLate} days late)` : '';
+            const statusMsg = paymentStatus !== 'on-time' ? `\n📋 Status: ${paymentStatus.toUpperCase()}` : '';
             
             // Stockvel bonus message
             let bonusMsg = '';
@@ -1676,14 +1738,14 @@ Click "OK" to process payment or "Cancel" to go back.
             });
             
             alert(
-                `✅ Payment Processed Successfully!${completionMsg}${partialMsg}${recalcMsg}${bonusMsg}\n\n` +
+                `✅ Payment Processed Successfully!${completionMsg}${partialMsg}${statusMsg}${recalcMsg}${bonusMsg}\n\n` +
                 `📅 Payment Date: ${paymentDateFormatted}\n` +
                 `💰 Total Paid: ${Calculations.formatCurrency(amount)}\n\n` +
                 `📊 Payment Breakdown:\n` +
                 `• Principal: ${Calculations.formatCurrency(principalPaid)}\n` +
                 `• Interest: ${Calculations.formatCurrency(interestPaid)}\n` +
                 `• Admin Fee: ${Calculations.formatCurrency(adminFeePaid)}\n` +
-                `• Initiation Fee: ${Calculations.formatCurrency(initiationFeePaid)}${overpaymentMsg}\n\n` +
+                `• Initiation Fee: ${Calculations.formatCurrency(initiationFeePaid)}${penaltyMsg}${overpaymentMsg}\n\n` +
                 `📈 Progress:\n` +
                 `• Payments Made: ${loan.payments_made}/${loan.term_months}\n` +
                 `• Total Principal Received: ${Calculations.formatCurrency(loan.total_principal_received)}\n\n` +
@@ -2884,6 +2946,88 @@ TBFS - Transparent, Fair, Simple
                 `Additional Initiation Fee: ${Calculations.formatCurrency(additionalInitiationFee)}\n\n` +
                 `Reason: ${reason}\n\n` +
                 `💡 Payment schedule has been regenerated.`
+            );
+        }
+        
+        /**
+         * Log a payment reminder for a loan
+         * Records when a reminder was sent, by what method, and any notes
+         */
+        function logPaymentReminder(loanId) {
+            const loan = allLoans.find(l => l.loan_id === loanId);
+            if (!loan) { alert('❌ Loan not found!'); return; }
+            
+            const method = prompt(
+                `📞 Log Payment Reminder for Loan #${loanId}\n` +
+                `Client: ${loan.client_name}\n\n` +
+                `How was the reminder sent?\n\n` +
+                `1 = Phone Call\n` +
+                `2 = SMS / WhatsApp\n` +
+                `3 = In Person\n` +
+                `4 = Email\n` +
+                `5 = Other\n\n` +
+                `Enter number (1-5):`,
+                '1'
+            );
+            
+            if (!method) return;
+            
+            const methodMap = { '1': 'Phone Call', '2': 'SMS/WhatsApp', '3': 'In Person', '4': 'Email', '5': 'Other' };
+            const methodName = methodMap[method] || 'Other';
+            
+            const notes = prompt(
+                `📝 Add notes for this reminder (optional):\n\n` +
+                `Client: ${loan.client_name}\n` +
+                `Method: ${methodName}\n\n` +
+                `Enter notes or press OK to skip:`,
+                ''
+            );
+            
+            if (notes === null) return; // User cancelled
+            
+            // Get or create client response
+            const response = prompt(
+                `📋 Client response (optional):\n\n` +
+                `1 = Promised to pay\n` +
+                `2 = Requested extension\n` +
+                `3 = No answer / Unreachable\n` +
+                `4 = Disputed amount\n` +
+                `5 = Other\n\n` +
+                `Enter number (1-5) or press OK to skip:`,
+                ''
+            );
+            
+            const responseMap = { '1': 'Promised to pay', '2': 'Requested extension', '3': 'No answer/Unreachable', '4': 'Disputed amount', '5': 'Other' };
+            const responseName = response ? (responseMap[response] || response) : '';
+            
+            // Save reminder
+            if (!AppState.paymentReminders) AppState.paymentReminders = [];
+            AppState.paymentReminders.push({
+                id: Date.now(),
+                loanId: loanId,
+                clientName: loan.client_name,
+                date: new Date().toISOString(),
+                method: methodName,
+                notes: notes || '',
+                clientResponse: responseName,
+                daysOverdue: (() => {
+                    const dueDate = Calculations.getLoanPaymentDueDate(loan, loan.payments_made || 0);
+                    if (!dueDate) return 0;
+                    const diff = Math.floor((new Date() - dueDate) / (1000 * 60 * 60 * 24));
+                    return Math.max(0, diff);
+                })(),
+                outstandingAmount: loan.remaining_principal || 0
+            });
+            
+            AppStateManager.save(AppState);
+            
+            alert(
+                `✅ Reminder Logged Successfully!\n\n` +
+                `Loan #${loanId} - ${loan.client_name}\n` +
+                `Method: ${methodName}\n` +
+                (notes ? `Notes: ${notes}\n` : '') +
+                (responseName ? `Response: ${responseName}\n` : '') +
+                `\nDate: ${new Date().toLocaleDateString('en-ZA')}`
             );
         }
         
