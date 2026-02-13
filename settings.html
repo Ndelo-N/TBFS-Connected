@@ -200,6 +200,74 @@
             </div>
         </div>
         
+        <!-- Payment Management Settings -->
+        <div class="form-section">
+            <h3 style="color: #2c3e50; margin-bottom: 20px;">📋 Payment Management</h3>
+            
+            <div class="settings-grid">
+                <div class="setting-card">
+                    <h4>Grace Period (Days)</h4>
+                    <p style="font-size: 12px; color: #636e72; margin-bottom: 10px;">
+                        Days after due date before late penalties apply. Only affects loans distributed after 31 Jan 2026.
+                    </p>
+                    <input type="number" id="gracePeriodInput" placeholder="Enter days" min="0" max="30" step="1" value="3">
+                    <button class="btn btn-primary" onclick="setGracePeriod()" style="width: 100%;">⏰ Set Grace Period</button>
+                    <p style="font-size: 12px; color: #636e72; margin-top: 10px;">
+                        Current: <strong id="currentGracePeriod">3 days</strong>
+                    </p>
+                </div>
+                
+                <div class="setting-card">
+                    <h4>Late Penalty Rate</h4>
+                    <p style="font-size: 12px; color: #636e72; margin-bottom: 10px;">
+                        0.1% per day on outstanding balance, capped at 7 days maximum. This rate is fixed in the system.
+                    </p>
+                    <div style="background: #f8f9fa; padding: 15px; border-radius: 8px; text-align: center;">
+                        <div style="font-size: 24px; font-weight: bold; color: #2c3e50;">0.1% / day</div>
+                        <div style="font-size: 12px; color: #636e72; margin-top: 5px;">Max 7 days = 0.7% total</div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Escalation Rules -->
+            <div style="background: #f8f9fa; padding: 20px; border-radius: 10px; margin-top: 20px;">
+                <h4 style="color: #2c3e50; margin-bottom: 15px;">🚦 Automatic Escalation Rules</h4>
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px;">
+                    <div style="background: #fff3cd; padding: 12px; border-radius: 8px; border-left: 4px solid #f39c12;">
+                        <strong style="color: #856404;">⚠️ Warning</strong>
+                        <p style="font-size: 13px; color: #856404; margin-top: 4px;">1 consecutive missed payment</p>
+                    </div>
+                    <div style="background: #ffeaa7; padding: 12px; border-radius: 8px; border-left: 4px solid #e67e22;">
+                        <strong style="color: #d35400;">🔶 At Risk</strong>
+                        <p style="font-size: 13px; color: #d35400; margin-top: 4px;">2 consecutive missed payments</p>
+                    </div>
+                    <div style="background: #f8d7da; padding: 12px; border-radius: 8px; border-left: 4px solid #e74c3c;">
+                        <strong style="color: #721c24;">🔴 Default Suggested</strong>
+                        <p style="font-size: 13px; color: #721c24; margin-top: 4px;">3+ consecutive missed payments</p>
+                    </div>
+                </div>
+                <p style="font-size: 12px; color: #636e72; margin-top: 12px;">
+                    Escalation levels are calculated automatically based on the loan's payment schedule. 
+                    They appear as badges on the Active Loans page and as alerts on the Dashboard.
+                </p>
+            </div>
+        </div>
+        
+        <!-- Payment Reminder Log -->
+        <div class="form-section">
+            <h3 style="color: #2c3e50; margin-bottom: 20px;">📞 Payment Reminder Log</h3>
+            <p style="color: #636e72; margin-bottom: 15px;">
+                Record of payment reminders sent to borrowers. Log reminders from the Active Loans page using the "📞 Log Reminder" button on each loan.
+            </p>
+            <div id="reminderLog" style="max-height: 400px; overflow-y: auto;">
+                <p style="color: #636e72; text-align: center; padding: 20px;">Loading reminders...</p>
+            </div>
+            <div style="margin-top: 10px; text-align: right;">
+                <button class="btn btn-secondary" onclick="exportReminders()" style="font-size: 13px; padding: 8px 16px;">📥 Export Reminders</button>
+                <button class="btn btn-danger" onclick="clearReminders()" style="font-size: 13px; padding: 8px 16px;">🗑️ Clear All</button>
+            </div>
+        </div>
+        
         <!-- App Version & Updates Section -->
         <div class="form-section">
             <h3 style="color: #2c3e50; margin-bottom: 15px;">🔒 App Version & Updates</h3>
@@ -396,6 +464,10 @@
             // Update UI with current values
             updateFinancialSettings();
             
+            // Update payment management settings
+            updatePaymentSettings();
+            displayReminderLog();
+            
             // Update version display
             document.getElementById('currentVersion').textContent = `v${APP_VERSION}`;
             
@@ -457,6 +529,100 @@
                 document.getElementById('profitProgressBar').style.width = '0%';
                 document.getElementById('profitRemaining').textContent = 'Set a profit goal to track progress';
             }
+        }
+        
+        /**
+         * Update payment management UI
+         */
+        function updatePaymentSettings() {
+            const gracePeriod = AppState.gracePeriodDays || 3;
+            document.getElementById('currentGracePeriod').textContent = gracePeriod + ' day' + (gracePeriod !== 1 ? 's' : '');
+            document.getElementById('gracePeriodInput').value = gracePeriod;
+        }
+        
+        /**
+         * Set grace period
+         */
+        function setGracePeriod() {
+            const input = document.getElementById('gracePeriodInput');
+            const days = parseInt(input.value);
+            
+            if (isNaN(days) || days < 0 || days > 30) {
+                alert('❌ Grace period must be between 0 and 30 days');
+                return;
+            }
+            
+            AppState.gracePeriodDays = days;
+            AppStateManager.save(AppState);
+            updatePaymentSettings();
+            alert(`✅ Grace period set to ${days} day${days !== 1 ? 's' : ''}.\n\nLate penalties will apply ${days} day${days !== 1 ? 's' : ''} after the due date for loans distributed after 31 January 2026.`);
+        }
+        
+        /**
+         * Display payment reminder log
+         */
+        function displayReminderLog() {
+            const container = document.getElementById('reminderLog');
+            const reminders = (AppState.paymentReminders || []).slice().reverse(); // Most recent first
+            
+            if (reminders.length === 0) {
+                container.innerHTML = '<p style="color: #636e72; text-align: center; padding: 20px;">No reminders logged yet. Use the "📞 Log Reminder" button on the Active Loans page.</p>';
+                return;
+            }
+            
+            container.innerHTML = reminders.map(r => {
+                const date = new Date(r.date).toLocaleDateString('en-ZA', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+                const methodColors = {
+                    'Phone Call': '#3498db',
+                    'SMS/WhatsApp': '#27ae60',
+                    'In Person': '#9b59b6',
+                    'Email': '#e67e22',
+                    'Other': '#636e72'
+                };
+                const methodColor = methodColors[r.method] || '#636e72';
+                
+                return `<div style="background: #f8f9fa; padding: 12px 15px; border-radius: 8px; margin-bottom: 8px; border-left: 4px solid ${methodColor};">
+                    <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 5px;">
+                        <strong style="color: #2c3e50;">${r.clientName} (Loan #${r.loanId})</strong>
+                        <span style="font-size: 12px; color: #636e72;">${date}</span>
+                    </div>
+                    <div style="margin-top: 6px; font-size: 13px;">
+                        <span style="background: ${methodColor}; color: white; padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: 600;">${r.method}</span>
+                        ${r.daysOverdue > 0 ? `<span style="margin-left: 8px; color: #e74c3c; font-weight: 600;">${r.daysOverdue} days overdue</span>` : ''}
+                        ${r.outstandingAmount ? `<span style="margin-left: 8px; color: #636e72;">${Calculations.formatCurrency(r.outstandingAmount)} outstanding</span>` : ''}
+                    </div>
+                    ${r.notes ? `<div style="margin-top: 6px; font-size: 13px; color: #636e72;"><em>Notes: ${r.notes}</em></div>` : ''}
+                    ${r.clientResponse ? `<div style="margin-top: 4px; font-size: 13px; color: #2c3e50;"><strong>Response:</strong> ${r.clientResponse}</div>` : ''}
+                </div>`;
+            }).join('');
+        }
+        
+        /**
+         * Export reminders to JSON file
+         */
+        function exportReminders() {
+            const reminders = AppState.paymentReminders || [];
+            if (reminders.length === 0) { alert('No reminders to export.'); return; }
+            
+            const data = JSON.stringify(reminders, null, 2);
+            const blob = new Blob([data], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `tbfs-payment-reminders-${new Date().toISOString().split('T')[0]}.json`;
+            a.click();
+            URL.revokeObjectURL(url);
+        }
+        
+        /**
+         * Clear all reminders
+         */
+        function clearReminders() {
+            if (!confirm('⚠️ Clear all payment reminder records?\n\nThis cannot be undone.')) return;
+            AppState.paymentReminders = [];
+            AppStateManager.save(AppState);
+            displayReminderLog();
+            alert('✅ All payment reminders cleared.');
         }
         
         /**
