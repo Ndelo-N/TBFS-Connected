@@ -2097,9 +2097,9 @@
                 alerts.innerHTML = '';
                 
                 // Warning at 80 active loans
-                const activeLoans = this.loans.filter(l => l.status === 'active').length;
-                if (activeLoans >= 80) {
-                    alerts.innerHTML += `<div class="alert alert-warning">\u26A0\uFE0F <strong>High Loan Volume:</strong> You have ${activeLoans} active loans. Consider monitoring capacity.</div>`;
+                const activeLoans = this.loans.filter(l => l.status === 'active');
+                if (activeLoans.length >= 80) {
+                    alerts.innerHTML += `<div class="alert alert-warning">\u26A0\uFE0F <strong>High Loan Volume:</strong> You have ${activeLoans.length} active loans. Consider monitoring capacity.</div>`;
                 }
                 
                 // Deployment limit at R80,000
@@ -2111,6 +2111,83 @@
                 const available = this.capital - this.deployed;
                 if (available < 20000) {
                     alerts.innerHTML += `<div class="alert alert-warning">\u26A0\uFE0F <strong>Reserve Capital Low:</strong> Only R${available.toLocaleString()} remaining. Consider maintaining higher reserves.</div>`;
+                }
+                
+                // OVERDUE LOAN ALERTS with borrower names and amounts
+                const today = new Date();
+                const gracePeriodDays = AppState.gracePeriodDays || 3;
+                const overdueLoans = [];
+                const atRiskLoans = [];
+                const defaultSuggestedLoans = [];
+                
+                activeLoans.forEach(loan => {
+                    if (!loan.created_at || loan.start_month_index === undefined) return;
+                    
+                    const dueDate = Calculations.getLoanPaymentDueDate(loan, loan.payments_made || 0);
+                    if (!dueDate || dueDate >= today) return;
+                    
+                    const daysOverdue = Math.floor((today - dueDate) / (1000 * 60 * 60 * 24));
+                    const missedCount = Calculations.countConsecutiveMissedPayments(loan);
+                    const level = Calculations.getEscalationLevel(missedCount);
+                    const remaining = loan.remaining_principal || 0;
+                    
+                    const entry = {
+                        name: loan.client_name || `Loan #${loan.loan_id}`,
+                        id: loan.loan_id,
+                        amount: remaining,
+                        daysOverdue: daysOverdue,
+                        missed: missedCount,
+                        monthly: loan.monthly_payment || 0
+                    };
+                    
+                    if (level === 'default-suggested') defaultSuggestedLoans.push(entry);
+                    else if (level === 'at-risk') atRiskLoans.push(entry);
+                    else overdueLoans.push(entry);
+                });
+                
+                // Default-suggested alerts (CRITICAL - red)
+                if (defaultSuggestedLoans.length > 0) {
+                    const rows = defaultSuggestedLoans.map(l => 
+                        `<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid rgba(0,0,0,0.1);">` +
+                        `<span><strong>${l.name}</strong> (Loan #${l.id}) - ${l.missed} missed payments</span>` +
+                        `<span style="font-weight:700;">${Calculations.formatCurrency(l.amount)} outstanding</span></div>`
+                    ).join('');
+                    alerts.innerHTML += `<div class="alert alert-danger">` +
+                        `\uD83D\uDD34 <strong>DEFAULT SUGGESTED (${defaultSuggestedLoans.length} loans - 3+ missed payments):</strong>` +
+                        `<div style="margin-top:8px;font-size:13px;">${rows}</div></div>`;
+                }
+                
+                // At-risk alerts (WARNING - orange)
+                if (atRiskLoans.length > 0) {
+                    const rows = atRiskLoans.map(l => 
+                        `<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid rgba(0,0,0,0.1);">` +
+                        `<span><strong>${l.name}</strong> (Loan #${l.id}) - ${l.daysOverdue} days overdue</span>` +
+                        `<span style="font-weight:700;">${Calculations.formatCurrency(l.monthly)} due</span></div>`
+                    ).join('');
+                    alerts.innerHTML += `<div class="alert alert-warning">` +
+                        `\uD83D\uDD36 <strong>AT RISK (${atRiskLoans.length} loans - 2 missed payments):</strong>` +
+                        `<div style="margin-top:8px;font-size:13px;">${rows}</div></div>`;
+                }
+                
+                // Overdue alerts (INFO - yellow)
+                if (overdueLoans.length > 0) {
+                    const rows = overdueLoans.map(l => 
+                        `<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid rgba(0,0,0,0.1);">` +
+                        `<span><strong>${l.name}</strong> (Loan #${l.id}) - ${l.daysOverdue} days overdue</span>` +
+                        `<span style="font-weight:700;">${Calculations.formatCurrency(l.monthly)} due</span></div>`
+                    ).join('');
+                    alerts.innerHTML += `<div class="alert alert-warning">` +
+                        `\u26A0\uFE0F <strong>OVERDUE PAYMENTS (${overdueLoans.length} loans):</strong>` +
+                        `<div style="margin-top:8px;font-size:13px;">${rows}</div></div>`;
+                }
+                
+                // Show total overdue summary
+                const totalOverdue = overdueLoans.length + atRiskLoans.length + defaultSuggestedLoans.length;
+                if (totalOverdue > 0) {
+                    const totalAmount = [...overdueLoans, ...atRiskLoans, ...defaultSuggestedLoans]
+                        .reduce((sum, l) => sum + l.amount, 0);
+                    alerts.innerHTML += `<div style="background:#f0f0f0;padding:10px 15px;border-radius:8px;margin-top:10px;font-size:13px;text-align:center;">` +
+                        `<strong>${totalOverdue} overdue loan(s)</strong> with <strong>${Calculations.formatCurrency(totalAmount)}</strong> total outstanding principal</div>`;
                 }
             },
             

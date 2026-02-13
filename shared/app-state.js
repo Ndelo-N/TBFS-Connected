@@ -38,6 +38,10 @@ class AppStateManager {
             // Transaction History
             transactions: [],
             
+            // Payment Management (v1.8.0+)
+            gracePeriodDays: 3,           // Days after due date before penalty applies
+            paymentReminders: [],          // Log of payment reminders sent
+            
             // Metadata
             lastBackupDate: null,
             version: this.VERSION,
@@ -71,6 +75,8 @@ class AppStateManager {
             mergedState.stockvelMembers = mergedState.stockvelMembers || [];
             mergedState.stockvelReceipts = mergedState.stockvelReceipts || [];
             mergedState.transactions = mergedState.transactions || [];
+            mergedState.paymentReminders = mergedState.paymentReminders || [];
+            if (typeof mergedState.gracePeriodDays !== 'number') mergedState.gracePeriodDays = 3;
             
             return mergedState;
             

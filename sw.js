@@ -1,4 +1,4 @@
-const CACHE_NAME = 'tbfs-loan-manager-v41'; // v1.7.11 - PWA Review Phase 2: Background sync, badge API, security
+const CACHE_NAME = 'tbfs-loan-manager-v42'; // v1.8.0 - Payment management: late penalties, escalation, reminders
 const urlsToCache = [
   './',
   './index.html',                    // Dashboard (refactored)
