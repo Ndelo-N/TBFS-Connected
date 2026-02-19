@@ -1758,6 +1758,293 @@ Click "OK" to process payment or "Cancel" to go back.
             // Reload loans
             loadLoans();
         }
+
+        /**
+         * ============================================
+         * LOAN ADJUSTMENT AUDIT TRAIL HELPERS
+         * ============================================
+         *
+         * Adjustments mutate core loan terms (principal/term/interest/payment).
+         * To keep statements transparent, we record a before/after snapshot and a diff.
+         * The statement PDF (and View Details text statement) can then render those changes.
+         */
+        function normalizeMoney(value) {
+            const num = Number(value);
+            if (!isFinite(num)) return 0;
+            return Calculations.round(num);
+        }
+
+        function formatLocalDateYMD(value) {
+            if (!value) return null;
+            const d = (value instanceof Date) ? value : new Date(value);
+            if (isNaN(d.getTime())) return null;
+            const yyyy = d.getFullYear();
+            const mm = String(d.getMonth() + 1).padStart(2, '0');
+            const dd = String(d.getDate()).padStart(2, '0');
+            return `${yyyy}-${mm}-${dd}`;
+        }
+
+        function getNextPendingScheduleEntry(loan) {
+            const schedule = Array.isArray(loan.schedule) ? loan.schedule : [];
+            return schedule.find(p => p && p.status === 'pending') || null;
+        }
+
+        function snapshotLoanAdjustmentState(loan) {
+            const principalAmount = (loan.principal_amount ?? loan.principal ?? 0);
+            const originalPrincipal = (loan.original_principal ?? principalAmount);
+            const nextPending = getNextPendingScheduleEntry(loan);
+
+            return {
+                principal_amount: normalizeMoney(principalAmount),
+                original_principal: normalizeMoney(originalPrincipal),
+                remaining_principal: normalizeMoney(loan.remaining_principal || 0),
+                term_months: Number(loan.term_months || loan.term || 0),
+                monthly_payment: normalizeMoney(loan.monthly_payment || 0),
+                total_interest: normalizeMoney(loan.total_interest || 0),
+                total_initiation_fee: normalizeMoney(loan.total_initiation_fee || 0),
+                interest_calculation_months: Number(loan.interest_calculation_months || 0),
+                max_interest_allowed: normalizeMoney(loan.max_interest_allowed || 0),
+                expected_monthly_interest: normalizeMoney(loan.expected_monthly_interest || 0),
+                payments_made: Number(loan.payments_made || 0),
+                schedule_length: Array.isArray(loan.schedule) ? loan.schedule.length : 0,
+                next_due_date: formatLocalDateYMD(nextPending ? nextPending.due_date : null)
+            };
+        }
+
+        function diffLoanAdjustmentSnapshots(before, after) {
+            const fields = [
+                { key: 'principal_amount', label: 'Principal', format: 'currency' },
+                { key: 'original_principal', label: 'Original Principal', format: 'currency' },
+                { key: 'remaining_principal', label: 'Remaining Principal', format: 'currency' },
+                { key: 'term_months', label: 'Term (months)', format: 'number' },
+                { key: 'monthly_payment', label: 'Monthly Payment', format: 'currency' },
+                { key: 'total_interest', label: 'Total Interest', format: 'currency' },
+                { key: 'total_initiation_fee', label: 'Total Initiation Fee', format: 'currency' },
+                { key: 'interest_calculation_months', label: 'Interest Period (months)', format: 'number' },
+                { key: 'max_interest_allowed', label: 'Max Interest Allowed', format: 'currency' },
+                { key: 'expected_monthly_interest', label: 'Expected Monthly Interest', format: 'currency' },
+                { key: 'schedule_length', label: 'Schedule Length', format: 'number' },
+                { key: 'next_due_date', label: 'Next Due Date', format: 'date' }
+            ];
+
+            const changes = [];
+            fields.forEach(f => {
+                const b = before ? before[f.key] : undefined;
+                const a = after ? after[f.key] : undefined;
+
+                let same = false;
+                if (f.format === 'currency') {
+                    same = Math.abs((Number(b) || 0) - (Number(a) || 0)) < 0.01;
+                } else {
+                    same = (b === a);
+                }
+
+                if (!same) {
+                    changes.push({ key: f.key, label: f.label, format: f.format, before: b, after: a });
+                }
+            });
+
+            return changes;
+        }
+
+        function humanizeAdjustmentType(adjustmentType) {
+            switch (adjustmentType) {
+                case 'change_repayment_period':
+                    return 'Change repayment period';
+                case 'add_amount':
+                    return 'Add amount to loan';
+                default:
+                    return adjustmentType ? String(adjustmentType).replace(/_/g, ' ') : 'Loan adjustment';
+            }
+        }
+
+        function formatAdjustmentValue(format, value, style) {
+            if (value === null || value === undefined || value === '') return 'N/A';
+            if (format === 'currency') return Calculations.formatCurrency(Number(value) || 0);
+            if (format === 'date') return String(value);
+            return String(value);
+        }
+
+        function formatAdjustmentChangeLine(change, style) {
+            const before = formatAdjustmentValue(change.format, change.before, style);
+            const after = formatAdjustmentValue(change.format, change.after, style);
+            const arrow = style === 'pdf' ? '->' : '→';
+            const prefix = style === 'pdf' ? '- ' : '• ';
+            return `${prefix}${change.label}: ${before} ${arrow} ${after}`;
+        }
+
+        function buildChangesFromLegacyAdjustmentDetails(details) {
+            const changes = [];
+            if (!details || typeof details !== 'object') return changes;
+
+            if (details.adjustmentType === 'change_repayment_period') {
+                if (details.oldTerm !== undefined && details.newTerm !== undefined) {
+                    changes.push({ label: 'Term (months)', format: 'number', before: details.oldTerm, after: details.newTerm });
+                }
+                if (details.oldMonthlyPayment !== undefined && details.newMonthlyPayment !== undefined) {
+                    changes.push({ label: 'Monthly Payment', format: 'currency', before: details.oldMonthlyPayment, after: details.newMonthlyPayment });
+                }
+                if (details.oldTotalInterest !== undefined && details.newTotalInterest !== undefined) {
+                    changes.push({ label: 'Total Interest', format: 'currency', before: details.oldTotalInterest, after: details.newTotalInterest });
+                } else if (details.newTotalInterest !== undefined) {
+                    changes.push({ label: 'Total Interest', format: 'currency', before: null, after: details.newTotalInterest });
+                }
+                if (details.oldTotalInitiationFee !== undefined && details.newTotalInitiationFee !== undefined) {
+                    changes.push({ label: 'Total Initiation Fee', format: 'currency', before: details.oldTotalInitiationFee, after: details.newTotalInitiationFee });
+                }
+            } else if (details.adjustmentType === 'add_amount') {
+                if (details.amount !== undefined) {
+                    changes.push({ label: 'Amount Added', format: 'currency', before: null, after: details.amount });
+                }
+                if (details.oldPrincipal !== undefined && details.newPrincipal !== undefined) {
+                    changes.push({ label: 'Principal', format: 'currency', before: details.oldPrincipal, after: details.newPrincipal });
+                }
+                if (details.oldRemainingPrincipal !== undefined && details.newRemainingPrincipal !== undefined) {
+                    changes.push({ label: 'Remaining Principal', format: 'currency', before: details.oldRemainingPrincipal, after: details.newRemainingPrincipal });
+                }
+                if (details.oldTotalInterest !== undefined && details.newTotalInterest !== undefined) {
+                    changes.push({ label: 'Total Interest', format: 'currency', before: details.oldTotalInterest, after: details.newTotalInterest });
+                }
+                if (details.additionalInitiationFee !== undefined) {
+                    changes.push({ label: 'Additional Initiation Fee', format: 'currency', before: null, after: details.additionalInitiationFee });
+                }
+                if (details.oldMonthlyPayment !== undefined && details.newMonthlyPayment !== undefined) {
+                    changes.push({ label: 'Monthly Payment', format: 'currency', before: details.oldMonthlyPayment, after: details.newMonthlyPayment });
+                }
+            }
+
+            return changes;
+        }
+
+        /**
+         * Persist a loan adjustment event in:
+         * - loan.adjustment_history (loan-local, best for statements)
+         * - AppState.transactionHistory (legacy/compat)
+         * - AppState.transactions (AppStateManager/backup)
+         */
+        function logLoanAdjustment(loan, { adjustmentType, reason, beforeSnapshot, afterSnapshot, meta = {} }) {
+            const timestamp = new Date().toISOString();
+            const id = Date.now();
+            const changes = diffLoanAdjustmentSnapshots(beforeSnapshot, afterSnapshot);
+
+            const event = {
+                id,
+                timestamp,
+                adjustmentType,
+                reason: reason || '',
+                before: beforeSnapshot,
+                after: afterSnapshot,
+                changes,
+                meta
+            };
+
+            // Loan-local history (preferred for statement rendering)
+            if (!Array.isArray(loan.adjustment_history)) loan.adjustment_history = [];
+            loan.adjustment_history.push(event);
+
+            // Legacy global history
+            if (!Array.isArray(AppState.transactionHistory)) AppState.transactionHistory = [];
+            AppState.transactionHistory.push({
+                id,
+                type: 'loan_adjustment',
+                timestamp,
+                details: {
+                    id,
+                    loanId: loan.loan_id,
+                    clientName: loan.client_name,
+                    adjustmentType,
+                    reason: reason || '',
+                    before: beforeSnapshot,
+                    after: afterSnapshot,
+                    changes,
+                    ...meta
+                }
+            });
+
+            // AppStateManager "transactions" (used by settings backup and some pages)
+            if (!Array.isArray(AppState.transactions)) AppState.transactions = [];
+            AppState.transactions.push({
+                id,
+                type: 'loan_adjustment',
+                date: timestamp,
+                description: `Loan #${loan.loan_id} adjusted (${humanizeAdjustmentType(adjustmentType)})`,
+                data: {
+                    loanId: loan.loan_id,
+                    clientName: loan.client_name,
+                    adjustmentType,
+                    reason: reason || '',
+                    before: beforeSnapshot,
+                    after: afterSnapshot,
+                    changes,
+                    ...meta
+                }
+            });
+
+            return event;
+        }
+
+        function getLoanAdjustmentEvents(loan) {
+            const loanId = loan.loan_id;
+            const events = [];
+
+            // 1) Preferred: loan-local adjustment history
+            (Array.isArray(loan.adjustment_history) ? loan.adjustment_history : []).forEach(e => {
+                if (!e) return;
+                events.push({
+                    id: e.id,
+                    timestamp: e.timestamp,
+                    adjustmentType: e.adjustmentType,
+                    reason: e.reason || '',
+                    changes: Array.isArray(e.changes) ? e.changes : [],
+                    meta: e.meta || {}
+                });
+            });
+
+            // 2) Legacy: AppState.transactionHistory (older shape)
+            (Array.isArray(AppState.transactionHistory) ? AppState.transactionHistory : []).forEach(tx => {
+                if (!tx || tx.type !== 'loan_adjustment') return;
+                const details = tx.details || {};
+                if (details.loanId !== loanId) return;
+
+                events.push({
+                    id: tx.id || details.id,
+                    timestamp: tx.timestamp,
+                    adjustmentType: details.adjustmentType,
+                    reason: details.reason || '',
+                    changes: Array.isArray(details.changes) ? details.changes : buildChangesFromLegacyAdjustmentDetails(details),
+                    meta: details
+                });
+            });
+
+            // 3) AppStateManager transactions
+            (Array.isArray(AppState.transactions) ? AppState.transactions : []).forEach(tx => {
+                if (!tx || tx.type !== 'loan_adjustment') return;
+                const data = tx.data || {};
+                if (data.loanId !== loanId) return;
+
+                events.push({
+                    id: tx.id,
+                    timestamp: tx.date,
+                    adjustmentType: data.adjustmentType,
+                    reason: data.reason || '',
+                    changes: Array.isArray(data.changes) ? data.changes : buildChangesFromLegacyAdjustmentDetails(data),
+                    meta: data
+                });
+            });
+
+            // Deduplicate (best-effort)
+            const seen = new Set();
+            const unique = [];
+            events.forEach(ev => {
+                const key = ev.id ? `id:${ev.id}` : `k:${ev.timestamp}|${ev.adjustmentType}|${ev.reason || ''}`;
+                if (seen.has(key)) return;
+                seen.add(key);
+                unique.push(ev);
+            });
+
+            unique.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+            return unique;
+        }
         
         /**
          * Download loan statement as PDF
@@ -1821,6 +2108,22 @@ Click "OK" to process payment or "Cancel" to go back.
                     });
                     
                     return y + (lines.length * fontSize * 0.5);
+                }
+
+                // Helper: wrap text while respecting explicit newlines
+                function writeWrappedLines(text, x, maxWidth, lineHeight) {
+                    if (text === null || text === undefined) return;
+                    const blocks = String(text).split(/\r?\n/);
+                    blocks.forEach((block, idx) => {
+                        const lines = doc.splitTextToSize(block, maxWidth);
+                        lines.forEach(line => {
+                            checkPageBreak(lineHeight + 2);
+                            doc.text(line, x, yPos);
+                            yPos += lineHeight;
+                        });
+                        // Small gap between newline-separated blocks
+                        if (idx < blocks.length - 1) yPos += 1;
+                    });
                 }
                 
                 // ============================================
@@ -2065,6 +2368,25 @@ Click "OK" to process payment or "Cancel" to go back.
                         });
                     });
                 }
+
+                // Loan adjustments (term changes / top-ups)
+                const adjustmentEvents = getLoanAdjustmentEvents(loan);
+                adjustmentEvents.forEach((ev) => {
+                    const lines = [];
+                    if (ev.reason) lines.push(`Reason: ${ev.reason}`);
+                    if (ev.meta?.scheduleRegenerated) lines.push('- Payment schedule regenerated');
+                    if (Array.isArray(ev.changes) && ev.changes.length > 0) {
+                        ev.changes.forEach(ch => lines.push(formatAdjustmentChangeLine(ch, 'pdf')));
+                    }
+
+                    activities.push({
+                        date: new Date(ev.timestamp || Date.now()),
+                        type: 'adjustment',
+                        description: `Loan adjusted (${humanizeAdjustmentType(ev.adjustmentType)})`,
+                        subDescription: lines.join('\n'),
+                        amount: Number(ev.meta?.amountAdded || ev.meta?.amount || 0)
+                    });
+                });
                 
                 if (loan.early_payoff && loan.payoff_date) {
                     activities.push({
@@ -2120,23 +2442,13 @@ Click "OK" to process payment or "Cancel" to go back.
                         
                         // Description
                         doc.setFont('helvetica', 'normal');
-                        const descLines = doc.splitTextToSize(activity.description, contentWidth - 15);
-                        descLines.forEach(line => {
-                            checkPageBreak(5);
-                            doc.text(line, margin + 10, yPos);
-                            yPos += 4;
-                        });
+                        writeWrappedLines(activity.description, margin + 10, contentWidth - 15, 4);
                         
                         // Sub-description
                         if (activity.subDescription) {
                             doc.setFontSize(8);
                             doc.setTextColor(100, 100, 100);
-                            const subLines = doc.splitTextToSize(activity.subDescription, contentWidth - 15);
-                            subLines.forEach(line => {
-                                checkPageBreak(5);
-                                doc.text(line, margin + 10, yPos);
-                                yPos += 4;
-                            });
+                            writeWrappedLines(activity.subDescription, margin + 10, contentWidth - 15, 3.5);
                             doc.setFontSize(9);
                             doc.setTextColor(0, 0, 0);
                         }
@@ -2384,6 +2696,27 @@ TOTAL REMAINING:        ${Calculations.formatCurrency(totalRemaining)}
                     });
                 });
             }
+
+            // 2b. Loan Adjustments (term changes / top-ups)
+            const adjustmentEvents = getLoanAdjustmentEvents(loan);
+            adjustmentEvents.forEach((ev) => {
+                let description = `Loan adjusted (${humanizeAdjustmentType(ev.adjustmentType)})`;
+                if (ev.reason) description += `\n   Reason: ${ev.reason}`;
+                if (ev.meta?.scheduleRegenerated) description += `\n   • Payment schedule regenerated`;
+                if (Array.isArray(ev.changes) && ev.changes.length > 0) {
+                    ev.changes.forEach(ch => {
+                        description += `\n   ${formatAdjustmentChangeLine(ch, 'text')}`;
+                    });
+                }
+
+                activities.push({
+                    date: new Date(ev.timestamp || Date.now()),
+                    type: 'adjustment',
+                    description: description,
+                    amount: Number(ev.meta?.amountAdded || ev.meta?.amount || 0),
+                    icon: '🔧'
+                });
+            });
             
             // 3. Interest Recalculation Events
             if (loan.interest_recalculated && loan.last_recalculation_date) {
@@ -2616,6 +2949,9 @@ TBFS - Transparent, Fair, Simple
             // Store old values for comparison
             const oldTerm = loan.term_months;
             const oldMonthlyPayment = loan.monthly_payment || 0;
+            const oldTotalInterest = loan.total_interest || 0;
+            const oldTotalInitiationFee = loan.total_initiation_fee || 0;
+            const beforeSnapshot = snapshotLoanAdjustmentState(loan);
             
             // STEP 1: UPDATE LOAN TERM
             loan.term_months = newTerm;
@@ -2672,22 +3008,24 @@ TBFS - Transparent, Fair, Simple
                 adminFee: adminFee
             });
             
-            // STEP 6: LOG TRANSACTION
-            if (!AppState.transactionHistory) AppState.transactionHistory = [];
-            AppState.transactionHistory.push({
-                type: 'loan_adjustment',
-                timestamp: new Date().toISOString(),
-                details: {
-                    loanId: loanId,
-                    clientName: loan.client_name,
-                    adjustmentType: 'change_repayment_period',
-                    oldTerm: oldTerm,
-                    newTerm: newTerm,
-                    oldMonthlyPayment: oldMonthlyPayment,
-                    newMonthlyPayment: newMonthlyPayment,
-                    remainingPrincipal: remainingPrincipal,
+            // STEP 6: LOG ADJUSTMENT (loan-local + global transactions)
+            const afterSnapshot = snapshotLoanAdjustmentState(loan);
+            logLoanAdjustment(loan, {
+                adjustmentType: 'change_repayment_period',
+                reason,
+                beforeSnapshot,
+                afterSnapshot,
+                meta: {
+                    oldTerm,
+                    newTerm,
+                    oldMonthlyPayment,
+                    newMonthlyPayment,
+                    remainingPrincipal,
+                    oldTotalInterest,
                     newTotalInterest: loan.total_interest,
-                    reason: reason
+                    oldTotalInitiationFee,
+                    newTotalInitiationFee: loan.total_initiation_fee,
+                    scheduleRegenerated: true
                 }
             });
             
@@ -2874,6 +3212,11 @@ TBFS - Transparent, Fair, Simple
                 alert('⏸️ Adjustment cancelled.');
                 return;
             }
+
+            // Snapshot before applying changes (for audit trail / statements)
+            const beforeSnapshot = snapshotLoanAdjustmentState(loan);
+            const oldMonthlyPayment = loan.monthly_payment || 0;
+            const oldTotalInitiationFee = loan.total_initiation_fee || 0;
             
             // STEP 4: UPDATE LOAN FIELDS
             loan.principal_amount = newPrincipal;
@@ -2904,27 +3247,28 @@ TBFS - Transparent, Fair, Simple
                 adminFee: adminFee
             });
             
-            // STEP 7: LOG TRANSACTION
-            if (!AppState.transactionHistory) AppState.transactionHistory = [];
-            AppState.transactionHistory.push({
-                type: 'loan_adjustment',
-                timestamp: new Date().toISOString(),
-                details: {
-                    loanId: loanId,
-                    clientName: loan.client_name,
-                    adjustmentType: 'add_amount',
-                    amount: amount,
+            // STEP 7: LOG ADJUSTMENT (loan-local + global transactions)
+            const afterSnapshot = snapshotLoanAdjustmentState(loan);
+            logLoanAdjustment(loan, {
+                adjustmentType: 'add_amount',
+                reason,
+                beforeSnapshot,
+                afterSnapshot,
+                meta: {
+                    amount,
                     oldPrincipal: currentPrincipal,
-                    newPrincipal: newPrincipal,
+                    newPrincipal,
                     oldRemainingPrincipal: remainingPrincipal,
-                    newRemainingPrincipal: newRemainingPrincipal,
-                    oldTotalInterest: oldTotalInterest,
+                    newRemainingPrincipal,
+                    oldTotalInterest,
                     newTotalInterest: recalculatedInterest,
-                    interestIncrease: interestIncrease,
-                    additionalInitiationFee: additionalInitiationFee,
-                    oldMonthlyPayment: loan.monthly_payment,
-                    newMonthlyPayment: newMonthlyPayment,
-                    reason: reason
+                    interestIncrease,
+                    oldTotalInitiationFee,
+                    newTotalInitiationFee,
+                    additionalInitiationFee,
+                    oldMonthlyPayment,
+                    newMonthlyPayment,
+                    scheduleRegenerated: true
                 }
             });
             
@@ -2942,7 +3286,7 @@ TBFS - Transparent, Fair, Simple
                 `Principal: ${Calculations.formatCurrency(currentPrincipal)} → ${Calculations.formatCurrency(newPrincipal)}\n` +
                 `Remaining: ${Calculations.formatCurrency(remainingPrincipal)} → ${Calculations.formatCurrency(newRemainingPrincipal)}\n` +
                 `Total Interest: ${Calculations.formatCurrency(oldTotalInterest)} → ${Calculations.formatCurrency(recalculatedInterest)}\n` +
-                `Monthly Payment: ${Calculations.formatCurrency(loan.monthly_payment)} → ${Calculations.formatCurrency(newMonthlyPayment)}\n` +
+                `Monthly Payment: ${Calculations.formatCurrency(oldMonthlyPayment)} → ${Calculations.formatCurrency(newMonthlyPayment)}\n` +
                 `Additional Initiation Fee: ${Calculations.formatCurrency(additionalInitiationFee)}\n\n` +
                 `Reason: ${reason}\n\n` +
                 `💡 Payment schedule has been regenerated.`
