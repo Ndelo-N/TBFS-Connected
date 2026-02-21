@@ -476,6 +476,9 @@
             const remainingInterest = options.remainingInterest || 0;
             const remainingInitiationFee = options.remainingInitiationFee || 0;
             const adminFee = options.adminFee || 60;
+            const customRemainingBreakdown = Array.isArray(options.customRemainingBreakdown) ? options.customRemainingBreakdown : null;
+            const hasCustomBreakdown = !!(customRemainingBreakdown && customRemainingBreakdown.length === remainingMonths);
+            const monthlyPaymentOverride = typeof options.monthlyPaymentOverride === 'number' ? options.monthlyPaymentOverride : null;
 
             const loanDate = loan.created_at ? new Date(loan.created_at) : new Date();
             const currentYear = loanDate.getFullYear();
@@ -484,7 +487,9 @@
             const principalPerMonth = remainingPrincipal / remainingMonths;
             const interestPerMonth = remainingInterest / remainingMonths;
             const initiationFeePerMonth = remainingInitiationFee / remainingMonths;
-            const monthlyPayment = principalPerMonth + interestPerMonth + adminFee + initiationFeePerMonth;
+            const monthlyPayment = monthlyPaymentOverride !== null
+                ? monthlyPaymentOverride
+                : (principalPerMonth + interestPerMonth + adminFee + initiationFeePerMonth);
 
             let remainingBalance = remainingPrincipal;
             const schedule = [];
@@ -514,16 +519,37 @@
                     continue;
                 }
 
-                const nextOutstanding = Math.max(0, remainingBalance - principalPerMonth);
+                let principalForMonth = principalPerMonth;
+                let interestForMonth = interestPerMonth;
+                let initiationForMonth = initiationFeePerMonth;
+                let adminForMonth = adminFee;
+                let monthlyForMonth = monthlyPayment;
+
+                if (hasCustomBreakdown) {
+                    const custom = customRemainingBreakdown[month - paymentsMade - 1] || {};
+                    principalForMonth = typeof custom.principal_payment === 'number' ? custom.principal_payment : principalPerMonth;
+                    interestForMonth = typeof custom.interest_payment === 'number' ? custom.interest_payment : interestPerMonth;
+                    initiationForMonth = typeof custom.initiation_fee === 'number' ? custom.initiation_fee : initiationFeePerMonth;
+                    adminForMonth = typeof custom.admin_fee === 'number' ? custom.admin_fee : adminFee;
+                    monthlyForMonth = typeof custom.monthly_payment === 'number' ? custom.monthly_payment : monthlyPayment;
+                }
+
+                let nextOutstanding = Math.max(0, remainingBalance - principalForMonth);
+                if (hasCustomBreakdown) {
+                    const custom = customRemainingBreakdown[month - paymentsMade - 1] || {};
+                    if (typeof custom.outstanding_balance === 'number') {
+                        nextOutstanding = custom.outstanding_balance;
+                    }
+                }
 
                 schedule.push({
                     payment_number: month,
                     due_date: dueDate,
-                    monthly_payment: monthlyPayment,
-                    principal_payment: principalPerMonth,
-                    interest_payment: interestPerMonth,
-                    admin_fee: adminFee,
-                    initiation_fee: initiationFeePerMonth,
+                    monthly_payment: monthlyForMonth,
+                    principal_payment: principalForMonth,
+                    interest_payment: interestForMonth,
+                    admin_fee: adminForMonth,
+                    initiation_fee: initiationForMonth,
                     outstanding_balance: nextOutstanding,
                     status: 'pending'
                 });
@@ -1978,6 +2004,122 @@ Click "OK" to process payment or "Cancel" to go back.
         }
 
         /**
+         * Recalculate stockvel repayment from outstanding balances using the same
+         * month-level logic as calculator.html (tiered interest + dynamic admin fee),
+         * then equalize monthly installments across the remaining term.
+         */
+        function calculateStockvelOutstandingRepaymentPlan({
+            remainingPrincipal,
+            remainingMonths,
+            remainingInitiationFee,
+            startingContributions,
+            monthlyContribution
+        }) {
+            const months = Math.max(1, Number(remainingMonths || 0));
+            const principal = Number(remainingPrincipal || 0);
+            const initiationBalance = Number(remainingInitiationFee || 0);
+            const contributionBase = Number(startingContributions || 0);
+            const contributionPerMonth = Number(monthlyContribution || 0);
+
+            if (principal <= 0) {
+                return {
+                    breakdown: [],
+                    totalInterestRaw: 0,
+                    totalAdminRaw: 0,
+                    equalMonthlyPaymentRaw: 0,
+                    averageAdminFeeRaw: 0,
+                    averageInterestRaw: 0,
+                    minAdminRaw: 0,
+                    maxAdminRaw: 0,
+                    minInterestRaw: 0,
+                    maxInterestRaw: 0
+                };
+            }
+
+            const principalPerMonth = principal / months;
+            const initiationFeePerMonth = initiationBalance / months;
+
+            let outstandingBalance = principal;
+            let currentSavings = contributionBase;
+            const monthlyDetails = [];
+
+            for (let month = 1; month <= months; month++) {
+                if (month > 1) {
+                    currentSavings += contributionPerMonth;
+                }
+
+                const tieredResult = Calculations.calculateTieredStockvelInterest(outstandingBalance, currentSavings);
+
+                let interestPayment = 0;
+                if (tieredResult && tieredResult.tiers1to4Interest !== undefined) {
+                    const tieredInterest = tieredResult.tiers1to4Interest * (principal / Math.max(outstandingBalance, 0.01));
+                    const minimumInterest = principalPerMonth * 0.10;
+                    interestPayment = Math.max(tieredInterest, minimumInterest);
+                } else {
+                    interestPayment = principalPerMonth * 0.10;
+                }
+
+                let adminPayment = 60;
+                if (tieredResult && tieredResult.tier1to4Amount > 0) {
+                    const effectiveRate = tieredResult.tiers1to4Interest / tieredResult.tier1to4Amount;
+                    adminPayment = 60 * (1 - effectiveRate);
+                }
+                adminPayment = Math.max(0, adminPayment);
+
+                monthlyDetails.push({
+                    principal_payment: principalPerMonth,
+                    interest_payment: interestPayment,
+                    initiation_fee: initiationFeePerMonth,
+                    admin_fee: adminPayment
+                });
+
+                outstandingBalance = Math.max(0, outstandingBalance - principalPerMonth);
+            }
+
+            const totalCostRaw = monthlyDetails.reduce((sum, item) =>
+                sum +
+                (item.principal_payment || 0) +
+                (item.interest_payment || 0) +
+                (item.initiation_fee || 0) +
+                (item.admin_fee || 0)
+            , 0);
+            const equalMonthlyPaymentRaw = totalCostRaw / months;
+
+            let balanceTracker = principal;
+            const breakdown = monthlyDetails.map((item) => {
+                const nextOutstanding = Math.max(0, balanceTracker - (item.principal_payment || 0));
+                const row = {
+                    monthly_payment: equalMonthlyPaymentRaw,
+                    principal_payment: item.principal_payment || 0,
+                    interest_payment: item.interest_payment || 0,
+                    initiation_fee: item.initiation_fee || 0,
+                    admin_fee: item.admin_fee || 0,
+                    outstanding_balance: nextOutstanding
+                };
+                balanceTracker = nextOutstanding;
+                return row;
+            });
+
+            const interestSeries = monthlyDetails.map(item => item.interest_payment || 0);
+            const adminSeries = monthlyDetails.map(item => item.admin_fee || 0);
+            const totalInterestRaw = interestSeries.reduce((sum, val) => sum + val, 0);
+            const totalAdminRaw = adminSeries.reduce((sum, val) => sum + val, 0);
+
+            return {
+                breakdown,
+                totalInterestRaw,
+                totalAdminRaw,
+                equalMonthlyPaymentRaw,
+                averageAdminFeeRaw: totalAdminRaw / months,
+                averageInterestRaw: totalInterestRaw / months,
+                minAdminRaw: Math.min(...adminSeries),
+                maxAdminRaw: Math.max(...adminSeries),
+                minInterestRaw: Math.min(...interestSeries),
+                maxInterestRaw: Math.max(...interestSeries)
+            };
+        }
+
+        /**
          * Persist a loan adjustment event in:
          * - loan.adjustment_history (loan-local, best for statements)
          * - AppState.transactionHistory (legacy/compat)
@@ -3028,18 +3170,21 @@ TBFS - Transparent, Fair, Simple
 
             let adminFee = 60;
             let recalculatedRemainingInterest = 0;
+            let stockvelPlan = null;
             const remainingInitiationFee = Math.max(0, totalInitiationFee - initiationFeePaid);
 
             if (isStockvel && totalContributions) {
                 // Use contributions at this point in the loan lifecycle
                 const contributionsAtAdjustment = totalContributions + ((loan.monthly_contribution || 0) * paymentsMade);
-                recalculatedRemainingInterest = calculateStockvelTotalInterest(
+                stockvelPlan = calculateStockvelOutstandingRepaymentPlan({
                     remainingPrincipal,
-                    remainingMonthsNew,
-                    contributionsAtAdjustment,
-                    loan.monthly_contribution || 0
-                );
-                adminFee = getStockvelAdminFee(contributionsAtAdjustment);
+                    remainingMonths: remainingMonthsNew,
+                    remainingInitiationFee,
+                    startingContributions: contributionsAtAdjustment,
+                    monthlyContribution: loan.monthly_contribution || 0
+                });
+                recalculatedRemainingInterest = stockvelPlan.totalInterestRaw;
+                adminFee = stockvelPlan.averageAdminFeeRaw;
             } else {
                 recalculatedRemainingInterest = calculateStandardOutstandingInterest(
                     remainingPrincipal,
@@ -3051,7 +3196,9 @@ TBFS - Transparent, Fair, Simple
 
             const remainingInterest = Math.max(0, recalculatedRemainingInterest);
             const totalInterest = interestAlreadyPaid + remainingInterest;
-            const remainingInterestPeriod = Calculations.calculateInterestPeriod(remainingMonthsNew).interestMonths;
+            const remainingInterestPeriod = stockvelPlan
+                ? remainingMonthsNew
+                : Calculations.calculateInterestPeriod(remainingMonthsNew).interestMonths;
             const repaymentBreakdown = buildOutstandingRepaymentBreakdown({
                 remainingPrincipal,
                 remainingInterest,
@@ -3059,7 +3206,27 @@ TBFS - Transparent, Fair, Simple
                 remainingMonths: remainingMonthsNew,
                 adminFee
             });
+            if (stockvelPlan) {
+                repaymentBreakdown.interestPerMonthRaw = stockvelPlan.averageInterestRaw;
+                repaymentBreakdown.interestPerMonth = Calculations.round(stockvelPlan.averageInterestRaw);
+                repaymentBreakdown.adminFeePerMonthRaw = stockvelPlan.averageAdminFeeRaw;
+                repaymentBreakdown.adminFeePerMonth = Calculations.round(stockvelPlan.averageAdminFeeRaw);
+                repaymentBreakdown.monthlyPaymentRaw = stockvelPlan.equalMonthlyPaymentRaw;
+                repaymentBreakdown.monthlyPayment = Calculations.round(stockvelPlan.equalMonthlyPaymentRaw);
+                repaymentBreakdown.totalRepaymentRaw = stockvelPlan.equalMonthlyPaymentRaw * remainingMonthsNew;
+                repaymentBreakdown.totalRepayment = Calculations.round(repaymentBreakdown.totalRepaymentRaw);
+                repaymentBreakdown.interestRangeMin = Calculations.round(stockvelPlan.minInterestRaw);
+                repaymentBreakdown.interestRangeMax = Calculations.round(stockvelPlan.maxInterestRaw);
+                repaymentBreakdown.adminRangeMin = Calculations.round(stockvelPlan.minAdminRaw);
+                repaymentBreakdown.adminRangeMax = Calculations.round(stockvelPlan.maxAdminRaw);
+            }
             const newMonthlyPayment = repaymentBreakdown.monthlyPaymentRaw;
+            const interestDisplayLine = stockvelPlan
+                ? `• Interest (avg): ${Calculations.formatCurrency(repaymentBreakdown.interestPerMonth)} [range ${Calculations.formatCurrency(repaymentBreakdown.interestRangeMin)} - ${Calculations.formatCurrency(repaymentBreakdown.interestRangeMax)}]`
+                : `• Interest: ${Calculations.formatCurrency(repaymentBreakdown.interestPerMonth)}`;
+            const adminDisplayLine = stockvelPlan
+                ? `• Admin Fee (avg): ${Calculations.formatCurrency(repaymentBreakdown.adminFeePerMonth)} [range ${Calculations.formatCurrency(repaymentBreakdown.adminRangeMin)} - ${Calculations.formatCurrency(repaymentBreakdown.adminRangeMax)}]`
+                : `• Admin Fee: ${Calculations.formatCurrency(repaymentBreakdown.adminFeePerMonth)}`;
 
             // Give a calculator-style preview before saving
             const preview = window.confirm(
@@ -3068,9 +3235,9 @@ TBFS - Transparent, Fair, Simple
                 `Remaining Term: ${remainingMonthsNew} months\n\n` +
                 `Per-Month Breakdown:\n` +
                 `• Principal: ${Calculations.formatCurrency(repaymentBreakdown.principalPerMonth)}\n` +
-                `• Interest: ${Calculations.formatCurrency(repaymentBreakdown.interestPerMonth)}\n` +
+                `${interestDisplayLine}\n` +
                 `• Initiation Fee: ${Calculations.formatCurrency(repaymentBreakdown.initiationFeePerMonth)}\n` +
-                `• Admin Fee: ${Calculations.formatCurrency(repaymentBreakdown.adminFeePerMonth)}\n` +
+                `${adminDisplayLine}\n` +
                 `────────────────────────\n` +
                 `New Monthly Repayment: ${Calculations.formatCurrency(repaymentBreakdown.monthlyPayment)}\n\n` +
                 `Proceed with this repayment plan?`
@@ -3097,7 +3264,9 @@ TBFS - Transparent, Fair, Simple
                 remainingInterest: remainingInterest,
                 remainingInitiationFee: remainingInitiationFee,
                 paymentsMade: paymentsMade,
-                adminFee: adminFee
+                adminFee: adminFee,
+                customRemainingBreakdown: stockvelPlan ? stockvelPlan.breakdown : null,
+                monthlyPaymentOverride: newMonthlyPayment
             });
             
             // STEP 6: LOG ADJUSTMENT (loan-local + global transactions)
@@ -3118,6 +3287,11 @@ TBFS - Transparent, Fair, Simple
                     interestPerMonth: repaymentBreakdown.interestPerMonth,
                     initiationFeePerMonth: repaymentBreakdown.initiationFeePerMonth,
                     adminFeePerMonth: repaymentBreakdown.adminFeePerMonth,
+                    stockvelMonthLevelPricing: !!stockvelPlan,
+                    interestRangeMin: stockvelPlan ? repaymentBreakdown.interestRangeMin : null,
+                    interestRangeMax: stockvelPlan ? repaymentBreakdown.interestRangeMax : null,
+                    adminRangeMin: stockvelPlan ? repaymentBreakdown.adminRangeMin : null,
+                    adminRangeMax: stockvelPlan ? repaymentBreakdown.adminRangeMax : null,
                     oldTotalInterest,
                     newTotalInterest: loan.total_interest,
                     oldTotalInitiationFee,
@@ -3142,9 +3316,9 @@ TBFS - Transparent, Fair, Simple
                 `New Total Interest: ${Calculations.formatCurrency(loan.total_interest)}\n\n` +
                 `📋 New Monthly Breakdown (Calculator Format):\n` +
                 `• Principal: ${Calculations.formatCurrency(repaymentBreakdown.principalPerMonth)}\n` +
-                `• Interest: ${Calculations.formatCurrency(repaymentBreakdown.interestPerMonth)}\n` +
+                `${interestDisplayLine}\n` +
                 `• Initiation Fee: ${Calculations.formatCurrency(repaymentBreakdown.initiationFeePerMonth)}\n` +
-                `• Admin Fee: ${Calculations.formatCurrency(repaymentBreakdown.adminFeePerMonth)}\n` +
+                `${adminDisplayLine}\n` +
                 `────────────────────────\n` +
                 `Total Monthly Repayment: ${Calculations.formatCurrency(repaymentBreakdown.monthlyPayment)}\n\n` +
                 `Reason: ${reason}\n\n` +
