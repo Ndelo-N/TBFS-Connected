@@ -1917,6 +1917,67 @@ Click "OK" to process payment or "Cancel" to go back.
         }
 
         /**
+         * Recalculate standard-loan remaining interest from OUTSTANDING balances.
+         * This mirrors the calculator style:
+         * - 30% income table on declining balance
+         * - minus admin + initiation components
+         * - interest calculated for interest period, then equalized across remaining months
+         */
+        function calculateStandardOutstandingInterest(remainingPrincipal, remainingMonths, remainingInitiationFee, adminFee = 60) {
+            if (remainingMonths <= 0 || remainingPrincipal <= 0) return 0;
+
+            const principalPerMonth = remainingPrincipal / remainingMonths;
+            const initiationFeePerMonth = (remainingInitiationFee || 0) / remainingMonths;
+            const interestMonths = Calculations.calculateInterestPeriod(remainingMonths).interestMonths;
+
+            let balance = remainingPrincipal;
+            let totalInterestForPeriod = 0;
+
+            for (let month = 1; month <= interestMonths; month++) {
+                const tbfsIncome = balance * 0.30;
+                const monthInterest = Math.max(0, tbfsIncome - adminFee - initiationFeePerMonth);
+                totalInterestForPeriod += monthInterest;
+                balance = Math.max(0, balance - principalPerMonth);
+            }
+
+            return totalInterestForPeriod;
+        }
+
+        /**
+         * Build calculator-style monthly repayment components from outstanding balances.
+         */
+        function buildOutstandingRepaymentBreakdown({ remainingPrincipal, remainingInterest, remainingInitiationFee, remainingMonths, adminFee }) {
+            const safeMonths = Math.max(1, Number(remainingMonths || 0));
+            const safePrincipal = Number(remainingPrincipal || 0);
+            const safeInterest = Number(remainingInterest || 0);
+            const safeInitiation = Number(remainingInitiationFee || 0);
+            const safeAdmin = Number(adminFee || 0);
+
+            const principalPerMonthRaw = safePrincipal / safeMonths;
+            const interestPerMonthRaw = safeInterest / safeMonths;
+            const initiationFeePerMonthRaw = safeInitiation / safeMonths;
+            const monthlyPaymentRaw = principalPerMonthRaw + interestPerMonthRaw + initiationFeePerMonthRaw + safeAdmin;
+            const totalRepaymentRaw = monthlyPaymentRaw * safeMonths;
+
+            return {
+                principalPerMonthRaw,
+                interestPerMonthRaw,
+                initiationFeePerMonthRaw,
+                adminFeePerMonthRaw: safeAdmin,
+                monthlyPaymentRaw,
+                totalRepaymentRaw,
+
+                // Rounded values for UI / statement readability
+                principalPerMonth: Calculations.round(principalPerMonthRaw),
+                interestPerMonth: Calculations.round(interestPerMonthRaw),
+                initiationFeePerMonth: Calculations.round(initiationFeePerMonthRaw),
+                adminFeePerMonth: Calculations.round(safeAdmin),
+                monthlyPayment: Calculations.round(monthlyPaymentRaw),
+                totalRepayment: Calculations.round(totalRepaymentRaw)
+            };
+        }
+
+        /**
          * Persist a loan adjustment event in:
          * - loan.adjustment_history (loan-local, best for statements)
          * - AppState.transactionHistory (legacy/compat)
@@ -2956,7 +3017,8 @@ TBFS - Transparent, Fair, Simple
             // STEP 1: UPDATE LOAN TERM
             loan.term_months = newTerm;
             
-            // STEP 2: RECALCULATE INTEREST BASED ON ORIGINAL PRINCIPAL + HALF-TERM RULE
+            // STEP 2: RECALCULATE REPAYMENT FROM OUTSTANDING BALANCES (calculator style)
+            // IMPORTANT: term changes should be based on what is still owed, not full original loan.
             const isStockvel = loan.loan_type === 'stockvel' || loan.isStockvelLoan;
             const originalPrincipal = loan.original_principal || loan.principal_amount || remainingPrincipal;
             const totalContributions = loan.total_contributions || 0;
@@ -2964,36 +3026,66 @@ TBFS - Transparent, Fair, Simple
             const initiationFeePaid = loan.initiation_fee_paid || 0;
             const interestAlreadyPaid = loan.interest_paid || 0;
 
-            let fullInterest = 0;
             let adminFee = 60;
-
-            if (isStockvel && totalContributions) {
-                fullInterest = calculateStockvelTotalInterest(
-                    originalPrincipal,
-                    newTerm,
-                    totalContributions,
-                    loan.monthly_contribution || 0
-                );
-                adminFee = getStockvelAdminFee(totalContributions);
-            } else {
-                fullInterest = calculateStandardTotalInterest(originalPrincipal, newTerm);
-            }
-
-            const totalInterest = Math.max(fullInterest, interestAlreadyPaid);
-            const remainingInterest = Math.max(0, totalInterest - interestAlreadyPaid);
+            let recalculatedRemainingInterest = 0;
             const remainingInitiationFee = Math.max(0, totalInitiationFee - initiationFeePaid);
 
-            const principalPerMonth = remainingPrincipal / remainingMonthsNew;
-            const interestPerMonth = remainingInterest / remainingMonthsNew;
-            const initiationFeePerMonth = remainingInitiationFee / remainingMonthsNew;
-            const newMonthlyPayment = principalPerMonth + interestPerMonth + adminFee + initiationFeePerMonth;
+            if (isStockvel && totalContributions) {
+                // Use contributions at this point in the loan lifecycle
+                const contributionsAtAdjustment = totalContributions + ((loan.monthly_contribution || 0) * paymentsMade);
+                recalculatedRemainingInterest = calculateStockvelTotalInterest(
+                    remainingPrincipal,
+                    remainingMonthsNew,
+                    contributionsAtAdjustment,
+                    loan.monthly_contribution || 0
+                );
+                adminFee = getStockvelAdminFee(contributionsAtAdjustment);
+            } else {
+                recalculatedRemainingInterest = calculateStandardOutstandingInterest(
+                    remainingPrincipal,
+                    remainingMonthsNew,
+                    remainingInitiationFee,
+                    adminFee
+                );
+            }
+
+            const remainingInterest = Math.max(0, recalculatedRemainingInterest);
+            const totalInterest = interestAlreadyPaid + remainingInterest;
+            const remainingInterestPeriod = Calculations.calculateInterestPeriod(remainingMonthsNew).interestMonths;
+            const repaymentBreakdown = buildOutstandingRepaymentBreakdown({
+                remainingPrincipal,
+                remainingInterest,
+                remainingInitiationFee,
+                remainingMonths: remainingMonthsNew,
+                adminFee
+            });
+            const newMonthlyPayment = repaymentBreakdown.monthlyPaymentRaw;
+
+            // Give a calculator-style preview before saving
+            const preview = window.confirm(
+                `📊 Recalculated Repayment Preview (Outstanding Balances)\n\n` +
+                `Loan #${loanId} - ${loan.client_name}\n` +
+                `Remaining Term: ${remainingMonthsNew} months\n\n` +
+                `Per-Month Breakdown:\n` +
+                `• Principal: ${Calculations.formatCurrency(repaymentBreakdown.principalPerMonth)}\n` +
+                `• Interest: ${Calculations.formatCurrency(repaymentBreakdown.interestPerMonth)}\n` +
+                `• Initiation Fee: ${Calculations.formatCurrency(repaymentBreakdown.initiationFeePerMonth)}\n` +
+                `• Admin Fee: ${Calculations.formatCurrency(repaymentBreakdown.adminFeePerMonth)}\n` +
+                `────────────────────────\n` +
+                `New Monthly Repayment: ${Calculations.formatCurrency(repaymentBreakdown.monthlyPayment)}\n\n` +
+                `Proceed with this repayment plan?`
+            );
+            if (!preview) {
+                alert('⏸️ Adjustment cancelled.');
+                return;
+            }
 
             // STEP 3: UPDATE INTEREST TRACKING
             loan.total_interest = totalInterest;
             loan.total_initiation_fee = totalInitiationFee;
-            loan.interest_calculation_months = Calculations.calculateInterestPeriod(newTerm).interestMonths;
-            loan.max_interest_allowed = Math.min(loan.total_interest, originalPrincipal);
-            loan.expected_monthly_interest = remainingInterest / remainingMonthsNew;
+            loan.interest_calculation_months = paymentsMade + remainingInterestPeriod;
+            loan.max_interest_allowed = Math.min(loan.total_interest, loan.original_principal || loan.principal_amount || remainingPrincipal);
+            loan.expected_monthly_interest = repaymentBreakdown.interestPerMonthRaw;
             
             // STEP 4: UPDATE MONTHLY PAYMENT
             loan.monthly_payment = newMonthlyPayment;
@@ -3021,6 +3113,11 @@ TBFS - Transparent, Fair, Simple
                     oldMonthlyPayment,
                     newMonthlyPayment,
                     remainingPrincipal,
+                    remainingMonths: remainingMonthsNew,
+                    principalPerMonth: repaymentBreakdown.principalPerMonth,
+                    interestPerMonth: repaymentBreakdown.interestPerMonth,
+                    initiationFeePerMonth: repaymentBreakdown.initiationFeePerMonth,
+                    adminFeePerMonth: repaymentBreakdown.adminFeePerMonth,
                     oldTotalInterest,
                     newTotalInterest: loan.total_interest,
                     oldTotalInitiationFee,
@@ -3043,6 +3140,13 @@ TBFS - Transparent, Fair, Simple
                 `Monthly Payment: ${Calculations.formatCurrency(oldMonthlyPayment)} → ${Calculations.formatCurrency(newMonthlyPayment)}\n` +
                 `Remaining Months: ${remainingMonthsNew} months\n` +
                 `New Total Interest: ${Calculations.formatCurrency(loan.total_interest)}\n\n` +
+                `📋 New Monthly Breakdown (Calculator Format):\n` +
+                `• Principal: ${Calculations.formatCurrency(repaymentBreakdown.principalPerMonth)}\n` +
+                `• Interest: ${Calculations.formatCurrency(repaymentBreakdown.interestPerMonth)}\n` +
+                `• Initiation Fee: ${Calculations.formatCurrency(repaymentBreakdown.initiationFeePerMonth)}\n` +
+                `• Admin Fee: ${Calculations.formatCurrency(repaymentBreakdown.adminFeePerMonth)}\n` +
+                `────────────────────────\n` +
+                `Total Monthly Repayment: ${Calculations.formatCurrency(repaymentBreakdown.monthlyPayment)}\n\n` +
                 `Reason: ${reason}\n\n` +
                 `💡 Payment schedule has been regenerated.`
             );
