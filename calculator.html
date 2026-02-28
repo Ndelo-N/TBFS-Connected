@@ -659,6 +659,7 @@
                 const membershipStartDate = isStockvelMember ? document.getElementById('membershipStartDate').value : '';
                 const membershipEndDate = isStockvelMember ? document.getElementById('membershipEndDate').value : '';
                 const accumulatedBonus = isStockvelMember ? parseFloat(document.getElementById('accumulatedBonus').value) || 0 : 0;
+                let effectiveIsStockvelMember = isStockvelMember;
                 
                 // Validation
                 if (!firstName || !lastName || !accountNumber || isNaN(startMonthIndex) || !loanDate) {
@@ -696,7 +697,8 @@
                         if (!proceed) {
                             return;
                         }
-                        // Continue - will be converted to standard loan later
+                        // Continue as STANDARD for calculation and final loan creation
+                        effectiveIsStockvelMember = false;
                     } else if (term > monthsUntilExpiry) {
                         alert(`⛔ Loan term too long!\n\nYour membership expires in ${monthsUntilExpiry} month(s).\nMaximum loan term: ${monthsUntilExpiry} month(s)\n\nPlease reduce the loan term or renew your membership first.`);
                         return;
@@ -715,7 +717,7 @@
                 
                 // Calculate loan
                 let result;
-                if (isStockvelMember) {
+                if (effectiveIsStockvelMember) {
                     // Use stockvel calculation with tiered rates
                     const schedule = generateStockvelSchedule(
                         principal,
@@ -779,12 +781,12 @@
                     term,
                     loanDate,
                     startMonthIndex,
-                    isStockvelMember,
-                    totalContributions,
-                    monthlyContribution,
-                    membershipStartDate,
-                    membershipEndDate,
-                    accumulatedBonus,
+                    isStockvelMember: effectiveIsStockvelMember,
+                    totalContributions: effectiveIsStockvelMember ? totalContributions : 0,
+                    monthlyContribution: effectiveIsStockvelMember ? monthlyContribution : 0,
+                    membershipStartDate: effectiveIsStockvelMember ? membershipStartDate : '',
+                    membershipEndDate: effectiveIsStockvelMember ? membershipEndDate : '',
+                    accumulatedBonus: effectiveIsStockvelMember ? accumulatedBonus : 0,
                     schedule: result.schedule,
                     totalInterest: result.totalInterest,
                     totalFees: result.totalFees,
@@ -1470,6 +1472,38 @@
                         // Convert to standard loan
                         loanData.isStockvelMember = false;
                         memberNumber = null; // Clear member number
+
+                        // Recalculate loan using standard method to keep schedule/amounts consistent.
+                        const standardResult = Calculations.calculateStandardLoan(loanData.principal, loanData.term);
+                        if (standardResult && standardResult.breakdown) {
+                            const loanDateObj = loanData.loanDate ? new Date(`${loanData.loanDate}T12:00:00`) : new Date();
+                            const startYear = !isNaN(loanDateObj.getTime())
+                                ? loanDateObj.getFullYear()
+                                : new Date().getFullYear();
+
+                            loanData.schedule = standardResult.breakdown.map((item) => {
+                                const dueDate = Calculations.calculateDueDate(startYear, loanData.startMonthIndex, item.month);
+                                return {
+                                    payment_number: item.month,
+                                    due_date: dueDate,
+                                    monthly_payment: item.totalPayment || standardResult.monthlyPayment,
+                                    principal_payment: item.principal,
+                                    interest_payment: item.interest,
+                                    admin_fee: item.adminFee,
+                                    initiation_fee: item.initiationFee,
+                                    outstanding_balance: item.outstandingBalance,
+                                    status: 'pending'
+                                };
+                            });
+
+                            loanData.totalInterest = standardResult.totalInterest;
+                            loanData.totalFees = standardResult.totalAdminFees + standardResult.totalInitiationFee;
+                            loanData.initiationFee = standardResult.totalInitiationFee;
+                            loanData.monthlyPayment = standardResult.monthlyPayment;
+                            loanData.totalContributions = 0;
+                            loanData.monthlyContribution = 0;
+                            loanData.accumulatedBonus = 0;
+                        }
                     }
                 }
                 

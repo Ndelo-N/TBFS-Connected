@@ -465,6 +465,50 @@
             return 60;
         }
 
+        function hasValidStartMonthIndex(loan) {
+            return loan && loan.start_month_index !== undefined && loan.start_month_index !== null &&
+                !isNaN(Number(loan.start_month_index));
+        }
+
+        /**
+         * Resolve the next due date for a loan.
+         * Prefers the next pending schedule entry (if present), otherwise calculates from loan date.
+         */
+        function getNextLoanDueDate(loan) {
+            if (!loan) return null;
+
+            const schedule = Array.isArray(loan.schedule) ? loan.schedule : [];
+            const nextPending = schedule.find(p => p && p.status === 'pending' && p.due_date);
+            if (nextPending) {
+                const dueFromSchedule = new Date(nextPending.due_date);
+                if (!isNaN(dueFromSchedule.getTime())) return dueFromSchedule;
+            }
+
+            if (!loan.created_at || !hasValidStartMonthIndex(loan)) return null;
+            const loanDate = new Date(loan.created_at);
+            if (isNaN(loanDate.getTime())) return null;
+
+            const paymentsMade = Number(loan.payments_made || 0);
+            const startMonthIndex = Number(loan.start_month_index || 0);
+            const targetMonthOffset = startMonthIndex + paymentsMade;
+            const targetYear = loanDate.getFullYear() + Math.floor(targetMonthOffset / 12);
+            const targetMonth = targetMonthOffset % 12;
+            return new Date(targetYear, targetMonth + 1, 0);
+        }
+
+        function isPastDueDate(dueDate) {
+            if (!dueDate) return false;
+            const due = new Date(dueDate);
+            if (isNaN(due.getTime())) return false;
+
+            // Compare date-only to avoid marking due-today as overdue.
+            const todayStart = new Date();
+            todayStart.setHours(0, 0, 0, 0);
+            const dueStart = new Date(due);
+            dueStart.setHours(0, 0, 0, 0);
+            return dueStart < todayStart;
+        }
+
         /**
          * Build a schedule that respects previously paid months and recalculated totals.
          */
@@ -585,10 +629,10 @@
                     // Validate existing schedule has correct structure
                     const needsRegeneration = loan.schedule.some(p => 
                         !p.payment_number || 
-                        !p.principal_payment || 
-                        !p.interest_payment === undefined ||
-                        !p.admin_fee === undefined ||
-                        !p.initiation_fee === undefined
+                        p.principal_payment === undefined || 
+                        p.interest_payment === undefined ||
+                        p.admin_fee === undefined ||
+                        p.initiation_fee === undefined
                     );
                     
                     if (needsRegeneration) {
@@ -644,28 +688,19 @@
             // STEP 2: CALCULATE TOTAL OUTSTANDING PRINCIPAL
             // Sum of all remaining principal on active loans
             // This represents the total amount currently loaned out
-            const totalOutstanding = activeLoans.reduce((sum, l) => sum + (l.remaining_principal || 0), 0);
+            const totalOutstanding = activeLoans.reduce((sum, l) => {
+                const remaining = (l.remaining_principal !== undefined && l.remaining_principal !== null)
+                    ? l.remaining_principal
+                    : (l.principal_amount || l.principal || 0);
+                return sum + (Number(remaining) || 0);
+            }, 0);
             
             // STEP 3: CALCULATE OVERDUE LOANS
             // A loan is overdue if its due date has passed
             // Due date is calculated based on loan start date, start month index, and payments made
-            const today = new Date();
             const overdueLoans = activeLoans.filter(l => {
-                // Skip loans without required date information
-                if (!l.created_at || !l.start_month_index) return false;
-                
-                // Calculate due date for next payment
-                const loanDate = new Date(l.created_at);
-                const paymentsMade = l.payments_made || 0;
-                const targetMonthOffset = l.start_month_index + paymentsMade;
-                const targetYear = loanDate.getFullYear() + Math.floor(targetMonthOffset / 12);
-                const targetMonth = targetMonthOffset % 12;
-                
-                // Due date is the last day of the target month
-                const dueDate = new Date(targetYear, targetMonth + 1, 0);
-                
-                // Loan is overdue if due date is in the past
-                return dueDate < today;
+                const dueDate = getNextLoanDueDate(l);
+                return isPastDueDate(dueDate);
             });
             
             // STEP 4: CALCULATE THIS MONTH'S REVENUE
@@ -673,21 +708,28 @@
             // This gives a snapshot of current month's income
             const thisMonth = new Date().getMonth();
             const thisYear = new Date().getFullYear();
-            const transactions = AppState.transactions || [];
-            const monthRevenue = transactions
+            const paymentEvents = [
+                ...(Array.isArray(AppState.transactionHistory) ? AppState.transactionHistory : []),
+                ...(Array.isArray(AppState.transactions) ? AppState.transactions : [])
+            ].filter(t => t && t.type === 'payment');
+
+            const monthRevenue = paymentEvents
                 .filter(t => {
                     // Filter transactions from this month
-                    const tDate = new Date(t.date);
-                    return tDate.getMonth() === thisMonth && 
-                           tDate.getFullYear() === thisYear &&
-                           t.type === 'payment';
+                    const rawDate = t.paymentDate || t.timestamp || t.date;
+                    if (!rawDate) return false;
+                    const tDate = new Date(rawDate);
+                    if (isNaN(tDate.getTime())) return false;
+                    return tDate.getMonth() === thisMonth &&
+                           tDate.getFullYear() === thisYear;
                 })
-                .reduce((sum, t) => 
-                    sum + (t.data?.interestPaid || 0) + 
-                    (t.data?.adminFeePaid || 0) + 
-                    (t.data?.initiationFeePaid || 0), 
-                    0
-                );
+                .reduce((sum, t) => {
+                    const details = t.details || t.data || {};
+                    return sum +
+                        (details.interestPaid || 0) +
+                        (details.adminFeePaid || 0) +
+                        (details.initiationFeePaid || 0);
+                }, 0);
             
             // STEP 5: UPDATE DISPLAY
             // Update the statistics dashboard with calculated values
@@ -709,17 +751,10 @@
             // Apply status filter
             if (statusFilter !== 'all') {
                 if (statusFilter === 'overdue') {
-                    const today = new Date();
                     filteredLoans = filteredLoans.filter(l => {
                         if (l.status !== 'active') return false;
-                        if (!l.created_at || !l.start_month_index) return false;
-                        const loanDate = new Date(l.created_at);
-                        const paymentsMade = l.payments_made || 0;
-                        const targetMonthOffset = l.start_month_index + paymentsMade;
-                        const targetYear = loanDate.getFullYear() + Math.floor(targetMonthOffset / 12);
-                        const targetMonth = targetMonthOffset % 12;
-                        const dueDate = new Date(targetYear, targetMonth + 1, 0);
-                        return dueDate < today;
+                        const dueDate = getNextLoanDueDate(l);
+                        return isPastDueDate(dueDate);
                     });
                 } else {
                     filteredLoans = filteredLoans.filter(l => l.status === statusFilter);
@@ -732,21 +767,19 @@
                     case 'date':
                         return new Date(b.created_at) - new Date(a.created_at);
                     case 'amount':
-                        return (b.principal || 0) - (a.principal || 0);
+                        return ((b.principal_amount || b.principal || 0) - (a.principal_amount || a.principal || 0));
                     case 'balance':
                         return (b.remaining_principal || 0) - (a.remaining_principal || 0);
                     case 'due':
                         // Calculate due dates and compare
                         const getDueDate = (loan) => {
-                            if (!loan.created_at || !loan.start_month_index) return new Date();
-                            const loanDate = new Date(loan.created_at);
-                            const paymentsMade = loan.payments_made || 0;
-                            const targetMonthOffset = loan.start_month_index + paymentsMade;
-                            const targetYear = loanDate.getFullYear() + Math.floor(targetMonthOffset / 12);
-                            const targetMonth = targetMonthOffset % 12;
-                            return new Date(targetYear, targetMonth + 1, 0);
+                            return getNextLoanDueDate(loan);
                         };
-                        return getDueDate(a) - getDueDate(b);
+                        const dueA = getDueDate(a);
+                        const dueB = getDueDate(b);
+                        const tsA = dueA ? dueA.getTime() : Number.MAX_SAFE_INTEGER;
+                        const tsB = dueB ? dueB.getTime() : Number.MAX_SAFE_INTEGER;
+                        return tsA - tsB;
                     default:
                         return 0;
                 }
@@ -777,10 +810,12 @@
             
             container.innerHTML = loans.map(loan => {
                 // Calculate dates and status
-                const loanDate = new Date(loan.created_at);
-                const loanDateStr = loanDate.toLocaleDateString('en-ZA', { 
-                    day: '2-digit', month: 'short', year: 'numeric' 
-                });
+                const loanDate = loan.created_at ? new Date(loan.created_at) : null;
+                const loanDateStr = loanDate && !isNaN(loanDate.getTime())
+                    ? loanDate.toLocaleDateString('en-ZA', {
+                        day: '2-digit', month: 'short', year: 'numeric'
+                    })
+                    : 'N/A';
                 
                 // Calculate payments made
                 const paymentsMade = loan.payments_made || 0;
@@ -790,21 +825,21 @@
                 let isOverdue = false;
                 let daysOverdue = 0;
                 
-                if (loan.status === 'active' && loan.start_month_index !== undefined) {
-                    const startYear = loanDate.getFullYear();
-                    const targetMonthOffset = loan.start_month_index + paymentsMade;
-                    const targetYear = startYear + Math.floor(targetMonthOffset / 12);
-                    const targetMonth = targetMonthOffset % 12;
-                    const dueDate = new Date(targetYear, targetMonth + 1, 0);
+                if (loan.status === 'active') {
+                    const dueDate = getNextLoanDueDate(loan);
                     
-                    nextDueStr = dueDate.toLocaleDateString('en-ZA', {
-                        day: '2-digit', month: 'short', year: 'numeric'
-                    });
-                    
-                    const today = new Date();
-                    isOverdue = dueDate < today;
-                    if (isOverdue) {
-                        daysOverdue = Math.floor((today - dueDate) / (1000 * 60 * 60 * 24));
+                    if (dueDate) {
+                        nextDueStr = dueDate.toLocaleDateString('en-ZA', {
+                            day: '2-digit', month: 'short', year: 'numeric'
+                        });
+                        
+                        isOverdue = isPastDueDate(dueDate);
+                        if (isOverdue) {
+                            const today = new Date();
+                            const todayStart = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+                            const dueStart = new Date(dueDate.getFullYear(), dueDate.getMonth(), dueDate.getDate());
+                            daysOverdue = Math.floor((todayStart - dueStart) / (1000 * 60 * 60 * 24));
+                        }
                     }
                 }
                 
@@ -1094,8 +1129,9 @@ Click "OK" to process payment or "Cancel" to go back.
                 
                 // STEP 3: UPDATE APPSTATE (GLOBAL FINANCIAL TRACKING)
                 // Update system-wide financial metrics
+                const principalAmount = loan.principal_amount || loan.principal || 0;
                 AppState.capital = (AppState.capital || 0) + totalPayoff;
-                AppState.deployed = Math.max(0, (AppState.deployed || 0) - loan.principal_amount);
+                AppState.deployed = Math.max(0, (AppState.deployed || 0) - principalAmount);
                 AppState.totalInterestEarned = (AppState.totalInterestEarned || 0) + payoffData.interestOwed;
                 AppState.totalFeesEarned = (AppState.totalFeesEarned || 0) + payoffData.initiationFeeOwed + payoffData.adminFeesOwed;
                 
@@ -1207,19 +1243,19 @@ Click "OK" to process payment or "Cancel" to go back.
             
             // STEP 3: INITIALIZE TRACKING FIELDS
             // These fields track payment progress and must be initialized for older loans
-            if (!loan.remaining_principal) {
+            if (loan.remaining_principal === undefined || loan.remaining_principal === null || isNaN(Number(loan.remaining_principal))) {
                 loan.remaining_principal = loan.principal_amount || loan.principal || 0;
             }
-            if (!loan.initiation_fee_paid) {
+            if (loan.initiation_fee_paid === undefined || loan.initiation_fee_paid === null || isNaN(Number(loan.initiation_fee_paid))) {
                 loan.initiation_fee_paid = 0;
             }
-            if (!loan.interest_paid) {
+            if (loan.interest_paid === undefined || loan.interest_paid === null || isNaN(Number(loan.interest_paid))) {
                 loan.interest_paid = 0;
             }
             
             // STEP 4: CALCULATE TOTAL INITIATION FEE (if not already set)
             // Initiation fee calculation differs for stockvel vs standard loans
-            if (!loan.total_initiation_fee) {
+            if (loan.total_initiation_fee === undefined || loan.total_initiation_fee === null || isNaN(Number(loan.total_initiation_fee))) {
                 const principal = loan.principal_amount || loan.principal || 0;
                 if (loan.loan_type === 'stockvel' && loan.total_contributions) {
                     // Stockvel Rule: 0% initiation fee if principal <= total contributions
@@ -1233,7 +1269,7 @@ Click "OK" to process payment or "Cancel" to go back.
             
             // STEP 5: CALCULATE TOTAL INTEREST (if not already set)
             // Total interest should come from the payment schedule for accuracy
-            if (!loan.total_interest) {
+            if (loan.total_interest === undefined || loan.total_interest === null || isNaN(Number(loan.total_interest))) {
                 if (loan.schedule && loan.schedule.length > 0) {
                     // Sum interest from schedule (most accurate method)
                     loan.total_interest = loan.schedule.reduce((sum, payment) => {
@@ -1328,7 +1364,8 @@ Click "OK" to process payment or "Cancel" to go back.
             // Validate and parse payment date
             let paymentDate;
             try {
-                paymentDate = new Date(paymentDateInput);
+                // Use local midday to avoid timezone date-shift edge cases
+                paymentDate = new Date(`${paymentDateInput}T12:00:00`);
                 if (isNaN(paymentDate.getTime())) {
                     throw new Error('Invalid date');
                 }
@@ -1436,8 +1473,10 @@ Click "OK" to process payment or "Cancel" to go back.
             if (remainingAmount > 0 && loan.remaining_principal > principalPaid) {
                 // Calculate which payment number we're on
                 const halfwayPoint = Math.ceil(loan.term_months / 2);
-                const principalPerMonth = (loan.original_principal || loan.principal_amount) / loan.term_months;
-                const currentPaymentNumber = Math.floor((loan.original_principal - loan.remaining_principal) / principalPerMonth) + 1;
+                const basePrincipal = loan.original_principal || loan.principal_amount || loan.principal || 0;
+                const principalPerMonth = basePrincipal / Math.max(1, loan.term_months || 1);
+                const principalAlreadySettled = Math.max(0, basePrincipal - (loan.remaining_principal || 0));
+                const currentPaymentNumber = Math.floor(principalAlreadySettled / Math.max(0.01, principalPerMonth)) + 1;
                 
                 if (currentPaymentNumber <= halfwayPoint) {
                     // FIRST HALF OVERPAYMENT: Apply extra to principal
@@ -1532,8 +1571,10 @@ Click "OK" to process payment or "Cancel" to go back.
             // Payments are calculated based on principal received, not payment count
             // This handles partial payments and overpayments correctly
             // Example: If principal per month is R1,000 and R1,500 was received, that's 1.5 payments
-            const principalPerMonth = (loan.original_principal || loan.principal_amount) / loan.term_months;
-            loan.payments_made = Math.floor(loan.total_principal_received / principalPerMonth);
+            const basePrincipalForProgress = loan.original_principal || loan.principal_amount || loan.principal || 0;
+            const principalPerMonth = basePrincipalForProgress / Math.max(1, loan.term_months || 1);
+            const calculatedPayments = Math.floor((loan.total_principal_received || 0) / Math.max(0.01, principalPerMonth));
+            loan.payments_made = Math.min(loan.term_months || calculatedPayments, Math.max(0, calculatedPayments));
             
             // STEP 17: UPDATE PAYMENT HISTORY ENTRY
             // Record the payment in the loan's payment history for audit trail
@@ -3109,6 +3150,11 @@ TBFS - Transparent, Fair, Simple
             const paymentsMade = loan.payments_made || 0;
             const remainingMonths = currentTerm - paymentsMade;
             const remainingPrincipal = loan.remaining_principal || 0;
+
+            if (remainingPrincipal <= 0) {
+                alert('⚠️ This loan has no outstanding principal to reschedule.');
+                return;
+            }
             
             // Get new term from user
             const newTermInput = prompt(
@@ -3364,6 +3410,15 @@ TBFS - Transparent, Fair, Simple
             const currentTerm = loan.term_months;
             const paymentsMade = loan.payments_made || 0;
             const remainingMonths = currentTerm - paymentsMade;
+
+            if (remainingMonths <= 0) {
+                alert(
+                    `⚠️ This loan has no remaining scheduled months to adjust.\n\n` +
+                    `Payments Made: ${paymentsMade}/${currentTerm}\n` +
+                    `Please change the repayment period first before adding more amount.`
+                );
+                return;
+            }
             
             // Get amount to add
             const amountInput = prompt(
@@ -3648,7 +3703,7 @@ TBFS - Transparent, Fair, Simple
                 notes: notes || '',
                 clientResponse: responseName,
                 daysOverdue: (() => {
-                    const dueDate = Calculations.getLoanPaymentDueDate(loan, loan.payments_made || 0);
+                    const dueDate = getNextLoanDueDate(loan);
                     if (!dueDate) return 0;
                     const diff = Math.floor((new Date() - dueDate) / (1000 * 60 * 60 * 24));
                     return Math.max(0, diff);
@@ -3723,19 +3778,23 @@ TBFS - Transparent, Fair, Simple
                 
                 // Add loan data
                 loansToExport.forEach(loan => {
-                    const nextPayment = (loan.schedule || []).find(p => p.status === 'pending');
-                    const nextDueDate = nextPayment ? new Date(nextPayment.due_date).toLocaleDateString() : 'N/A';
+                    const dueDate = getNextLoanDueDate(loan);
+                    const nextDueDate = dueDate ? dueDate.toLocaleDateString() : 'N/A';
+                    const principal = loan.principal_amount || loan.principal || 0;
+                    const outstanding = (loan.remaining_principal !== undefined && loan.remaining_principal !== null)
+                        ? loan.remaining_principal
+                        : principal;
                     
                     excelData.push([
                         loan.loan_id,
                         loan.client_name,
                         loan.account_number,
                         loan.loan_type === 'stockvel' ? 'Stockvel' : 'Standard',
-                        loan.principal_amount,
-                        loan.monthly_payment,
+                        principal,
+                        loan.monthly_payment || 0,
                         loan.payments_made || 0,
                         loan.term_months,
-                        loan.remaining_principal || loan.principal_amount,
+                        outstanding,
                         loan.status.charAt(0).toUpperCase() + loan.status.slice(1),
                         new Date(loan.disbursement_date || loan.created_at).toLocaleDateString(),
                         nextDueDate
@@ -3743,8 +3802,13 @@ TBFS - Transparent, Fair, Simple
                 });
                 
                 // Add summary
-                const totalPrincipal = loansToExport.reduce((sum, l) => sum + l.principal_amount, 0);
-                const totalOutstanding = loansToExport.reduce((sum, l) => sum + (l.remaining_principal || l.principal_amount), 0);
+                const totalPrincipal = loansToExport.reduce((sum, l) => sum + (l.principal_amount || l.principal || 0), 0);
+                const totalOutstanding = loansToExport.reduce((sum, l) => {
+                    const outstanding = (l.remaining_principal !== undefined && l.remaining_principal !== null)
+                        ? l.remaining_principal
+                        : (l.principal_amount || l.principal || 0);
+                    return sum + (Number(outstanding) || 0);
+                }, 0);
                 
                 excelData.push([]);
                 excelData.push(['SUMMARY']);
@@ -3817,8 +3881,13 @@ TBFS - Transparent, Fair, Simple
                 yPos += 15;
                 
                 // Summary Stats
-                const totalPrincipal = loansToExport.reduce((sum, l) => sum + l.principal_amount, 0);
-                const totalOutstanding = loansToExport.reduce((sum, l) => sum + (l.remaining_principal || l.principal_amount), 0);
+                const totalPrincipal = loansToExport.reduce((sum, l) => sum + (l.principal_amount || l.principal || 0), 0);
+                const totalOutstanding = loansToExport.reduce((sum, l) => {
+                    const outstanding = (l.remaining_principal !== undefined && l.remaining_principal !== null)
+                        ? l.remaining_principal
+                        : (l.principal_amount || l.principal || 0);
+                    return sum + (Number(outstanding) || 0);
+                }, 0);
                 const activeCount = loansToExport.filter(l => l.status === 'active').length;
                 
                 doc.setFontSize(11);
@@ -3857,20 +3926,25 @@ TBFS - Transparent, Fair, Simple
                     
                     // Loan details
                     doc.setFont(undefined, 'normal');
-                    const nextPayment = (loan.schedule || []).find(p => p.status === 'pending');
-                    const nextDueDate = nextPayment ? new Date(nextPayment.due_date).toLocaleDateString() : 'N/A';
+                    const dueDate = getNextLoanDueDate(loan);
+                    const nextDueDate = dueDate ? dueDate.toLocaleDateString() : 'N/A';
+                    const principal = Number(loan.principal_amount || loan.principal || 0);
+                    const monthlyPayment = Number(loan.monthly_payment || 0);
+                    const outstanding = Number((loan.remaining_principal !== undefined && loan.remaining_principal !== null)
+                        ? loan.remaining_principal
+                        : principal);
                     
                     doc.text(`Account: ${loan.account_number}`, 25, yPos);
                     doc.text(`Type: ${loan.loan_type === 'stockvel' ? 'Stockvel' : 'Standard'}`, 80, yPos);
                     doc.text(`Status: ${loan.status.charAt(0).toUpperCase() + loan.status.slice(1)}`, 130, yPos);
                     yPos += 5;
                     
-                    doc.text(`Principal: R ${loan.principal_amount.toLocaleString('en-ZA', { minimumFractionDigits: 2 })}`, 25, yPos);
-                    doc.text(`Monthly: R ${loan.monthly_payment.toLocaleString('en-ZA', { minimumFractionDigits: 2 })}`, 80, yPos);
+                    doc.text(`Principal: R ${principal.toLocaleString('en-ZA', { minimumFractionDigits: 2 })}`, 25, yPos);
+                    doc.text(`Monthly: R ${monthlyPayment.toLocaleString('en-ZA', { minimumFractionDigits: 2 })}`, 80, yPos);
                     yPos += 5;
                     
                     doc.text(`Progress: ${loan.payments_made || 0}/${loan.term_months} payments`, 25, yPos);
-                    doc.text(`Outstanding: R ${(loan.remaining_principal || loan.principal_amount).toLocaleString('en-ZA', { minimumFractionDigits: 2 })}`, 80, yPos);
+                    doc.text(`Outstanding: R ${outstanding.toLocaleString('en-ZA', { minimumFractionDigits: 2 })}`, 80, yPos);
                     yPos += 5;
                     
                     doc.text(`Disbursed: ${new Date(loan.disbursement_date || loan.created_at).toLocaleDateString()}`, 25, yPos);
