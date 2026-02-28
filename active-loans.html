@@ -1259,7 +1259,12 @@ Click "OK" to process payment or "Cancel" to go back.
             // STEP 7: CALCULATE LATE PENALTY (if applicable)
             // Late penalties only apply to loans distributed after 31 January 2026
             const gracePeriodDays = AppState.gracePeriodDays || 3;
-            const nextDueDate = Calculations.getLoanPaymentDueDate(loan, loan.payments_made || 0);
+            let nextDueDate = Calculations.getLoanPaymentDueDate(loan, loan.payments_made || 0);
+            const initialPendingPayment = (loan.schedule || []).find(p => p.status === 'pending');
+            if ((!nextDueDate || isNaN(new Date(nextDueDate).getTime())) && initialPendingPayment?.due_date) {
+                const scheduleDue = new Date(initialPendingPayment.due_date);
+                if (!isNaN(scheduleDue.getTime())) nextDueDate = scheduleDue;
+            }
             let latePenalty = 0;
             let daysLate = 0;
             let isPaymentLate = false;
@@ -1368,6 +1373,14 @@ Click "OK" to process payment or "Cancel" to go back.
                         return;
                     }
                     // Continue with regenerated schedule
+                }
+            }
+
+            // Fallback: if calculated due date is unavailable, use schedule due date
+            if ((!nextDueDate || isNaN(new Date(nextDueDate).getTime())) && nextPayment?.due_date) {
+                const scheduleDue = new Date(nextPayment.due_date);
+                if (!isNaN(scheduleDue.getTime())) {
+                    nextDueDate = scheduleDue;
                 }
             }
             
@@ -1501,7 +1514,9 @@ Click "OK" to process payment or "Cancel" to go back.
                 initiation_fee: initiationFeePaid,
                 late_penalty: latePenaltyPaid,
                 payment_status: paymentStatus,
-                due_date: nextDueDate ? nextDueDate.toISOString() : null,
+                due_date: nextDueDate && !isNaN(new Date(nextDueDate).getTime())
+                    ? new Date(nextDueDate).toISOString()
+                    : null,
                 days_late: daysLate,
                 payments_made_after: 0, // Will be updated below
                 remaining_principal_after: 0, // Will be updated below

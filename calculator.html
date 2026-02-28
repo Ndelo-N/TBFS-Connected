@@ -345,7 +345,6 @@
         // Global state
         let AppState = {};
         let loanData = null;
-        let currentYear = new Date().getFullYear();
         
         /**
          * Initialize page
@@ -648,6 +647,10 @@
                 const term = parseInt(document.getElementById('term').value);
                 const loanDate = document.getElementById('loanDate').value;
                 const startMonthIndex = parseInt(document.getElementById('startMonth').value);
+                const loanDateObj = loanDate ? new Date(`${loanDate}T12:00:00`) : null;
+                const startYear = (loanDateObj && !isNaN(loanDateObj.getTime()))
+                    ? loanDateObj.getFullYear()
+                    : new Date().getFullYear();
                 
                 // Stockvel fields
                 const isStockvelMember = document.getElementById('stockvelMember').checked;
@@ -658,8 +661,13 @@
                 const accumulatedBonus = isStockvelMember ? parseFloat(document.getElementById('accumulatedBonus').value) || 0 : 0;
                 
                 // Validation
-                if (!firstName || !lastName || !accountNumber || isNaN(startMonthIndex)) {
-                    alert('❌ Please fill in all required fields including start month');
+                if (!firstName || !lastName || !accountNumber || isNaN(startMonthIndex) || !loanDate) {
+                    alert('❌ Please fill in all required fields including loan date and start month');
+                    return;
+                }
+                
+                if (!loanDateObj || isNaN(loanDateObj.getTime())) {
+                    alert('❌ Invalid loan date selected');
                     return;
                 }
                 
@@ -709,7 +717,14 @@
                 let result;
                 if (isStockvelMember) {
                     // Use stockvel calculation with tiered rates
-                    const schedule = generateStockvelSchedule(principal, term, totalContributions, monthlyContribution, startMonthIndex);
+                    const schedule = generateStockvelSchedule(
+                        principal,
+                        term,
+                        totalContributions,
+                        monthlyContribution,
+                        startMonthIndex,
+                        startYear
+                    );
                     
                     if (!schedule || schedule.length === 0) {
                         throw new Error('Failed to generate stockvel loan schedule');
@@ -732,7 +747,7 @@
                     
                     // Transform breakdown into schedule format
                     const schedule = standardResult.breakdown.map((item, index) => {
-                        const dueDate = Calculations.calculateDueDate(currentYear, startMonthIndex, item.month);
+                        const dueDate = Calculations.calculateDueDate(startYear, startMonthIndex, item.month);
                         return {
                             payment_number: item.month,
                             due_date: dueDate,
@@ -789,7 +804,7 @@
         /**
          * Generate stockvel schedule with tiered rates
          */
-        function generateStockvelSchedule(principal, term, totalContributions, monthlyContribution, startMonthIndex) {
+        function generateStockvelSchedule(principal, term, totalContributions, monthlyContribution, startMonthIndex, startYear) {
             try {
                 const schedule = [];
                 let outstandingBalance = principal;
@@ -850,7 +865,7 @@
                 let balance = principal;
                 for (let i = 0; i < monthlyDetails.length; i++) {
                     const detail = monthlyDetails[i];
-                    const dueDate = Calculations.calculateDueDate(currentYear, startMonthIndex, detail.month);
+                    const dueDate = Calculations.calculateDueDate(startYear, startMonthIndex, detail.month);
                     
                     schedule.push({
                         payment_number: detail.month,
