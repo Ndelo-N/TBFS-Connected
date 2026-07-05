@@ -1,4 +1,4 @@
-const CACHE_NAME = 'tbfs-loan-manager-v42'; // v1.8.0 - Payment management: late penalties, escalation, reminders
+const CACHE_NAME = 'tbfs-loan-manager-v43'; // v1.9.0 - Security remediation: vendored libs, sanitize, cloud-backup
 const urlsToCache = [
   './',
   './index.html',                    // Dashboard (refactored)
@@ -16,10 +16,12 @@ const urlsToCache = [
   './shared/calculations.js',        // Shared: Calculations
   './shared/styles.css',             // Shared: Styles
   './shared/sw-register.js',         // Shared: SW Registration
+  './shared/sanitize.js',            // Shared: HTML escaping (F-04)
+  './shared/cloud-backup.js',        // Shared: Cloud backup (F-12)
   './manifest.json',                 // PWA Manifest
-  'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js',
-  'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js',
-  'https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js',
+  './vendor/jspdf.umd.min.js',       // Vendored (F-10)
+  './vendor/xlsx.full.min.js',       // Vendored, 0.20.3 (F-10)
+  './vendor/chart.umd.min.js',       // Vendored (F-10)
   './icons/icon-192x192.png',
   './icons/icon-512x512.png',
   './TBFS_Logo.png'
