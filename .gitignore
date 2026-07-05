@@ -16,3 +16,9 @@ ehthumbs.db
 
 # Node modules (if ever added)
 node_modules/
+
+# Client PII — must never be committed (F-01)
+Loans/
+
+# Build output
+dist/
