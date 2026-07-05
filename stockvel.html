@@ -452,12 +452,18 @@
     </main>
     
     <!-- Shared Modules -->
+    <script src="shared/sanitize.js"></script>
     <script src="shared/app-state.js"></script>
     <script src="shared/calculations.js"></script>
     <script src="shared/navigation.js"></script>
     
     <!-- Page Logic -->
     <script>
+        // Verbose diagnostics are opt-in — member financial details must not
+        // stream to the console in normal use. (F-17)
+        const DEBUG = false;
+        function dbg(...args) { if (DEBUG) console.log(...args); }
+
         // Global state
         let AppState = {};
         
@@ -483,12 +489,12 @@
             
             // Listen for state updates from other tabs
             AppStateManager.onUpdate(() => {
-                console.log('State updated from another tab, reloading...');
+                dbg('State updated from another tab, reloading...');
                 AppState = AppStateManager.load();
                 loadStockvelDashboard();
             });
             
-            console.log('✅ Stockvel page initialized');
+            dbg('✅ Stockvel page initialized');
         }
         
         /**
@@ -526,7 +532,7 @@
             const historySelect = document.getElementById('historyMemberSelect');
             
             const memberOptions = stockvelMembers.map(m => 
-                `<option value="${m.memberNumber}">${m.name} (Member #${m.memberNumber})</option>`
+                `<option value="${m.memberNumber}">${esc(m.name)} (Member #${m.memberNumber})</option>`
             ).join('');
             
             receiptSelect.innerHTML = '<option value="">-- Select Stockvel Member --</option>' + memberOptions;
@@ -647,6 +653,9 @@
             
             // If initial contribution > 0, create receipt
             if (initialContrib > 0) {
+                // Cash received on registration; the matching liability
+                // (memberFundsHeld) is recalculated below. (F-06)
+                AppState.capital = (AppState.capital || 0) + initialContrib;
                 AppState.stockvelReceipts.push({
                     id: Date.now(),
                     memberNumber: memberNumber,
@@ -660,10 +669,23 @@
                     bonusAmount: 0
                 });
             }
-            
+
+            // Member funds held is derived from the registry. (F-06)
+            AppStateManager.recalculateDerivedTotals(AppState);
+
+            // Canonical transaction log (F-09)
+            if (!AppState.transactions) AppState.transactions = [];
+            AppState.transactions.push({
+                id: Date.now(),
+                type: 'stockvel_receipt',
+                timestamp: new Date().toISOString(),
+                description: 'Member registered \u2014 ' + name + ' (#' + memberNumber + ')',
+                details: { memberNumber: memberNumber, memberName: name, initialContribution: initialContrib }
+            });
+
             // Save state
             AppStateManager.save(AppState);
-            
+
             // Success message
             alert(`✅ Member Registered Successfully!\n\nMember #: ${memberNumber}\nName: ${name}\nMembership expires: ${new Date(endDate).toLocaleDateString()}\n\n✅ Also added to Clients database.`);
             
@@ -732,9 +754,9 @@
                 return `
                     <tr>
                         <td><strong>${member.memberNumber}</strong></td>
-                        <td>${member.name || 'Unknown'}</td>
-                        <td><strong style="color: #667eea;">${member.account_number || member.phone || 'N/A'}</strong></td>
-                        <td>${member.phone || 'N/A'}</td>
+                        <td>${esc(member.name || 'Unknown')}</td>
+                        <td><strong style="color: #667eea;">${esc(member.account_number || member.phone || 'N/A')}</strong></td>
+                        <td>${esc(member.phone || 'N/A')}</td>
                         <td style="color: #27ae60; font-weight: 600;">${Calculations.formatCurrency(member.totalContributions || 0)}</td>
                         <td style="color: #f39c12; font-weight: 600;">${Calculations.formatCurrency(member.accumulatedBonus || 0)}</td>
                         <td>${Calculations.formatCurrency(member.monthlyContribution || 0)}</td>
@@ -790,9 +812,9 @@
                 <h4>✅ Member Found</h4>
                 <div class="info-grid">
                     <div><strong>Member #:</strong> ${member.memberNumber}</div>
-                    <div><strong>Name:</strong> ${member.name}</div>
-                    <div><strong>Account #:</strong> ${member.account_number || member.phone || 'N/A'}</div>
-                    <div><strong>Phone:</strong> ${member.phone || 'N/A'}</div>
+                    <div><strong>Name:</strong> ${esc(member.name)}</div>
+                    <div><strong>Account #:</strong> ${esc(member.account_number || member.phone || 'N/A')}</div>
+                    <div><strong>Phone:</strong> ${esc(member.phone || 'N/A')}</div>
                     <div><strong>Status:</strong> ${member.status}</div>
                     <div><strong>Expires:</strong> ${new Date(member.membershipEndDate).toLocaleDateString()}</div>
                     <div><strong>Client Link:</strong> ${client ? '✅ Linked' : '❌ Not linked'}</div>
@@ -869,31 +891,40 @@
                 case 'contribution':
                     newTotal = previousTotal + amount;
                     member.totalContributions = newTotal;
+                    // Cash received: capital rises; the matching liability
+                    // (memberFundsHeld) is recalculated below. (F-06)
+                    AppState.capital = (AppState.capital || 0) + amount;
                     break;
-                    
+
                 case 'loan_payment':
-                    // This assumes bonus is included in amount
-                    // In real implementation, bonus would be calculated separately
-                    bonusAmount = amount * 0.1; // Example: 10% bonus
-                    newBonus = previousBonus + bonusAmount;
-                    member.accumulatedBonus = newBonus;
+                    // Loan payments are processed on the Active Loans page,
+                    // where the real bonus rule runs and capital moves; this
+                    // manual receipt is a record only. The previous hardcoded
+                    // 10% bonus fabricated liability and has been removed.
                     break;
-                    
+
                 case 'bonus_payout':
                     if (amount > previousBonus) {
                         alert('❌ Cannot payout more than accumulated bonus!');
                         return;
                     }
+                    if (amount > (AppState.capital || 0)) {
+                        alert('❌ Insufficient capital on hand for this payout!');
+                        return;
+                    }
                     newBonus = previousBonus - amount;
                     member.accumulatedBonus = newBonus;
+                    // Cash paid out. (F-06)
+                    AppState.capital = (AppState.capital || 0) - amount;
                     break;
-                    
+
                 case 'adjustment':
+                    // Book correction to the liability only — no cash moves.
                     newTotal = previousTotal + amount; // Can be negative for deductions
                     member.totalContributions = Math.max(0, newTotal);
                     break;
             }
-            
+
             // Create receipt
             const receipt = {
                 id: Date.now(),
@@ -911,10 +942,23 @@
             // Ensure receipts array exists
             if (!AppState.stockvelReceipts) AppState.stockvelReceipts = [];
             AppState.stockvelReceipts.push(receipt);
-            
+
+            // Member funds held is derived from the registry. (F-06)
+            AppStateManager.recalculateDerivedTotals(AppState);
+
+            // Canonical transaction log (F-09)
+            if (!AppState.transactions) AppState.transactions = [];
+            AppState.transactions.push({
+                id: receipt.id,
+                type: 'stockvel_receipt',
+                timestamp: new Date().toISOString(),
+                description: 'Stockvel receipt (' + type + ') \u2014 ' + member.name,
+                details: { memberNumber: memberNumber, memberName: member.name, receiptType: type, amount: amount }
+            });
+
             // Save state
             AppStateManager.save(AppState);
-            
+
             // Success message
             alert(`✅ Receipt Recorded Successfully!\n\nMember: ${member.name}\nType: ${type}\nAmount: ${Calculations.formatCurrency(amount)}`);
             
@@ -953,12 +997,12 @@
                 return `
                     <tr>
                         <td>${new Date(receipt.date).toLocaleDateString()}</td>
-                        <td>${receipt.memberName} (#${receipt.memberNumber})</td>
+                        <td>${esc(receipt.memberName)} (#${receipt.memberNumber})</td>
                         <td><span class="${typeClass}">${typeLabel}</span></td>
                         <td>${Calculations.formatCurrency(receipt.amount)}</td>
                         <td>${Calculations.formatCurrency(receipt.newTotal || 0)}</td>
                         <td style="color: #f39c12; font-weight: 600;">${Calculations.formatCurrency(receipt.bonusAmount || 0)}</td>
-                        <td>${receipt.notes || '-'}</td>
+                        <td>${esc(receipt.notes || '-')}</td>
                     </tr>
                 `;
             }).join('');
@@ -997,12 +1041,12 @@
                 return `
                     <tr>
                         <td>${new Date(receipt.date).toLocaleDateString()}</td>
-                        <td>${receipt.memberName} (#${receipt.memberNumber})</td>
+                        <td>${esc(receipt.memberName)} (#${receipt.memberNumber})</td>
                         <td><span class="${typeClass}">${typeLabel}</span></td>
                         <td>${Calculations.formatCurrency(receipt.amount)}</td>
                         <td>${Calculations.formatCurrency(receipt.newTotal || 0)}</td>
                         <td style="color: #f39c12; font-weight: 600;">${Calculations.formatCurrency(receipt.bonusAmount || 0)}</td>
-                        <td>${receipt.notes || '-'}</td>
+                        <td>${esc(receipt.notes || '-')}</td>
                     </tr>
                 `;
             }).join('');
@@ -1039,7 +1083,7 @@
                 
                 return `
                     <div class="${urgencyClass}">
-                        <h4>⚠️ ${member.name} (Member #${member.memberNumber})</h4>
+                        <h4>⚠️ ${esc(member.name)} (Member #${member.memberNumber})</h4>
                         <p><strong>${urgencyText}</strong> | Membership ends: ${endDate.toLocaleDateString()}</p>
                         <button onclick="renewMembership(${member.memberNumber})" class="btn btn-success">🔄 Renew Now</button>
                     </div>
@@ -1082,7 +1126,7 @@
                 
                 return `
                     <tr>
-                        <td><strong>${member.name}</strong> (#${member.memberNumber})</td>
+                        <td><strong>${esc(member.name)}</strong> (#${member.memberNumber})</td>
                         <td style="color: #27ae60; font-weight: 600;">${Calculations.formatCurrency(totalEarned)}</td>
                         <td style="color: #e74c3c; font-weight: 600;">${Calculations.formatCurrency(totalPaidOut)}</td>
                         <td style="color: #f39c12; font-weight: 600;">${Calculations.formatCurrency(pending)}</td>
@@ -1234,14 +1278,10 @@ Client Linked: ${client ? 'Yes (' + client.account_number + ')' : 'No'}
                 return;
             }
             
-            // Extend end date by 12 months
-            const currentEnd = new Date(member.membershipEndDate);
-            const newEnd = new Date(
-                currentEnd.getFullYear() + 1,
-                currentEnd.getMonth(),
-                currentEnd.getDate()
-            );
-            member.membershipEndDate = newEnd.toISOString().split('T')[0];
+            // Extend end date by 12 months (shared, timezone-safe rule —
+            // toISOString() shifted SAST dates back a day)
+            member.membershipEndDate = Calculations.calculateMembershipEndDate(member.membershipEndDate);
+            const newEnd = new Date(member.membershipEndDate + 'T12:00:00');
             
             // Save state
             AppStateManager.save(AppState);
@@ -1265,6 +1305,19 @@ Client Linked: ${client ? 'Yes (' + client.account_number + ')' : 'No'}
             if (!confirm(`💰 Payout bonus to ${member.name}?\n\nAmount: ${Calculations.formatCurrency(amount)}`)) {
                 return;
             }
+
+            if (!(amount > 0)) {
+                alert('❌ No bonus amount to pay out.');
+                return;
+            }
+            if (amount > (member.accumulatedBonus || 0)) {
+                alert('❌ Cannot payout more than accumulated bonus!');
+                return;
+            }
+            if (amount > (AppState.capital || 0)) {
+                alert('❌ Insufficient capital on hand for this payout!');
+                return;
+            }
             
             // Record as bonus payout
             const receipt = {
@@ -1280,9 +1333,25 @@ Client Linked: ${client ? 'Yes (' + client.account_number + ')' : 'No'}
                 bonusAmount: 0
             };
             
-            // Update member
-            member.accumulatedBonus = 0;
-            
+            // Update member — subtract only the paid amount; any remainder
+            // stays accrued (previously this zeroed the whole balance
+            // regardless of the amount actually paid).
+            member.accumulatedBonus = Math.max(0, (member.accumulatedBonus || 0) - amount);
+
+            // Cash paid out; member funds held recalculated below. (F-06)
+            AppState.capital = (AppState.capital || 0) - amount;
+            AppStateManager.recalculateDerivedTotals(AppState);
+
+            // Canonical transaction log (F-09)
+            if (!AppState.transactions) AppState.transactions = [];
+            AppState.transactions.push({
+                id: receipt.id,
+                type: 'stockvel_payout',
+                timestamp: new Date().toISOString(),
+                description: 'Bonus payout \u2014 ' + member.name,
+                details: { memberNumber: memberNumber, memberName: member.name, amount: amount }
+            });
+
             // Save receipt
             if (!AppState.stockvelReceipts) AppState.stockvelReceipts = [];
             AppState.stockvelReceipts.push(receipt);
@@ -1317,6 +1386,11 @@ Client Linked: ${client ? 'Yes (' + client.account_number + ')' : 'No'}
             if (!confirm(`💰 Payout ALL contributions to ${member.name}?\n\nAmount: ${Calculations.formatCurrency(currentContributions)}\n\n⚠️ This will reset their contribution total to zero.`)) {
                 return;
             }
+
+            if (currentContributions > (AppState.capital || 0)) {
+                alert('❌ Insufficient capital on hand for this payout!');
+                return;
+            }
             
             // Record as contribution payout
             const receipt = {
@@ -1334,7 +1408,21 @@ Client Linked: ${client ? 'Yes (' + client.account_number + ')' : 'No'}
             
             // Reset contributions to zero
             member.totalContributions = 0;
-            
+
+            // Cash paid out; member funds held recalculated below. (F-06)
+            AppState.capital = (AppState.capital || 0) - currentContributions;
+            AppStateManager.recalculateDerivedTotals(AppState);
+
+            // Canonical transaction log (F-09)
+            if (!AppState.transactions) AppState.transactions = [];
+            AppState.transactions.push({
+                id: receipt.id,
+                type: 'stockvel_payout',
+                timestamp: new Date().toISOString(),
+                description: 'Contribution payout \u2014 ' + member.name,
+                details: { memberNumber: memberNumber, memberName: member.name, amount: currentContributions }
+            });
+
             // Save receipt
             if (!AppState.stockvelReceipts) AppState.stockvelReceipts = [];
             AppState.stockvelReceipts.push(receipt);
@@ -1380,7 +1468,7 @@ Client Linked: ${client ? 'Yes (' + client.account_number + ')' : 'No'}
                 
                 return `
                     <tr>
-                        <td><strong>${member.name}</strong> (#${member.memberNumber})</td>
+                        <td><strong>${esc(member.name)}</strong> (#${member.memberNumber})</td>
                         <td style="color: #27ae60; font-weight: 600;">${Calculations.formatCurrency(currentContributions)}</td>
                         <td style="color: #e74c3c; font-weight: 600;">${Calculations.formatCurrency(totalPaidOut)}</td>
                         <td>${lastPayoutDate}</td>
