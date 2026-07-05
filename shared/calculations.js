@@ -7,7 +7,36 @@
  * Business Rules Version: 1.7.5
  */
 
+/**
+ * Canonical business rates (F-07).
+ * Every rate used anywhere in the application is defined exactly once,
+ * here. TBFS-COMPLETE-BUSINESS-RULES.md must mirror these values.
+ */
+const RATES = {
+    // Standard loans (30% Income Table method)
+    INCOME_TABLE_RATE: 0.30,      // TBFS gross income on outstanding balance
+    INITIATION_FEE_RATE: 0.12,    // Once-off, spread across the term
+    ADMIN_FEE_STANDARD: 60,       // Rand per month
+
+    // Stockvel tiered lending (bounds are fractions of contributions)
+    TIER_BOUNDS: { T1: 0.30, T2: 0.75, T3: 1.05, T4: 1.10 },
+    TIER_RATES:  { T1: 0.03, T2: 0.08, T3: 0.15, T4: 0.25 },
+    STOCKVEL_MIN_MONTHLY_RATE: 0.10,   // 10% minimum monthly charge
+    ADMIN_FEE_CONTRIB_10K: 50,         // contributions ≥ R10,000
+    ADMIN_FEE_CONTRIB_20K: 45,         // contributions ≥ R20,000
+
+    // Late penalties
+    LATE_PENALTY_DAILY_RATE: 0.001,    // 0.1% per day on outstanding balance
+    LATE_PENALTY_MAX_DAYS: 7
+};
+
+const DEBUG = false;
+function dbg(...args) { if (DEBUG) dbg(...args); }
+
 const Calculations = {
+    /** Canonical rates, exposed for pages and tests. */
+    RATES,
+
     /**
      * Format currency in South African Rand
      */
@@ -91,63 +120,63 @@ const Calculations = {
         let tier5Amount = 0;
         let tier1to4Amount = 0;
         
-        console.log(`\nTiered calculation for R${loanAmount.toFixed(2)} loan with R${savingsAmount.toFixed(2)} contributions`);
+        dbg(`\nTiered calculation for R${loanAmount.toFixed(2)} loan with R${savingsAmount.toFixed(2)} contributions`);
         
         // Calculate tier boundaries based on ABSOLUTE amounts from contributions
         const boundaries = {
-            tier1_max: savingsAmount * 0.30,  // Up to 30% of contributions @ 3%
-            tier2_max: savingsAmount * 0.75,  // Up to 75% of contributions @ 8%
-            tier3_max: savingsAmount * 1.05,  // Up to 105% of contributions @ 15%
-            tier4_max: savingsAmount * 1.10,  // Up to 110% of contributions @ 25%
-            // Above 110% @ 30% (Income Table)
+            tier1_max: savingsAmount * RATES.TIER_BOUNDS.T1,  // @ TIER_RATES.T1
+            tier2_max: savingsAmount * RATES.TIER_BOUNDS.T2,  // @ TIER_RATES.T2
+            tier3_max: savingsAmount * RATES.TIER_BOUNDS.T3,  // @ TIER_RATES.T3
+            tier4_max: savingsAmount * RATES.TIER_BOUNDS.T4,  // @ TIER_RATES.T4
+            // Above the T4 bound → Income Table method
         };
         
-        console.log(`Tier boundaries:`);
-        console.log(`  Tier 1 (3%): R0 - R${boundaries.tier1_max.toFixed(2)}`);
-        console.log(`  Tier 2 (8%): R${boundaries.tier1_max.toFixed(2)} - R${boundaries.tier2_max.toFixed(2)}`);
-        console.log(`  Tier 3 (15%): R${boundaries.tier2_max.toFixed(2)} - R${boundaries.tier3_max.toFixed(2)}`);
-        console.log(`  Tier 4 (25%): R${boundaries.tier3_max.toFixed(2)} - R${boundaries.tier4_max.toFixed(2)}`);
-        console.log(`  Tier 5 (30% Income Table): Above R${boundaries.tier4_max.toFixed(2)}`);
+        dbg(`Tier boundaries:`);
+        dbg(`  Tier 1 (3%): R0 - R${boundaries.tier1_max.toFixed(2)}`);
+        dbg(`  Tier 2 (8%): R${boundaries.tier1_max.toFixed(2)} - R${boundaries.tier2_max.toFixed(2)}`);
+        dbg(`  Tier 3 (15%): R${boundaries.tier2_max.toFixed(2)} - R${boundaries.tier3_max.toFixed(2)}`);
+        dbg(`  Tier 4 (25%): R${boundaries.tier3_max.toFixed(2)} - R${boundaries.tier4_max.toFixed(2)}`);
+        dbg(`  Tier 5 (30% Income Table): Above R${boundaries.tier4_max.toFixed(2)}`);
         
         let remainingLoan = loanAmount;
         
         // Tier 1: First 30% of contributions @ 3%
         if (remainingLoan > 0) {
             const tierAmount = Math.min(remainingLoan, boundaries.tier1_max);
-            const tierInterest = tierAmount * 0.03;
+            const tierInterest = tierAmount * RATES.TIER_RATES.T1;
             tiers1to4Interest += tierInterest;
             tier1to4Amount += tierAmount;
-            console.log(`Tier 1 (0-30%): R${tierAmount.toFixed(2)} × 3% = R${tierInterest.toFixed(2)}`);
+            dbg(`Tier 1 (0-30%): R${tierAmount.toFixed(2)} × 3% = R${tierInterest.toFixed(2)}`);
             remainingLoan -= tierAmount;
         }
         
         // Tier 2: 30-75% of contributions @ 8%
         if (remainingLoan > 0) {
             const tierAmount = Math.min(remainingLoan, boundaries.tier2_max - boundaries.tier1_max);
-            const tierInterest = tierAmount * 0.08;
+            const tierInterest = tierAmount * RATES.TIER_RATES.T2;
             tiers1to4Interest += tierInterest;
             tier1to4Amount += tierAmount;
-            console.log(`Tier 2 (30-75%): R${tierAmount.toFixed(2)} × 8% = R${tierInterest.toFixed(2)}`);
+            dbg(`Tier 2 (30-75%): R${tierAmount.toFixed(2)} × 8% = R${tierInterest.toFixed(2)}`);
             remainingLoan -= tierAmount;
         }
         
         // Tier 3: 75-105% of contributions @ 15%
         if (remainingLoan > 0) {
             const tierAmount = Math.min(remainingLoan, boundaries.tier3_max - boundaries.tier2_max);
-            const tierInterest = tierAmount * 0.15;
+            const tierInterest = tierAmount * RATES.TIER_RATES.T3;
             tiers1to4Interest += tierInterest;
             tier1to4Amount += tierAmount;
-            console.log(`Tier 3 (75-105%): R${tierAmount.toFixed(2)} × 15% = R${tierInterest.toFixed(2)}`);
+            dbg(`Tier 3 (75-105%): R${tierAmount.toFixed(2)} × 15% = R${tierInterest.toFixed(2)}`);
             remainingLoan -= tierAmount;
         }
         
         // Tier 4: 105-110% of contributions @ 25%
         if (remainingLoan > 0) {
             const tierAmount = Math.min(remainingLoan, boundaries.tier4_max - boundaries.tier3_max);
-            const tierInterest = tierAmount * 0.25;
+            const tierInterest = tierAmount * RATES.TIER_RATES.T4;
             tiers1to4Interest += tierInterest;
             tier1to4Amount += tierAmount;
-            console.log(`Tier 4 (105-110%): R${tierAmount.toFixed(2)} × 25% = R${tierInterest.toFixed(2)}`);
+            dbg(`Tier 4 (105-110%): R${tierAmount.toFixed(2)} × 25% = R${tierInterest.toFixed(2)}`);
             remainingLoan -= tierAmount;
         }
         
@@ -155,13 +184,13 @@ const Calculations = {
         // This will be calculated using Income Table method in the main function
         if (remainingLoan > 0) {
             tier5Amount = remainingLoan;
-            console.log(`Tier 5 (>110%): R${tier5Amount.toFixed(2)} [Income Table method]`);
+            dbg(`Tier 5 (>110%): R${tier5Amount.toFixed(2)} [Income Table method]`);
         }
         
-        console.log(`Tiers 1-4 interest: R${tiers1to4Interest.toFixed(2)}`);
-        console.log(`Tiers 1-4 amount: R${tier1to4Amount.toFixed(2)}`);
+        dbg(`Tiers 1-4 interest: R${tiers1to4Interest.toFixed(2)}`);
+        dbg(`Tiers 1-4 amount: R${tier1to4Amount.toFixed(2)}`);
         if (tier5Amount > 0) {
-            console.log(`Tier 5 amount: R${tier5Amount.toFixed(2)} (to be calculated with Income Table)`);
+            dbg(`Tier 5 amount: R${tier5Amount.toFixed(2)} (to be calculated with Income Table)`);
         }
         
         return { 
@@ -182,7 +211,7 @@ const Calculations = {
         const calculatedMonths = Math.ceil(term / 2) >= 3 ? Math.ceil(term / 2) : 3;
         const interestMonths = Math.min(calculatedMonths, term);
         
-        console.log(`Interest Period Calculation: term=${term} months → interest period=${interestMonths} months`);
+        dbg(`Interest Period Calculation: term=${term} months → interest period=${interestMonths} months`);
         
         return {
             interestMonths,
@@ -242,11 +271,11 @@ const Calculations = {
      * @returns {object} - Detailed payoff breakdown
      */
     calculateEarlyPayoff(loan, payoffMonth) {
-        console.log(`\n=== EARLY PAYOFF CALCULATION ===`);
-        console.log(`Loan ID: ${loan.loan_id}`);
-        console.log(`Original Term: ${loan.term_months} months`);
-        console.log(`Payoff Month: ${payoffMonth}`);
-        console.log(`Payments Made: ${loan.payments_made || 0}`);
+        dbg(`\n=== EARLY PAYOFF CALCULATION ===`);
+        dbg(`Loan ID: ${loan.loan_id}`);
+        dbg(`Original Term: ${loan.term_months} months`);
+        dbg(`Payoff Month: ${payoffMonth}`);
+        dbg(`Payments Made: ${loan.payments_made || 0}`);
         
         // Validate inputs
         if (payoffMonth > loan.term_months) {
@@ -261,15 +290,15 @@ const Calculations = {
         const originalPrincipal = loan.original_principal || loan.principal_amount;
         const remainingPrincipal = loan.remaining_principal || loan.principal_amount;
         const interestPeriod = loan.interest_calculation_months || this.calculateInterestPeriod(loan.term_months).interestMonths;
-        const totalInitiationFee = loan.total_initiation_fee || (originalPrincipal * 0.12);
+        const totalInitiationFee = loan.total_initiation_fee || (originalPrincipal * RATES.INITIATION_FEE_RATE);
         const initiationFeePaid = loan.initiation_fee_paid || 0;
         const interestPaid = loan.interest_paid || 0;
         
-        console.log(`\nLoan Details:`);
-        console.log(`Original Principal: R${originalPrincipal.toFixed(2)}`);
-        console.log(`Remaining Principal: R${remainingPrincipal.toFixed(2)}`);
-        console.log(`Interest Calculation Period: ${interestPeriod} months`);
-        console.log(`Interest Already Paid: R${interestPaid.toFixed(2)}`);
+        dbg(`\nLoan Details:`);
+        dbg(`Original Principal: R${originalPrincipal.toFixed(2)}`);
+        dbg(`Remaining Principal: R${remainingPrincipal.toFixed(2)}`);
+        dbg(`Interest Calculation Period: ${interestPeriod} months`);
+        dbg(`Interest Already Paid: R${interestPaid.toFixed(2)}`);
         
         // STEP 1: Calculate prorated interest owed
         // Interest should be calculated for the LESSER of:
@@ -277,8 +306,8 @@ const Calculations = {
         // - Interest calculation period
         const monthsToCalculateInterest = Math.min(payoffMonth, interestPeriod);
         
-        console.log(`\nInterest Calculation:`);
-        console.log(`Months to calculate: ${monthsToCalculateInterest} (min of payoff month ${payoffMonth} and interest period ${interestPeriod})`);
+        dbg(`\nInterest Calculation:`);
+        dbg(`Months to calculate: ${monthsToCalculateInterest} (min of payoff month ${payoffMonth} and interest period ${interestPeriod})`);
         
         // Calculate interest for the prorated period using declining balance
         let proratedInterest = 0;
@@ -290,7 +319,7 @@ const Calculations = {
         
         if (isStockvel && loan.total_contributions) {
             // Stockvel loan - use tiered calculation
-            console.log(`Stockvel loan detected - using tiered rates`);
+            dbg(`Stockvel loan detected - using tiered rates`);
             let currentSavings = loan.total_contributions || 0;
             const monthlyContribution = loan.monthly_contribution || 0;
             
@@ -305,77 +334,77 @@ const Calculations = {
                 const tieredInterest = tieredResult.tiers1to4Interest;
                 
                 // Apply 10% minimum
-                const minimumInterest = balance * 0.10;
+                const minimumInterest = balance * RATES.STOCKVEL_MIN_MONTHLY_RATE;
                 const monthInterest = Math.max(tieredInterest, minimumInterest);
                 
                 proratedInterest += monthInterest;
-                console.log(`  Month ${month}: Balance R${balance.toFixed(2)}, Savings R${currentSavings.toFixed(2)}, Interest R${monthInterest.toFixed(2)}`);
+                dbg(`  Month ${month}: Balance R${balance.toFixed(2)}, Savings R${currentSavings.toFixed(2)}, Interest R${monthInterest.toFixed(2)}`);
                 
                 balance -= principalPerMonth;
             }
         } else {
             // Standard loan - use 30% income table
             for (let month = 1; month <= monthsToCalculateInterest; month++) {
-                const tbfsIncome = balance * 0.30;
-                const adminFee = 60;
+                const tbfsIncome = balance * RATES.INCOME_TABLE_RATE;
+                const adminFee = RATES.ADMIN_FEE_STANDARD;
                 const initiationFee = totalInitiationFee / loan.term_months;
                 const monthInterest = tbfsIncome - adminFee - initiationFee;
                 
                 proratedInterest += monthInterest;
-                console.log(`  Month ${month}: Balance R${balance.toFixed(2)}, Interest R${monthInterest.toFixed(2)}`);
+                dbg(`  Month ${month}: Balance R${balance.toFixed(2)}, Interest R${monthInterest.toFixed(2)}`);
                 
                 balance -= principalPerMonth;
             }
         }
         
-        console.log(`Total prorated interest for ${monthsToCalculateInterest} months: R${proratedInterest.toFixed(2)}`);
-        console.log(`Interest already paid: R${interestPaid.toFixed(2)}`);
+        dbg(`Total prorated interest for ${monthsToCalculateInterest} months: R${proratedInterest.toFixed(2)}`);
+        dbg(`Interest already paid: R${interestPaid.toFixed(2)}`);
         
         // Interest owed = Prorated interest - Interest already paid
         const interestOwed = Math.max(0, proratedInterest - interestPaid);
-        console.log(`Interest still owed: R${interestOwed.toFixed(2)}`);
+        dbg(`Interest still owed: R${interestOwed.toFixed(2)}`);
         
         // STEP 2: Calculate remaining initiation fee (must be paid in full)
         const initiationFeeOwed = Math.max(0, totalInitiationFee - initiationFeePaid);
-        console.log(`\nInitiation Fee:`);
-        console.log(`Total: R${totalInitiationFee.toFixed(2)}`);
-        console.log(`Paid: R${initiationFeePaid.toFixed(2)}`);
-        console.log(`Owed: R${initiationFeeOwed.toFixed(2)}`);
+        dbg(`\nInitiation Fee:`);
+        dbg(`Total: R${totalInitiationFee.toFixed(2)}`);
+        dbg(`Paid: R${initiationFeePaid.toFixed(2)}`);
+        dbg(`Owed: R${initiationFeeOwed.toFixed(2)}`);
         
         // STEP 3: Calculate remaining admin fees
         // Admin fees are for actual months only (not the full term)
         const scheduleAdminFee = loan.schedule && loan.schedule.length > 0 ? loan.schedule[0].admin_fee : undefined;
-        const adminFeePerMonth = isStockvel ? 
-            (typeof scheduleAdminFee === 'number' ? scheduleAdminFee : 60) : 
-            60;
+        const adminFeePerMonth = isStockvel ?
+            (typeof scheduleAdminFee === 'number' ? scheduleAdminFee : RATES.ADMIN_FEE_STANDARD) :
+            RATES.ADMIN_FEE_STANDARD;
         const adminFeesPaid = (loan.payments_made || 0) * adminFeePerMonth;
         const adminFeesForPayoffMonth = payoffMonth * adminFeePerMonth;
         const adminFeesOwed = Math.max(0, adminFeesForPayoffMonth - adminFeesPaid);
         
-        console.log(`\nAdmin Fees:`);
-        console.log(`Per month: R${adminFeePerMonth.toFixed(2)}`);
-        console.log(`For ${payoffMonth} months: R${adminFeesForPayoffMonth.toFixed(2)}`);
-        console.log(`Already paid: R${adminFeesPaid.toFixed(2)}`);
-        console.log(`Still owed: R${adminFeesOwed.toFixed(2)}`);
+        dbg(`\nAdmin Fees:`);
+        dbg(`Per month: R${adminFeePerMonth.toFixed(2)}`);
+        dbg(`For ${payoffMonth} months: R${adminFeesForPayoffMonth.toFixed(2)}`);
+        dbg(`Already paid: R${adminFeesPaid.toFixed(2)}`);
+        dbg(`Still owed: R${adminFeesOwed.toFixed(2)}`);
         
         // STEP 4: Total payoff amount
         const totalPayoff = remainingPrincipal + interestOwed + initiationFeeOwed + adminFeesOwed;
         
         // STEP 5: Calculate savings
-        const originalTotalCost = loan.total_cost || (originalPrincipal + loan.total_interest + totalInitiationFee + (60 * loan.term_months));
+        const originalTotalCost = loan.total_cost || (originalPrincipal + loan.total_interest + totalInitiationFee + (RATES.ADMIN_FEE_STANDARD * loan.term_months));
         const totalPaid = (loan.payments_made || 0) * (loan.monthly_payment || 0);
         const totalWithPayoff = totalPaid + totalPayoff;
         const savings = originalTotalCost - totalWithPayoff;
         const savingsPercentage = (savings / originalTotalCost) * 100;
         
-        console.log(`\n=== PAYOFF SUMMARY ===`);
-        console.log(`Remaining Principal: R${remainingPrincipal.toFixed(2)}`);
-        console.log(`Interest Owed: R${interestOwed.toFixed(2)}`);
-        console.log(`Initiation Fee Owed: R${initiationFeeOwed.toFixed(2)}`);
-        console.log(`Admin Fees Owed: R${adminFeesOwed.toFixed(2)}`);
-        console.log(`───────────────────────────────`);
-        console.log(`TOTAL PAYOFF: R${totalPayoff.toFixed(2)}`);
-        console.log(`\nSavings: R${savings.toFixed(2)} (${savingsPercentage.toFixed(2)}%)`);
+        dbg(`\n=== PAYOFF SUMMARY ===`);
+        dbg(`Remaining Principal: R${remainingPrincipal.toFixed(2)}`);
+        dbg(`Interest Owed: R${interestOwed.toFixed(2)}`);
+        dbg(`Initiation Fee Owed: R${initiationFeeOwed.toFixed(2)}`);
+        dbg(`Admin Fees Owed: R${adminFeesOwed.toFixed(2)}`);
+        dbg(`───────────────────────────────`);
+        dbg(`TOTAL PAYOFF: R${totalPayoff.toFixed(2)}`);
+        dbg(`\nSavings: R${savings.toFixed(2)} (${savingsPercentage.toFixed(2)}%)`);
         
         return {
             // Payoff amount breakdown
@@ -422,14 +451,14 @@ const Calculations = {
      * Returns equal monthly installments with interest cap
      */
     calculateStandardLoan(principal, term) {
-        console.log(`\n=== STANDARD LOAN CALCULATION (30% Income Table) ===`);
-        console.log(`Principal: R${principal.toFixed(2)}`);
-        console.log(`Term: ${term} months`);
+        dbg(`\n=== STANDARD LOAN CALCULATION (30% Income Table) ===`);
+        dbg(`Principal: R${principal.toFixed(2)}`);
+        dbg(`Term: ${term} months`);
         
         // Calculate interest period (long-term loan protection)
         const interestPeriod = this.calculateInterestPeriod(term);
         const interestMonths = interestPeriod.interestMonths;
-        console.log(`Interest Calculation Period: ${interestMonths} months (${interestPeriod.description})`);
+        dbg(`Interest Calculation Period: ${interestMonths} months (${interestPeriod.description})`);
         
         const basePrincipalPayment = principal / term;
         let outstandingBalance = principal;
@@ -439,9 +468,9 @@ const Calculations = {
         // First pass: Calculate interest for the interest period ONLY (declining balance)
         let balance = principal;
         for (let month = 1; month <= interestMonths; month++) {
-            const tbfsIncome = balance * 0.30;
-            const adminFee = 60;
-            const initiationFee = (principal * 0.12) / term; // Still spread across full term
+            const tbfsIncome = balance * RATES.INCOME_TABLE_RATE;
+            const adminFee = RATES.ADMIN_FEE_STANDARD;
+            const initiationFee = (principal * RATES.INITIATION_FEE_RATE) / term; // Still spread across full term
             const monthlyInterest = tbfsIncome - adminFee - initiationFee;
             
             totalInterestForPeriod += monthlyInterest;
@@ -452,14 +481,14 @@ const Calculations = {
         const totalInterest = totalInterestForPeriod;
         const equalizedMonthlyInterest = totalInterest / term;
         
-        console.log(`Interest calculated for ${interestMonths} months: R${totalInterestForPeriod.toFixed(2)}`);
-        console.log(`Equalized monthly interest (spread over ${term} months): R${equalizedMonthlyInterest.toFixed(2)}`);
+        dbg(`Interest calculated for ${interestMonths} months: R${totalInterestForPeriod.toFixed(2)}`);
+        dbg(`Equalized monthly interest (spread over ${term} months): R${equalizedMonthlyInterest.toFixed(2)}`);
         
         // Build monthly breakdown with equalized interest
         outstandingBalance = principal;
         for (let month = 1; month <= term; month++) {
-            const adminFee = 60;
-            const initiationFee = (principal * 0.12) / term;
+            const adminFee = RATES.ADMIN_FEE_STANDARD;
+            const initiationFee = (principal * RATES.INITIATION_FEE_RATE) / term;
             
             monthlyDetails.push({
                 month,
@@ -474,16 +503,16 @@ const Calculations = {
         }
         
         // Calculate totals
-        const totalInitiationFee = principal * 0.12;
-        const totalAdminFees = 60 * term;
+        const totalInitiationFee = principal * RATES.INITIATION_FEE_RATE;
+        const totalAdminFees = RATES.ADMIN_FEE_STANDARD * term;
         const totalCostStandard = principal + totalInterest + totalInitiationFee + totalAdminFees;
         const equalMonthlyPayment = totalCostStandard / term;
         
-        console.log(`Total Interest: R${totalInterest.toFixed(2)}`);
-        console.log(`Total Initiation Fee: R${totalInitiationFee.toFixed(2)}`);
-        console.log(`Total Admin Fees: R${totalAdminFees.toFixed(2)}`);
-        console.log(`Total Cost: R${totalCostStandard.toFixed(2)}`);
-        console.log(`Equal Monthly Payment: R${equalMonthlyPayment.toFixed(2)}`);
+        dbg(`Total Interest: R${totalInterest.toFixed(2)}`);
+        dbg(`Total Initiation Fee: R${totalInitiationFee.toFixed(2)}`);
+        dbg(`Total Admin Fees: R${totalAdminFees.toFixed(2)}`);
+        dbg(`Total Cost: R${totalCostStandard.toFixed(2)}`);
+        dbg(`Equal Monthly Payment: R${equalMonthlyPayment.toFixed(2)}`);
         
         // Second pass: Build breakdown with equal payments
         const breakdown = [];
@@ -526,67 +555,105 @@ const Calculations = {
         const tieredRate = loan.tieredRate;
         
         // Calculate minimum charge (10% of balance)
-        const minimumInterest = outstandingBalance * 0.10;
-        const minimumAdmin = 60;
+        const minimumInterest = outstandingBalance * RATES.STOCKVEL_MIN_MONTHLY_RATE;
+        const minimumAdmin = RATES.ADMIN_FEE_STANDARD;
         const minimumInitiation = (loan.initiation_fee - loan.initiation_fee_paid) / 
                                    (loan.term_months - loan.payments_made);
         const minimumCharge = minimumInterest + minimumAdmin + minimumInitiation;
         
         // Calculate amount due to TBFS (tiered rate)
         const tieredInterest = outstandingBalance * tieredRate;
-        const variableAdmin = 60 * (1 - tieredRate);
+        const variableAdmin = RATES.ADMIN_FEE_STANDARD * (1 - tieredRate);
         const amountDueToTBFS = tieredInterest + variableAdmin + minimumInitiation;
         
         // Calculate bonus
         let bonus = 0;
         if (amountDueToTBFS < minimumCharge) {
             bonus = minimumCharge - amountDueToTBFS;
-            console.log(`💰 Bonus earned: R${bonus.toFixed(2)}`);
-            console.log(`  Minimum charge: R${minimumCharge.toFixed(2)}`);
-            console.log(`  Amount due to TBFS: R${amountDueToTBFS.toFixed(2)}`);
-            console.log(`  Member saves: ${((bonus / minimumCharge) * 100).toFixed(1)}%`);
+            dbg(`💰 Bonus earned: R${bonus.toFixed(2)}`);
+            dbg(`  Minimum charge: R${minimumCharge.toFixed(2)}`);
+            dbg(`  Amount due to TBFS: R${amountDueToTBFS.toFixed(2)}`);
+            dbg(`  Member saves: ${((bonus / minimumCharge) * 100).toFixed(1)}%`);
         }
         
         return this.round(bonus);
     },
     
     /**
-     * Allocate payment across fees, interest, and principal
-     * Returns breakdown of allocation
+     * Shared payment waterfall (F-02): allocate a payment against the next
+     * pending schedule entry in the production order
+     *   initiation → admin → late penalty → interest → principal
+     * enforcing the loan's interest cap (max_interest_allowed) at the
+     * allocation step. Pure function: no state is mutated.
+     *
+     * @param {number} amount            Payment received
+     * @param {object} opts
+     * @param {object} opts.entry        Next pending schedule entry
+     * @param {number} [opts.latePenaltyDue=0]
+     * @param {number} [opts.interestCapRemaining=Infinity]
+     *        max_interest_allowed − interest_paid (pass Infinity to disable)
+     * @param {number} [opts.remainingPrincipal=Infinity]
+     * @returns breakdown {initiationPaid, adminPaid, penaltyPaid,
+     *                     interestPaid, principalPaid, unallocated}
      */
-    allocatePayment(paymentAmount, loan) {
-        let remaining = paymentAmount;
-        
-        // Calculate what's due
-        const monthlyAdminFee = loan.isStockvelLoan ? 
-            (60 * (1 - (loan.tieredRate || 0))) : 60;
-        const monthlyInitiationFee = (loan.initiation_fee - loan.initiation_fee_paid) / 
-                                     (loan.term_months - loan.payments_made);
-        const maxInterestAllowed = loan.principal * 1.00; // 100% cap
-        const maxInterestCanPay = maxInterestAllowed - loan.total_interest_charged;
-        
-        // 1. Admin Fee
-        const adminPaid = Math.min(remaining, monthlyAdminFee);
-        remaining -= adminPaid;
-        
-        // 2. Initiation Fee
-        const initiationPaid = Math.min(remaining, monthlyInitiationFee);
-        remaining -= initiationPaid;
-        
-        // 3. Interest (with cap)
-        const interestPaid = Math.min(remaining, maxInterestCanPay);
-        remaining -= interestPaid;
-        
-        // 4. Principal
-        const principalPaid = remaining;
-        
+    allocateScheduledPayment(amount, opts) {
+        const entry = (opts && opts.entry) || {};
+        const latePenaltyDue = Math.max(0, (opts && opts.latePenaltyDue) || 0);
+        const capRemaining = (opts && Number.isFinite(opts.interestCapRemaining))
+            ? Math.max(0, opts.interestCapRemaining) : Infinity;
+        const remainingPrincipal = (opts && Number.isFinite(opts.remainingPrincipal))
+            ? Math.max(0, opts.remainingPrincipal) : Infinity;
+
+        let remaining = Math.max(0, Number(amount) || 0);
+
+        const take = (due) => {
+            const paid = Math.min(remaining, Math.max(0, Number(due) || 0));
+            remaining -= paid;
+            return paid;
+        };
+
+        const initiationPaid = take(entry.initiation_fee);
+        const adminPaid = take(entry.admin_fee);
+        const penaltyPaid = take(latePenaltyDue);
+        const interestPaid = take(Math.min(
+            Math.max(0, Number(entry.interest_payment) || 0), capRemaining));
+        const principalPaid = take(Math.min(
+            Math.max(0, Number(entry.principal_payment) || 0), remainingPrincipal));
+
         return {
-            adminPaid: this.round(adminPaid),
             initiationPaid: this.round(initiationPaid),
+            adminPaid: this.round(adminPaid),
+            penaltyPaid: this.round(penaltyPaid),
             interestPaid: this.round(interestPaid),
             principalPaid: this.round(principalPaid),
-            totalAllocated: this.round(adminPaid + initiationPaid + interestPaid + principalPaid)
+            unallocated: this.round(remaining)
         };
+    },
+
+    /**
+     * Admin fee for stockvel loans by contribution level (shared rule).
+     */
+    getAdminFeeForContributions(totalContributions) {
+        const c = Number(totalContributions) || 0;
+        if (c >= 20000) return RATES.ADMIN_FEE_CONTRIB_20K;
+        if (c >= 10000) return RATES.ADMIN_FEE_CONTRIB_10K;
+        return RATES.ADMIN_FEE_STANDARD;
+    },
+
+    /**
+     * Resolve the schedule start YEAR for a loan (F-16 / date fix).
+     * A repayment schedule cannot begin before disbursement: if the chosen
+     * start month is calendar-earlier than the loan month, it means the
+     * NEXT occurrence of that month.
+     *   e.g. loan Dec 2026, start month Jan → schedule starts Jan 2027.
+     */
+    resolveScheduleStartYear(loanDate, startMonthIndex) {
+        const d = (loanDate instanceof Date) ? loanDate : new Date(loanDate);
+        const base = isNaN(d.getTime()) ? new Date() : d;
+        const year = base.getFullYear();
+        const m = Number(startMonthIndex);
+        if (!Number.isFinite(m)) return year;
+        return (m < base.getMonth()) ? year + 1 : year;
     },
     
     /**
@@ -636,7 +703,12 @@ const Calculations = {
             start.getMonth(),
             start.getDate()
         );
-        return end.toISOString().split('T')[0];
+        // Format from LOCAL date parts. toISOString() converts to UTC,
+        // which in SAST (UTC+2) shifted the date back by one day.
+        const yyyy = end.getFullYear();
+        const mm = String(end.getMonth() + 1).padStart(2, '0');
+        const dd = String(end.getDate()).padStart(2, '0');
+        return yyyy + '-' + mm + '-' + dd;
     },
     
     /**
@@ -678,8 +750,8 @@ const Calculations = {
      * 0.1% per day on outstanding balance, capped at 7 days
      */
     calculateLatePenalty(daysLate, outstandingBalance) {
-        const maxDays = 7;
-        const dailyRate = 0.001; // 0.1% per day
+        const maxDays = RATES.LATE_PENALTY_MAX_DAYS;
+        const dailyRate = RATES.LATE_PENALTY_DAILY_RATE;
         const effectiveDays = Math.min(Math.max(0, daysLate), maxDays);
         const penalty = outstandingBalance * dailyRate * effectiveDays;
         return this.round(penalty);
@@ -786,8 +858,10 @@ const Calculations = {
     }
 };
 
-// Make globally available
-window.Calculations = Calculations;
+// Make globally available (browser only)
+if (typeof window !== 'undefined') {
+    window.Calculations = Calculations;
+}
 
 // Export for modules
 if (typeof module !== 'undefined' && module.exports) {
