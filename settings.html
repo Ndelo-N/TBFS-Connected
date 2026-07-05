@@ -329,6 +329,21 @@
                     </div>
                 </div>
                 
+                <div id="cbkUnlockRow" style="display: none; padding: 15px; border-radius: 10px; margin-bottom: 20px; background: #fff8e6; border: 2px solid #f39c12;">
+                    <strong style="color: #b9770e;">&#128274; Session locked</strong>
+                    <p style="margin: 5px 0 10px 0; font-size: 14px; color: #2c3e50;">
+                        Enter your backup passphrase to unlock cloud backup for this session.
+                        (First time after updating? The passphrase you enter here becomes your
+                        passphrase and your token is upgraded to encrypted storage.)
+                    </p>
+                    <div style="display: flex; gap: 10px; flex-wrap: wrap;">
+                        <input type="password" id="cbkUnlockPass" placeholder="Backup passphrase"
+                               style="flex: 1; min-width: 180px; font-family: monospace; font-size: 14px;">
+                        <button class="btn btn-primary" onclick="unlockBackup()">&#128275; Unlock</button>
+                    </div>
+                    <p id="cbkUnlockMsg" style="font-size: 12px; color: #e74c3c; margin-top: 6px; min-height: 14px;"></p>
+                </div>
+
                 <div class="checkbox-container">
                     <input type="checkbox" id="autoBackupToggle" onchange="toggleAutoBackup()">
                     <label for="autoBackupToggle">
@@ -358,6 +373,23 @@
                     </p>
                 </div>
                 
+                <div class="form-group">
+                    <label for="backupPassphrase">Backup passphrase (new):</label>
+                    <input type="password" id="backupPassphrase" placeholder="Choose a passphrase"
+                           style="font-family: monospace; font-size: 14px;">
+                    <p style="font-size: 12px; color: #636e72; margin-top: 5px;">
+                        &#128273; Encrypts your token on this device (AES-256) and signs your
+                        cloud backups. Entered once per session. If forgotten, remove the
+                        token and set up again with a fresh fine-grained PAT.
+                    </p>
+                </div>
+
+                <div class="form-group">
+                    <label for="backupPassphrase2">Confirm passphrase:</label>
+                    <input type="password" id="backupPassphrase2" placeholder="Repeat passphrase"
+                           style="font-family: monospace; font-size: 14px;">
+                </div>
+
                 <div class="form-group">
                     <label for="backupRepoUrl">Backup Repository URL:</label>
                     <input type="text" id="backupRepoUrl" 
@@ -434,8 +466,10 @@
     </main>
 
     <!-- Shared Scripts -->
+    <script src="shared/sanitize.js"></script>
     <script src="shared/app-state.js"></script>
     <script src="shared/calculations.js"></script>
+    <script src="shared/cloud-backup.js"></script>
     <script src="shared/navigation.js"></script>
 
     <script>
@@ -446,6 +480,10 @@
         // Global state
         let AppState = {};
         let updateAvailable = false;
+        // Verbose diagnostics are opt-in. (F-17)
+        const DEBUG = false;
+        function dbg(...args) { if (DEBUG) console.log(...args); }
+
         let waitingServiceWorker = null;
         
         /**
@@ -482,12 +520,12 @@
             
             // Listen for state updates from other tabs
             AppStateManager.onUpdate(() => {
-                console.log('State updated from another tab, reloading...');
+                dbg('State updated from another tab, reloading...');
                 AppState = AppStateManager.load();
                 updateFinancialSettings();
             });
             
-            console.log('✅ Settings page initialized');
+            dbg('✅ Settings page initialized');
         }
         
         /**
@@ -583,16 +621,16 @@
                 
                 return `<div style="background: #f8f9fa; padding: 12px 15px; border-radius: 8px; margin-bottom: 8px; border-left: 4px solid ${methodColor};">
                     <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 5px;">
-                        <strong style="color: #2c3e50;">${r.clientName} (Loan #${r.loanId})</strong>
+                        <strong style="color: #2c3e50;">${esc(r.clientName)} (Loan #${esc(r.loanId)})</strong>
                         <span style="font-size: 12px; color: #636e72;">${date}</span>
                     </div>
                     <div style="margin-top: 6px; font-size: 13px;">
-                        <span style="background: ${methodColor}; color: white; padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: 600;">${r.method}</span>
+                        <span style="background: ${methodColor}; color: white; padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: 600;">${esc(r.method)}</span>
                         ${r.daysOverdue > 0 ? `<span style="margin-left: 8px; color: #e74c3c; font-weight: 600;">${r.daysOverdue} days overdue</span>` : ''}
                         ${r.outstandingAmount ? `<span style="margin-left: 8px; color: #636e72;">${Calculations.formatCurrency(r.outstandingAmount)} outstanding</span>` : ''}
                     </div>
-                    ${r.notes ? `<div style="margin-top: 6px; font-size: 13px; color: #636e72;"><em>Notes: ${r.notes}</em></div>` : ''}
-                    ${r.clientResponse ? `<div style="margin-top: 4px; font-size: 13px; color: #2c3e50;"><strong>Response:</strong> ${r.clientResponse}</div>` : ''}
+                    ${r.notes ? `<div style="margin-top: 6px; font-size: 13px; color: #636e72;"><em>Notes: ${esc(r.notes)}</em></div>` : ''}
+                    ${r.clientResponse ? `<div style="margin-top: 4px; font-size: 13px; color: #2c3e50;"><strong>Response:</strong> ${esc(r.clientResponse)}</div>` : ''}
                 </div>`;
             }).join('');
         }
@@ -744,7 +782,7 @@
                     const remoteVersion = versionMatch[1];
                     const currentVersion = APP_VERSION;
                     
-                    console.log(`Current: ${currentVersion}, Remote: ${remoteVersion}`);
+                    dbg(`Current: ${currentVersion}, Remote: ${remoteVersion}`);
                     
                     if (remoteVersion !== currentVersion) {
                         // Version mismatch - update available
@@ -895,326 +933,107 @@
         /**
          * Cloud Backup System
          */
-        const CloudBackup = {
-            autoBackupEnabled: false,
-            token: null,
-            repoOwner: 'Ndelo-N',
-            repoName: 'TBFS-Data-Backup',
-            
-            init() {
-                // Check if token is configured
-                const encryptedToken = localStorage.getItem('githubBackupToken');
-                if (encryptedToken) {
-                    this.token = this.decrypt(encryptedToken);
-                }
-                
-                // Check if auto-backup is enabled
-                const autoBackupSetting = localStorage.getItem('autoBackupEnabled');
-                this.autoBackupEnabled = (autoBackupSetting === 'true');
-                
-                this.updateUI();
-                
-                if (this.autoBackupEnabled) {
-                    this.updateSyncTime();
-                }
-                
-                // Setup online/offline listeners
-                window.addEventListener('online', () => this.syncPendingBackups());
-            },
-            
-            hasToken() {
-                return this.token !== null && this.token.length > 0;
-            },
-            
-            encrypt(text) {
-                // Simple Base64 encoding (for basic obfuscation)
-                return btoa(unescape(encodeURIComponent(text)));
-            },
-            
-            decrypt(encoded) {
-                return decodeURIComponent(escape(atob(encoded)));
-            },
-            
-            updateUI() {
-                if (this.hasToken()) {
-                    document.getElementById('tokenConfigured').style.display = 'block';
-                    document.getElementById('cloudBackupSetup').style.display = 'none';
-                    
-                    // Update toggle checkbox
-                    const toggle = document.getElementById('autoBackupToggle');
-                    if (toggle) {
-                        toggle.checked = this.autoBackupEnabled;
-                    }
-                    
-                    // Show/hide auto-backup status
-                    if (this.autoBackupEnabled) {
-                        document.getElementById('autoBackupStatus').style.display = 'block';
-                    } else {
-                        document.getElementById('autoBackupStatus').style.display = 'none';
-                    }
-                } else {
-                    document.getElementById('tokenConfigured').style.display = 'none';
-                    document.getElementById('cloudBackupSetup').style.display = 'block';
-                }
-            },
-            
-            updateSyncTime() {
-                const lastSync = localStorage.getItem('lastCloudSync');
-                if (lastSync) {
-                    const date = new Date(lastSync);
-                    const now = new Date();
-                    const diffMinutes = Math.floor((now - date) / 60000);
-                    
-                    let timeText;
-                    if (diffMinutes < 1) {
-                        timeText = 'Just now';
-                    } else if (diffMinutes < 60) {
-                        timeText = `${diffMinutes} minute${diffMinutes > 1 ? 's' : ''} ago`;
-                    } else {
-                        const hours = Math.floor(diffMinutes / 60);
-                        timeText = `${hours} hour${hours > 1 ? 's' : ''} ago`;
-                    }
-                    
-                    const syncTimeElement = document.getElementById('lastSyncTime');
-                    if (syncTimeElement) {
-                        syncTimeElement.textContent = timeText;
-                    }
-                }
-            },
-            
-            async backup() {
-                if (!this.autoBackupEnabled || !this.hasToken()) {
-                    return; // Auto-backup not enabled, skip
-                }
-                
-                if (!navigator.onLine) {
-                    // Queue for later if offline
-                    localStorage.setItem('pendingCloudBackup', 'true');
-                    // Register background sync so SW triggers backup when online
-                    if (typeof registerBackgroundSync === 'function') registerBackgroundSync();
-                    console.log('Offline: Backup queued for when online (background sync registered)');
-                    return;
-                }
-                
-                const data = {
-                    capital: AppState.capital || AppState.deployedCapital || 0,
-                    deployed: AppState.deployed || AppState.deployedCapital || 0,
-                    totalInterestEarned: AppState.totalInterestEarned || 0,
-                    totalFeesEarned: AppState.totalFeesEarned || 0,
-                    profitGoal: AppState.profitGoal || 0,
-                    clients: AppState.clients || [],
-                    loans: AppState.loans || [],
-                    transactionHistory: AppState.transactions || [],
-                    nextAccountNumber: AppState.nextAccountNumber || 2025001,
-                    stockvelMembers: AppState.stockvelMembers || [],
-                    stockvelReceipts: AppState.stockvelReceipts || [],
-                    nextMemberNumber: AppState.nextMemberNumber || 1001,
-                    timestamp: new Date().toISOString()
-                };
-                
-                try {
-                    // Upload latest.json
-                    await this.uploadToGitHub('latest.json', data);
-                    
-                    // Also create daily snapshot
-                    const dateStr = new Date().toISOString().split('T')[0];
-                    await this.uploadToGitHub(`daily/${dateStr}.json`, data);
-                    
-                    localStorage.setItem('lastCloudSync', new Date().toISOString());
-                    localStorage.removeItem('pendingCloudBackup');
-                    this.updateSyncTime();
-                    
-                    console.log('✅ Cloud backup successful');
-                } catch (error) {
-                    console.error('Cloud backup failed:', error);
-                    localStorage.setItem('pendingCloudBackup', 'true');
-                    // Register background sync to retry when connectivity improves
-                    if (typeof registerBackgroundSync === 'function') registerBackgroundSync();
-                }
-            },
-            
-            async uploadToGitHub(path, data) {
-                const content = btoa(unescape(encodeURIComponent(JSON.stringify(data, null, 2))));
-                const url = `https://api.github.com/repos/${this.repoOwner}/${this.repoName}/contents/${path}`;
-                
-                // Check if file exists to get SHA
-                let sha = null;
-                try {
-                    const getResponse = await fetch(url, {
-                        headers: {
-                            'Authorization': `Bearer ${this.token}`,
-                            'Accept': 'application/vnd.github.v3+json'
-                        }
-                    });
-                    if (getResponse.ok) {
-                        const fileData = await getResponse.json();
-                        sha = fileData.sha;
-                    }
-                } catch (e) {
-                    // File doesn't exist, that's okay
-                }
-                
-                // Create or update file
-                const response = await fetch(url, {
-                    method: 'PUT',
-                    headers: {
-                        'Authorization': `Bearer ${this.token}`,
-                        'Accept': 'application/vnd.github.v3+json',
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify({
-                        message: `Backup: ${new Date().toISOString()}`,
-                        content: content,
-                        sha: sha
-                    })
-                });
-                
-                if (!response.ok) {
-                    throw new Error(`GitHub API error: ${response.statusText}`);
-                }
-            },
-            
-            async syncPendingBackups() {
-                const hasPending = localStorage.getItem('pendingCloudBackup');
-                if (hasPending && this.autoBackupEnabled && this.hasToken()) {
-                    console.log('🔄 Syncing pending backup...');
-                    await this.backup();
-                    alert('✅ Pending backup synced to cloud!');
-                }
-            },
-            
-            async restore() {
-                if (!this.hasToken()) {
-                    alert('Please configure your GitHub token first in Settings');
-                    return;
-                }
-                
-                try {
-                    const url = `https://api.github.com/repos/${this.repoOwner}/${this.repoName}/contents/latest.json`;
-                    const response = await fetch(url, {
-                        headers: {
-                            'Authorization': `Bearer ${this.token}`,
-                            'Accept': 'application/vnd.github.v3+json'
-                        }
-                    });
-                    
-                    if (!response.ok) {
-                        // Handle different error types with specific messages
-                        if (response.status === 404) {
-                            // No backup file exists yet - this is not an error, just information
-                            alert('📦 No cloud backup found yet.\n\n' +
-                                  '💡 To create your first backup:\n' +
-                                  '1. Enable "Auto-Backup" in Settings, or\n' +
-                                  '2. Make any change (add/edit a loan) to trigger automatic backup, or\n' +
-                                  '3. Use "Download Local Backup" to save locally first\n\n' +
-                                  'Once created, your backup will sync across all devices!');
-                            return;
-                        } else if (response.status === 401) {
-                            throw new Error('Authentication failed. Please check your GitHub token in Settings.');
-                        } else if (response.status === 403) {
-                            throw new Error('Access denied. Please verify your token has "Contents: Read and write" permission for the backup repository.');
-                        } else {
-                            throw new Error(`Unable to access cloud backup (Error ${response.status}). Please check your internet connection and try again.`);
-                        }
-                    }
-                    
-                    const fileData = await response.json();
-                    const content = decodeURIComponent(escape(atob(fileData.content)));
-                    const data = JSON.parse(content);
-                    
-                    // Restore data using AppStateManager
-                    AppStateManager.save(data);
-                    alert('✅ Data restored from cloud successfully!\n\nReloading app to display restored data...');
-                    
-                    // Reload page to refresh all views
-                    setTimeout(() => {
-                        location.reload();
-                    }, 500);
-                } catch (error) {
-                    // Only show error for actual errors (not 404 which we handled above)
-                    alert('❌ Failed to restore from cloud: ' + error.message);
-                }
-            }
-        };
-        
+        // The CloudBackup implementation lives in shared/cloud-backup.js
+        // (single source of truth, loaded on every page). (F-12)
+
         /**
          * Save GitHub token
          */
-        function saveToken() {
+        async function saveToken() {
             const token = document.getElementById('githubToken').value.trim();
-            
+            const pass = document.getElementById('backupPassphrase').value;
+            const pass2 = document.getElementById('backupPassphrase2').value;
+
             if (!token) {
                 alert('Please enter your GitHub token');
                 return;
             }
-            
             if (!token.startsWith('github_pat_') && !token.startsWith('ghp_')) {
                 alert('Invalid token format. Token should start with "github_pat_" or "ghp_"');
                 return;
             }
-            
-            // Encrypt and store token
-            const encrypted = CloudBackup.encrypt(token);
-            localStorage.setItem('githubBackupToken', encrypted);
-            
-            CloudBackup.token = token;
-            CloudBackup.updateUI();
-            
-            // Clear token input
+            if (!pass || pass.length < 8) {
+                alert('Choose a backup passphrase of at least 8 characters.');
+                return;
+            }
+            if (pass !== pass2) {
+                alert('The passphrases do not match.');
+                return;
+            }
+
+            // Encrypt the token under the passphrase (AES-GCM-256; key via
+            // PBKDF2 310k iterations) and keep it unlocked for this session.
+            await CloudBackup.setupToken(token, pass);
+
             document.getElementById('githubToken').value = '';
-            
-            alert('✅ Token saved! You can now restore from cloud.\n\n💡 Tip: Check the "Enable Auto-Backup" box if you want this device to automatically sync changes to cloud.');
+            document.getElementById('backupPassphrase').value = '';
+            document.getElementById('backupPassphrase2').value = '';
+
+            alert('✅ Token encrypted and saved!\n\n' +
+                  '💡 Enable "Auto-Backup" if this device should sync changes to ' +
+                  'cloud automatically. You will enter the passphrase once per session.');
         }
-        
+
         /**
+         * Unlock cloud backup for this session (F-05)
+         */
+        async function unlockBackup() {
+            const pass = document.getElementById('cbkUnlockPass').value;
+            const msg = document.getElementById('cbkUnlockMsg');
+            if (!pass) { msg.textContent = 'Enter your passphrase.'; return; }
+            const ok = await CloudBackup.unlock(pass);
+            if (ok) {
+                document.getElementById('cbkUnlockPass').value = '';
+                msg.textContent = '';
+                CloudBackup.updateUI();
+                CloudBackup.syncPendingBackups();
+            } else {
+                msg.textContent = 'Wrong passphrase.';
+            }
+        }
+
+        /**
+         * Remove GitHub token
          * Remove GitHub token
          */
         function removeToken() {
-            if (confirm('Remove GitHub token? You won\'t be able to backup or restore from cloud until you add it again.')) {
-                localStorage.removeItem('githubBackupToken');
-                localStorage.removeItem('autoBackupEnabled');
-                localStorage.removeItem('lastCloudSync');
-                CloudBackup.token = null;
-                CloudBackup.autoBackupEnabled = false;
-                CloudBackup.updateUI();
-                alert('Token removed');
+            if (!confirm('Remove GitHub token? You won\'t be able to backup or restore from cloud until you add it again.')) {
+                return;
             }
+            CloudBackup.removeToken();
+            alert('Token removed.');
         }
-        
+
         /**
-         * Toggle auto-backup
+         * Toggle auto-backup on this device
          */
         function toggleAutoBackup() {
-            const isChecked = document.getElementById('autoBackupToggle').checked;
-            
-            if (isChecked) {
-                // Enabling auto-backup
-                CloudBackup.autoBackupEnabled = true;
-                localStorage.setItem('autoBackupEnabled', 'true');
-                CloudBackup.updateUI();
-                
-                // Perform initial backup
-                CloudBackup.backup();
-                
-                alert('✅ Auto-backup enabled! Every change will now sync to cloud automatically.');
+            const box = document.getElementById('autoBackupToggle');
+
+            if (box.checked) {
+                if (!CloudBackup.isUnlocked()) {
+                    alert('🔒 Unlock cloud backup with your passphrase first, then enable auto-backup.');
+                    box.checked = false;
+                    return;
+                }
+                CloudBackup.setAutoBackup(true);
+                CloudBackup.backup({ manual: true });
+                alert('✅ Auto-backup enabled! Changes on any page will sync to cloud ' +
+                      'while the session is unlocked.');
             } else {
-                // Disabling auto-backup
                 if (confirm('Disable auto-backup on this device? You can still restore from cloud anytime.')) {
-                    CloudBackup.autoBackupEnabled = false;
-                    localStorage.setItem('autoBackupEnabled', 'false');
-                    CloudBackup.updateUI();
+                    CloudBackup.setAutoBackup(false);
                     alert('Auto-backup disabled. You can still restore from cloud anytime.');
                 } else {
-                    // User cancelled, re-check the box
-                    document.getElementById('autoBackupToggle').checked = true;
+                    box.checked = true;
                 }
             }
         }
-        
+
         /**
          * Restore from cloud
          */
-        async function restoreFromCloud() {
+                async function restoreFromCloud() {
             if (!CloudBackup.hasToken()) {
                 alert('Please configure your GitHub token first in Settings');
                 return;
@@ -1265,15 +1084,11 @@
                 const reader = new FileReader();
                 reader.onload = function(e) {
                     try {
-                        const data = JSON.parse(e.target.result);
-                        
-                        // Validate data structure
-                        if (!data || typeof data !== 'object') {
-                            throw new Error('Invalid backup file format');
-                        }
-                        
-                        // Restore using AppStateManager
-                        AppStateManager.save(data);
+                        // F-08: the ONLY sanctioned restore path — parse,
+                        // normalize, and VALIDATE before anything is saved.
+                        // Malformed or corrupt files throw with the reason.
+                        const restored = AppStateManager.importJSON(e.target.result);
+                        AppStateManager.save(restored);
                         
                         alert('✅ Data restored successfully!\n\nReloading app to display restored data...');
                         
@@ -1306,14 +1121,18 @@
             }
             
             // Auto-backup before clearing
-            console.log('🔄 Auto-backup before clearing all data...');
+            dbg('🔄 Auto-backup before clearing all data...');
             backupData();
             
             setTimeout(() => {
                 // Clear localStorage
                 localStorage.removeItem(AppStateManager.STORAGE_KEY);
                 localStorage.removeItem('githubBackupToken');
+                localStorage.removeItem('tbfsBackupToken.v2');
                 localStorage.removeItem('autoBackupEnabled');
+                localStorage.removeItem('lastCloudSync');
+                localStorage.removeItem('pendingCloudBackup');
+                localStorage.removeItem('tbfsBackupConflict');
                 localStorage.removeItem('lastCloudSync');
                 localStorage.removeItem('pendingCloudBackup');
                 
@@ -1330,18 +1149,10 @@
             }, 500); // Small delay to ensure backup completes
         }
         
-        // Hook into AppStateManager.save to trigger cloud backup
-        const originalSave = AppStateManager.save;
-        AppStateManager.save = function(state) {
-            originalSave.call(this, state);
-            // Trigger cloud backup after saving locally (only if auto-backup enabled)
-            if (CloudBackup.autoBackupEnabled && CloudBackup.hasToken()) {
-                // Update AppState reference
-                AppState = state;
-                CloudBackup.backup();
-            }
-        };
-        
+        // Cloud auto-backup now hooks AppStateManager.save inside
+        // shared/cloud-backup.js (loaded on every page), so payments and
+        // other mutations back up too — not only settings-page saves. (F-12)
+
         // Initialize on page load
         document.addEventListener('DOMContentLoaded', init);
     </script>
