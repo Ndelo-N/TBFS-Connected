@@ -1,5 +1,15 @@
 # Stockvel Loan Calculation: R30,000 for 6 Months
 
+> **Reconciliation note (security remediation).** The monthly figures in the
+> hand-worked table below are internally inconsistent — the stated monthly
+> interest disagrees with this document's own tier arithmetic. The
+> authoritative calculation is the code
+> (`Calculations.calculateTieredStockvelInterest`), which the test suite
+> asserts is self-consistent. Treat the numbers below as illustrative of the
+> *method*, not as exact expected output; regenerate exact figures from the
+> app.
+
+
 **Member Profile:**
 - Initial Total Contributions: R10,500
 - Monthly Contribution: R1,000

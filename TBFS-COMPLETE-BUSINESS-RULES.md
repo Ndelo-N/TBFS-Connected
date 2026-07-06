@@ -300,13 +300,22 @@ if (amountDueToTBFS < minimumCharge) {
 
 ## Fee Structure Rules
 
+> **Canonical rates (single source of truth).** All rate constants live in
+> `shared/calculations.js` as `Calculations.RATES` and are covered by the
+> test suite (`tests/calculations.test.mjs`). If a rate changes, change it
+> there — this document must mirror `RATES`, not the other way round.
+> The standard-loan **initiation fee is 12%** (`INITIATION_FEE_RATE`),
+> matching the worked example in `STANDARD-LOAN-10K-10M-BREAKDOWN.md`
+> (R1,200 on a R10,000 loan). An earlier "9% / × 0.09" statement here was a
+> documentation error — the code has always billed 12%.
+
 ### 4.1 Initiation Fees
 
 **Standard Loans:**
-- **Rate:** 9% of principal amount
+- **Rate:** 12% of principal amount
 - **Application:** Charged once at loan origination
 - **Distribution:** Spread evenly across all payment months
-- **Formula:** `initiationFee = principal × 0.09`
+- **Formula:** `initiationFee = principal × 0.12`
 - **Monthly Portion:** `initiationFee / term`
 
 **Stockvel Loans:**
@@ -1842,7 +1851,7 @@ document.addEventListener('keydown', (e) => {
 - Equal Payments: ALL loans use equal monthly installments
 
 **FEES:**
-- Standard Initiation: 9% of principal
+- Standard Initiation: 12% of principal
 - Stockvel Initiation: 12% of excess (waived up to contributions)
 - Standard Admin: R60/month fixed
 - Stockvel Admin: R60 × (1 - tieredRate) variable

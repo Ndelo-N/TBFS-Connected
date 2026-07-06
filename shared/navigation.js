@@ -6,6 +6,10 @@
  * Version: 2.0.0 (Multi-Page Architecture)
  */
 
+// Verbose diagnostics are opt-in. (F-17)
+const DEBUG = false;
+function dbg(...args) { if (DEBUG) console.log(...args); }
+
 class NavigationManager {
     static swipeEnabled = false;
     static lastHamburgerToggle = 0;
@@ -109,7 +113,7 @@ class NavigationManager {
         if (this.swipeEnabled) {
             this.setupSwipeNav();
         } else {
-            console.log('👆 Swipe navigation disabled');
+            dbg('👆 Swipe navigation disabled');
         }
         
         // Set up responsive menu
@@ -121,7 +125,7 @@ class NavigationManager {
         // Handle hash-based redirects (backwards compatibility)
         this.handleLegacyHashRouting();
         
-        console.log(`🧭 Navigation initialized for page: ${currentPageId}`);
+        dbg(`🧭 Navigation initialized for page: ${currentPageId}`);
     }
     
     /**
@@ -195,7 +199,7 @@ class NavigationManager {
             }
         });
         
-        console.log('⌨️ Keyboard navigation enabled (Arrow Left/Right)');
+        dbg('⌨️ Keyboard navigation enabled (Arrow Left/Right)');
     }
 
     /**
@@ -248,7 +252,7 @@ class NavigationManager {
             this.handleSwipe(touchStartX, touchEndX, minSwipeDistance);
         }, { passive: true });
         
-        console.log('👆 Swipe navigation enabled (swipe left/right)');
+        dbg('👆 Swipe navigation enabled (swipe left/right)');
     }
     
     /**
@@ -287,7 +291,7 @@ class NavigationManager {
             hamburger.setAttribute('aria-expanded', (!isActive).toString());
             nav.setAttribute('aria-hidden', isActive ? 'true' : 'false');
             document.body.classList.toggle('nav-open', !isActive);
-            console.log('🍔 Menu toggled:', nav.classList.contains('active') ? 'open' : 'closed');
+            dbg('🍔 Menu toggled:', nav.classList.contains('active') ? 'open' : 'closed');
         } else {
             console.error('❌ Navigation elements not found:', { nav: !!nav, hamburger: !!hamburger });
         }
@@ -346,7 +350,7 @@ class NavigationManager {
             
             const newPage = hashMap[window.location.hash];
             if (newPage) {
-                console.log(`🔄 Redirecting from legacy hash URL: ${window.location.hash} → ${newPage}`);
+                dbg(`🔄 Redirecting from legacy hash URL: ${window.location.hash} → ${newPage}`);
                 window.location.href = newPage;
             }
         }

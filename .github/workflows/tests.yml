@@ -1,0 +1,25 @@
+name: Tests
+
+on:
+  push:
+    branches: [ main, security-remediation ]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  unit:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Run unit tests
+        run: node --test
+
+      - name: Verify inline scripts parse
+        run: node tools/check-html-scripts.mjs

@@ -11,6 +11,11 @@
  * Version: 2.1.0 (PWA Review - Future Improvements)
  */
 
+// Verbose diagnostics are opt-in. (F-17)
+const DEBUG = false;
+function dbg(...args) { if (DEBUG) console.log(...args); }
+
+
 (function() {
     'use strict';
 
@@ -21,7 +26,7 @@
         window.addEventListener('load', function() {
             navigator.serviceWorker.register('./sw.js')
                 .then(function(registration) {
-                    console.log('ServiceWorker registration successful with scope:', registration.scope);
+                    dbg('ServiceWorker registration successful with scope:', registration.scope);
                     
                     // Check for updates on load
                     registration.update();
@@ -32,7 +37,7 @@
                         if (newWorker) {
                             newWorker.addEventListener('statechange', function() {
                                 if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
-                                    console.log('New service worker installed - update available');
+                                    dbg('New service worker installed - update available');
                                     window.dispatchEvent(new CustomEvent('swUpdateAvailable', {
                                         detail: { worker: newWorker }
                                     }));
@@ -50,12 +55,12 @@
                     }, 30 * 60 * 1000);
                 })
                 .catch(function(err) {
-                    console.log('ServiceWorker registration failed:', err);
+                    dbg('ServiceWorker registration failed:', err);
                 });
             
             // Listen for controller change (update activated)
             navigator.serviceWorker.addEventListener('controllerchange', function() {
-                console.log('Service worker controller changed - reloading page');
+                dbg('Service worker controller changed - reloading page');
                 setTimeout(function() {
                     window.location.reload();
                 }, 100);
@@ -83,9 +88,9 @@
             navigator.serviceWorker.ready.then(function(registration) {
                 return registration.sync.register('cloud-backup-sync');
             }).then(function() {
-                console.log('Background sync registered: cloud-backup-sync');
+                dbg('Background sync registered: cloud-backup-sync');
             }).catch(function(err) {
-                console.log('Background sync registration failed:', err);
+                dbg('Background sync registration failed:', err);
             });
         }
     };
@@ -94,7 +99,7 @@
      * Handle sync request from service worker
      */
     function handleSyncRequest(syncType) {
-        console.log('Sync requested by service worker:', syncType);
+        dbg('Sync requested by service worker:', syncType);
         
         // Check if CloudBackup object exists (only on pages with cloud backup UI)
         if (typeof CloudBackup !== 'undefined' && CloudBackup.syncPendingBackups) {
@@ -103,7 +108,7 @@
             // Fallback: check localStorage for pending backup flag
             var hasPending = localStorage.getItem('pendingCloudBackup');
             if (hasPending) {
-                console.log('Pending backup found, but CloudBackup not available on this page');
+                dbg('Pending backup found, but CloudBackup not available on this page');
                 // The backup will be synced when user navigates to a page with CloudBackup
             }
         }
@@ -124,15 +129,15 @@
                     registration.periodicSync.register('periodic-cloud-backup', {
                         minInterval: 12 * 60 * 60 * 1000 // 12 hours
                     }).then(function() {
-                        console.log('Periodic background sync registered (12h interval)');
+                        dbg('Periodic background sync registered (12h interval)');
                     }).catch(function(err) {
-                        console.log('Periodic sync registration failed:', err);
+                        dbg('Periodic sync registration failed:', err);
                     });
                 } else {
-                    console.log('Periodic background sync permission not granted');
+                    dbg('Periodic background sync permission not granted');
                 }
             }).catch(function() {
-                console.log('Periodic background sync not supported');
+                dbg('Periodic background sync not supported');
             });
         }
     }
@@ -149,11 +154,11 @@
         if ('setAppBadge' in navigator) {
             if (count > 0) {
                 navigator.setAppBadge(count).catch(function(err) {
-                    console.log('Failed to set app badge:', err);
+                    dbg('Failed to set app badge:', err);
                 });
             } else {
                 navigator.clearAppBadge().catch(function(err) {
-                    console.log('Failed to clear app badge:', err);
+                    dbg('Failed to clear app badge:', err);
                 });
             }
         }
@@ -187,7 +192,7 @@
             
             window.updateAppBadge(overdueCount);
         } catch (err) {
-            console.log('Badge update failed:', err);
+            dbg('Badge update failed:', err);
         }
     };
 
