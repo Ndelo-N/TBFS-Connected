@@ -3695,6 +3695,8 @@ TBFS - Transparent, Fair, Simple
             // STEP 5: UPDATE APPSTATE
             AppState.capital = availableCapital - amount;
             AppState.deployed = (AppState.deployed || 0) + amount;
+            // Deployed capital is derived from the active book. (F-06)
+            AppStateManager.recalculateDerivedTotals(AppState);
             
             // STEP 6: REGENERATE PAYMENT SCHEDULE
             // Critical: Schedule must reflect new principal and terms

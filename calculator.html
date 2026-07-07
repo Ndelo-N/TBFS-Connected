@@ -418,7 +418,7 @@
                 const amountMatch = sharedDetails.match(/R?\s?(\d[\d,]*\.?\d*)/);
                 if (amountMatch) {
                     const amount = parseFloat(amountMatch[1].replace(/,/g, ''));
-                    const loanAmountEl = document.getElementById('loanAmount');
+                    const loanAmountEl = document.getElementById('principal');
                     if (loanAmountEl && amount > 0) {
                         loanAmountEl.value = amount;
                         dbg('Web Share Target: Parsed loan amount:', amount);

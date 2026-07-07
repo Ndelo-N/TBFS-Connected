@@ -310,6 +310,11 @@
     
     <!-- Page Logic -->
     <script>
+        // Verbose diagnostics are opt-in — client details must not
+        // stream to the console in normal use. (F-17)
+        const DEBUG = false;
+        function dbg(...args) { if (DEBUG) console.log(...args); }
+
         // Global state
         let AppState = {};
         let allClients = [];
@@ -326,7 +331,7 @@
             
             // Listen for state updates from other tabs
             AppStateManager.onUpdate(() => {
-                console.log('State updated from another tab, reloading...');
+                dbg('State updated from another tab, reloading...');
                 AppState = AppStateManager.load();
                 loadClients();
             });
@@ -334,7 +339,7 @@
             // Add client form
             document.getElementById('addClientForm').addEventListener('submit', handleAddClient);
             
-            console.log('✅ Clients page initialized');
+            dbg('✅ Clients page initialized');
         }
         
         /**
@@ -702,16 +707,16 @@
                     }
                 } else {
                     // Client is stockvel but member not found - set to false
-                    console.log('Client is stockvel but member not found - setting isStockvelMember=false');
+                    dbg('Client is stockvel but member not found - setting isStockvelMember=false');
                     params.append('isStockvelMember', 'false');
                 }
             } else {
                 // Client is not stockvel - explicitly set to false
-                console.log('Client is not stockvel - setting isStockvelMember=false');
+                dbg('Client is not stockvel - setting isStockvelMember=false');
                 params.append('isStockvelMember', 'false');
             }
             
-            console.log('Final URL params:', params.toString());
+            dbg('Final URL params:', params.toString());
             
             // Store comprehensive debug info in sessionStorage so we can see it after navigation
             // Reuse the client variable that was already found above
@@ -764,7 +769,7 @@
                 };
                 AppState.stockvelMembers.push(member);
                 AppStateManager.save(AppState);
-                console.log('✅ Created missing stockvel member entry for client:', client.account_number);
+                dbg('✅ Created missing stockvel member entry for client:', client.account_number);
             } else if (member) {
                 // Sync member data with client
                 member.account_number = client.account_number;

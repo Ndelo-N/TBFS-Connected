@@ -533,7 +533,7 @@
          */
         function updateFinancialSettings() {
             // Update capital display
-            const capital = AppState.capital || AppState.deployedCapital || 0;
+            const capital = AppState.capital || 0;
             document.getElementById('currentCapital').textContent = Calculations.formatCurrency(capital);
             if (document.getElementById('capitalInput')) {
                 document.getElementById('capitalInput').value = capital;
@@ -685,7 +685,6 @@
             }
             
             AppState.capital = amount;
-            AppState.deployedCapital = AppState.deployed || 0; // Ensure compatibility
             
             // Log transaction
             if (!AppState.transactions) AppState.transactions = [];

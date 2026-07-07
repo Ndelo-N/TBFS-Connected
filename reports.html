@@ -366,6 +366,11 @@
     
     <!-- Page Logic -->
     <script>
+        // Verbose diagnostics are opt-in — client details must not
+        // stream to the console in normal use. (F-17)
+        const DEBUG = false;
+        function dbg(...args) { if (DEBUG) console.log(...args); }
+
         // Global state
         let AppState = {};
         let ReportsState = {
@@ -388,12 +393,12 @@
             
             // Listen for state updates from other tabs
             AppStateManager.onUpdate(() => {
-                console.log('State updated from another tab, reloading...');
+                dbg('State updated from another tab, reloading...');
                 AppState = AppStateManager.load();
                 generateReports();
             });
             
-            console.log('✅ Reports page initialized');
+            dbg('✅ Reports page initialized');
         }
         
         /**
@@ -468,7 +473,7 @@
          * Update report summary
          */
         function updateReportSummary(loans) {
-            const totalRevenue = (AppState.totalInterestEarned || 0) + (AppState.totalFeesEarned || 0);
+            const totalRevenue = (AppState.totalInterestEarned || 0) + (AppState.totalFeesEarned || 0) + (AppState.totalPenaltiesEarned || 0);
             const avgLoanSize = loans.length > 0 ? loans.reduce((sum, l) => sum + l.principal_amount, 0) / loans.length : 0;
             const avgLoanTerm = loans.length > 0 ? loans.reduce((sum, l) => sum + l.term_months, 0) / loans.length : 0;
             
@@ -485,7 +490,7 @@
          */
         function updatePerformanceMetrics(loans) {
             // ROCD (Return on Capital Deployed)
-            const totalRevenue = (AppState.totalInterestEarned || 0) + (AppState.totalFeesEarned || 0);
+            const totalRevenue = (AppState.totalInterestEarned || 0) + (AppState.totalFeesEarned || 0) + (AppState.totalPenaltiesEarned || 0);
             const rocd = (AppState.deployed || 0) > 0 ? (totalRevenue / AppState.deployed) * 100 : 0;
             
             // Default Rate
@@ -535,7 +540,9 @@
                 let monthFees = 0;
                 
                 // Calculate from transaction history
-                (AppState.transactionHistory || []).forEach(transaction => {
+                // E2E-1 fix: legacy transactionHistory is merged into transactions
+                // at load time by the state normalizer (F-09).
+                (AppState.transactions || []).forEach(transaction => {
                     if (transaction.type === 'payment' && transaction.details) {
                         const paymentDate = new Date(transaction.details.paymentDate || transaction.timestamp);
                         
