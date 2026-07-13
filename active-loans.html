@@ -517,23 +517,48 @@
 
         /**
          * Build a schedule that respects previously paid months and recalculated totals.
+         * Fully paid rows and an open partial installment (paid_breakdown /
+         * late_penalty_assessed) are preserved; only later months are regenerated.
          */
         function buildAdjustedSchedule(loan, options) {
             const term = loan.term_months || loan.term || 0;
-            const paymentsMade = Math.min(Math.floor(options.paymentsMade || 0), term);
-            const remainingMonths = Math.max(1, term - paymentsMade);
+            const paymentsMadeHint = Math.min(Math.floor(options.paymentsMade || 0), term);
             const remainingPrincipal = options.remainingPrincipal || 0;
             const remainingInterest = options.remainingInterest || 0;
             const remainingInitiationFee = options.remainingInitiationFee || 0;
             const adminFee = options.adminFee || 60;
             const customRemainingBreakdown = Array.isArray(options.customRemainingBreakdown) ? options.customRemainingBreakdown : null;
-            const hasCustomBreakdown = !!(customRemainingBreakdown && customRemainingBreakdown.length === remainingMonths);
             const monthlyPaymentOverride = typeof options.monthlyPaymentOverride === 'number' ? options.monthlyPaymentOverride : null;
 
             const loanDate = loan.created_at ? new Date(loan.created_at) : new Date();
             const startMonthIndex = loan.start_month_index || 0;
             const currentYear = Calculations.resolveScheduleStartYear(loanDate, startMonthIndex);
 
+            const schedule = [];
+            const existingSchedule = Array.isArray(loan.schedule) ? loan.schedule : [];
+            const paymentHistory = Array.isArray(loan.payment_history) ? loan.payment_history : [];
+
+            // Preserve leading paid months and at most one open partial.
+            // Do not trust payments_made alone — principal-floor progress can
+            // advance while the installment is still partial. (Bugbot)
+            let preserveThrough = 0;
+            for (let i = 0; i < existingSchedule.length && i < term; i++) {
+                const st = existingSchedule[i] && existingSchedule[i].status;
+                if (st === 'paid') {
+                    preserveThrough = i + 1;
+                    continue;
+                }
+                if (st === 'partial') {
+                    preserveThrough = i + 1;
+                }
+                break;
+            }
+            if (preserveThrough === 0 && paymentsMadeHint > 0) {
+                preserveThrough = paymentsMadeHint;
+            }
+
+            const remainingMonths = Math.max(1, term - preserveThrough);
+            const hasCustomBreakdown = !!(customRemainingBreakdown && customRemainingBreakdown.length === remainingMonths);
             const principalPerMonth = remainingPrincipal / remainingMonths;
             const interestPerMonth = remainingInterest / remainingMonths;
             const initiationFeePerMonth = remainingInitiationFee / remainingMonths;
@@ -542,30 +567,42 @@
                 : (principalPerMonth + interestPerMonth + adminFee + initiationFeePerMonth);
 
             let remainingBalance = remainingPrincipal;
-            const schedule = [];
-            const existingSchedule = Array.isArray(loan.schedule) ? loan.schedule : [];
-            const paymentHistory = Array.isArray(loan.payment_history) ? loan.payment_history : [];
+
+            const clonePreservedEntry = (existing, month, dueDate, forceStatus) => {
+                const status = forceStatus || existing.status || 'paid';
+                const history = paymentHistory[month - 1] || {};
+                const entry = {
+                    payment_number: month,
+                    due_date: existing.due_date || dueDate,
+                    monthly_payment: existing.monthly_payment || history.amount || monthlyPayment,
+                    principal_payment: existing.principal_payment || history.principal || 0,
+                    interest_payment: existing.interest_payment || history.interest || 0,
+                    admin_fee: existing.admin_fee || history.admin_fee || adminFee,
+                    initiation_fee: existing.initiation_fee || history.initiation_fee || 0,
+                    outstanding_balance: existing.outstanding_balance || 0,
+                    status: status,
+                    payment_date: existing.payment_date || history.date,
+                    amount_paid: existing.amount_paid || history.amount
+                };
+                if (existing.paid_breakdown && typeof existing.paid_breakdown === 'object') {
+                    entry.paid_breakdown = Object.assign({}, existing.paid_breakdown);
+                }
+                if (existing.late_penalty_assessed != null) {
+                    entry.late_penalty_assessed = existing.late_penalty_assessed;
+                }
+                if (status === 'partial') {
+                    entry.partial_payment = true;
+                }
+                return entry;
+            };
 
             for (let month = 1; month <= term; month++) {
                 const dueDate = Calculations.calculateDueDate(currentYear, startMonthIndex, month);
+                const existing = existingSchedule[month - 1] || {};
 
-                if (month <= paymentsMade) {
-                    const existing = existingSchedule[month - 1] || {};
-                    const history = paymentHistory[month - 1] || {};
-
-                    schedule.push({
-                        payment_number: month,
-                        due_date: existing.due_date || dueDate,
-                        monthly_payment: existing.monthly_payment || history.amount || monthlyPayment,
-                        principal_payment: existing.principal_payment || history.principal || 0,
-                        interest_payment: existing.interest_payment || history.interest || 0,
-                        admin_fee: existing.admin_fee || history.admin_fee || adminFee,
-                        initiation_fee: existing.initiation_fee || history.initiation_fee || 0,
-                        outstanding_balance: existing.outstanding_balance || 0,
-                        status: 'paid',
-                        payment_date: history.date || existing.payment_date,
-                        amount_paid: history.amount || existing.amount_paid
-                    });
+                if (month <= preserveThrough) {
+                    const status = existing.status === 'partial' ? 'partial' : 'paid';
+                    schedule.push(clonePreservedEntry(existing, month, dueDate, status));
                     continue;
                 }
 
@@ -576,7 +613,7 @@
                 let monthlyForMonth = monthlyPayment;
 
                 if (hasCustomBreakdown) {
-                    const custom = customRemainingBreakdown[month - paymentsMade - 1] || {};
+                    const custom = customRemainingBreakdown[month - preserveThrough - 1] || {};
                     principalForMonth = typeof custom.principal_payment === 'number' ? custom.principal_payment : principalPerMonth;
                     interestForMonth = typeof custom.interest_payment === 'number' ? custom.interest_payment : interestPerMonth;
                     initiationForMonth = typeof custom.initiation_fee === 'number' ? custom.initiation_fee : initiationFeePerMonth;
@@ -586,7 +623,7 @@
 
                 let nextOutstanding = Math.max(0, remainingBalance - principalForMonth);
                 if (hasCustomBreakdown) {
-                    const custom = customRemainingBreakdown[month - paymentsMade - 1] || {};
+                    const custom = customRemainingBreakdown[month - preserveThrough - 1] || {};
                     if (typeof custom.outstanding_balance === 'number') {
                         nextOutstanding = custom.outstanding_balance;
                     }
