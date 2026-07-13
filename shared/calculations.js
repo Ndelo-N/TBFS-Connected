@@ -1071,16 +1071,17 @@ const Calculations = {
     },
 
     /**
-     * Calculate the due date for a specific payment number in a loan
+     * Calculate the due date for a specific payment number in a loan.
+     * paymentNumber is 0-based (payments already made); due is for the next
+     * installment (paymentNumber + 1 in schedule terms).
      */
     getLoanPaymentDueDate(loan, paymentNumber) {
         if (!loan.created_at || loan.start_month_index === undefined) return null;
         const loanDate = new Date(loan.created_at);
-        const startYear = loanDate.getFullYear();
-        const targetMonthOffset = loan.start_month_index + paymentNumber;
-        const targetYear = startYear + Math.floor(targetMonthOffset / 12);
-        const targetMonth = targetMonthOffset % 12;
-        return new Date(targetYear, targetMonth + 1, 0); // Last day of month
+        const startMonthIndex = Number(loan.start_month_index);
+        if (!Number.isFinite(startMonthIndex)) return null;
+        const startYear = this.resolveScheduleStartYear(loanDate, startMonthIndex);
+        return this.calculateDueDate(startYear, startMonthIndex, (Number(paymentNumber) || 0) + 1);
     }
 };
 

@@ -478,15 +478,17 @@
 
         /**
          * Resolve the next due date for a loan.
-         * Prefers the next pending schedule entry (if present), otherwise calculates from loan date.
+         * Prefers the next open schedule entry (pending or partial), otherwise
+         * calculates from loan date via resolveScheduleStartYear.
          */
         function getNextLoanDueDate(loan) {
             if (!loan) return null;
 
             const schedule = Array.isArray(loan.schedule) ? loan.schedule : [];
-            const nextPending = schedule.find(p => p && p.status === 'pending' && p.due_date);
-            if (nextPending) {
-                const dueFromSchedule = new Date(nextPending.due_date);
+            const nextOpen = schedule.find(p =>
+                p && (p.status === 'pending' || p.status === 'partial') && p.due_date);
+            if (nextOpen) {
+                const dueFromSchedule = new Date(nextOpen.due_date);
                 if (!isNaN(dueFromSchedule.getTime())) return dueFromSchedule;
             }
 
@@ -496,10 +498,8 @@
 
             const paymentsMade = Number(loan.payments_made || 0);
             const startMonthIndex = Number(loan.start_month_index || 0);
-            const targetMonthOffset = startMonthIndex + paymentsMade;
-            const targetYear = loanDate.getFullYear() + Math.floor(targetMonthOffset / 12);
-            const targetMonth = targetMonthOffset % 12;
-            return new Date(targetYear, targetMonth + 1, 0);
+            const startYear = Calculations.resolveScheduleStartYear(loanDate, startMonthIndex);
+            return Calculations.calculateDueDate(startYear, startMonthIndex, paymentsMade + 1);
         }
 
         function isPastDueDate(dueDate) {
@@ -531,8 +531,8 @@
             const monthlyPaymentOverride = typeof options.monthlyPaymentOverride === 'number' ? options.monthlyPaymentOverride : null;
 
             const loanDate = loan.created_at ? new Date(loan.created_at) : new Date();
-            const currentYear = loanDate.getFullYear();
             const startMonthIndex = loan.start_month_index || 0;
+            const currentYear = Calculations.resolveScheduleStartYear(loanDate, startMonthIndex);
 
             const principalPerMonth = remainingPrincipal / remainingMonths;
             const interestPerMonth = remainingInterest / remainingMonths;
@@ -1306,12 +1306,15 @@ Click "OK" to process payment or "Cancel" to go back.
             const remainingInterest = Math.max(0, loan.total_interest - loan.interest_paid);
             
             // STEP 7: CALCULATE LATE PENALTY (if applicable)
-            // Late penalties only apply to loans distributed after 31 January 2026
+            // Late penalties only apply to loans distributed after 31 January 2026.
+            // Partial installments must not re-bill penalty already paid on the
+            // open entry — track assessed vs paid_breakdown.late_penalty.
             const gracePeriodDays = AppState.gracePeriodDays || 3;
             let nextDueDate = Calculations.getLoanPaymentDueDate(loan, loan.payments_made || 0);
-            const initialPendingPayment = (loan.schedule || []).find(p => p.status === 'pending');
-            if ((!nextDueDate || isNaN(new Date(nextDueDate).getTime())) && initialPendingPayment?.due_date) {
-                const scheduleDue = new Date(initialPendingPayment.due_date);
+            const openScheduleEntry = (loan.schedule || []).find(p =>
+                p && (p.status === 'pending' || p.status === 'partial'));
+            if ((!nextDueDate || isNaN(new Date(nextDueDate).getTime())) && openScheduleEntry?.due_date) {
+                const scheduleDue = new Date(openScheduleEntry.due_date);
                 if (!isNaN(scheduleDue.getTime())) nextDueDate = scheduleDue;
             }
             let latePenalty = 0;
@@ -1325,8 +1328,22 @@ Click "OK" to process payment or "Cancel" to go back.
                 
                 if (todayDate > graceCutoff) {
                     daysLate = Math.floor((todayDate - nextDueDate) / (1000 * 60 * 60 * 24));
-                    latePenalty = Calculations.calculateLatePenalty(daysLate - gracePeriodDays, loan.remaining_principal);
-                    isPaymentLate = true;
+                    const assessed = Calculations.calculateLatePenalty(
+                        daysLate - gracePeriodDays, loan.remaining_principal);
+                    if (openScheduleEntry) {
+                        openScheduleEntry.late_penalty_assessed = Math.max(
+                            Number(openScheduleEntry.late_penalty_assessed) || 0,
+                            assessed
+                        );
+                        const alreadyPaid = Number(
+                            (openScheduleEntry.paid_breakdown || {}).late_penalty
+                        ) || 0;
+                        latePenalty = Math.max(
+                            0, openScheduleEntry.late_penalty_assessed - alreadyPaid);
+                    } else {
+                        latePenalty = assessed;
+                    }
+                    isPaymentLate = latePenalty > 0.01 || assessed > 0;
                 }
             }
             
@@ -1607,13 +1624,18 @@ Click "OK" to process payment or "Cancel" to go back.
             pb.admin = Calculations.round((pb.admin || 0) + adminFeePaid);
             pb.interest = Calculations.round((pb.interest || 0) + interestPaid);
             pb.principal = Calculations.round((pb.principal || 0) + principalPaid);
+            pb.late_penalty = Calculations.round((pb.late_penalty || 0) + latePenaltyPaid);
             nextPayment.payment_date = paymentDate;
             nextPayment.amount_paid = Calculations.round((nextPayment.amount_paid || 0) + amount);
             const duesLeft = getEntryEffectiveDues(nextPayment);
             // Interest owed on the entry is only claimable up to the cap.
             const claimableInterestLeft = Math.min(duesLeft.interest_payment, interestCapRemainingFor(loan));
+            const latePenaltyLeft = Math.max(
+                0,
+                (Number(nextPayment.late_penalty_assessed) || 0) - (pb.late_penalty || 0)
+            );
             const entryCovered = (duesLeft.initiation_fee + duesLeft.admin_fee +
-                claimableInterestLeft + duesLeft.principal_payment) <= 0.01;
+                claimableInterestLeft + duesLeft.principal_payment + latePenaltyLeft) <= 0.01;
             nextPayment.status = entryCovered ? 'paid' : 'partial';
             nextPayment.partial_payment = !entryCovered;
 
