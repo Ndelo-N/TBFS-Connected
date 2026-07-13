@@ -539,23 +539,8 @@
             const paymentHistory = Array.isArray(loan.payment_history) ? loan.payment_history : [];
 
             // Preserve leading paid months and at most one open partial.
-            // Do not trust payments_made alone — principal-floor progress can
-            // advance while the installment is still partial. (Bugbot)
-            let preserveThrough = 0;
-            for (let i = 0; i < existingSchedule.length && i < term; i++) {
-                const st = existingSchedule[i] && existingSchedule[i].status;
-                if (st === 'paid') {
-                    preserveThrough = i + 1;
-                    continue;
-                }
-                if (st === 'partial') {
-                    preserveThrough = i + 1;
-                }
-                break;
-            }
-            if (preserveThrough === 0 && paymentsMadeHint > 0) {
-                preserveThrough = paymentsMadeHint;
-            }
+            // Shared with term-change / top-up callers so month counts match. (Bugbot)
+            const preserveThrough = countSchedulePreserveThrough(loan, term, paymentsMadeHint);
 
             const remainingMonths = Math.max(1, term - preserveThrough);
             const hasCustomBreakdown = !!(customRemainingBreakdown && customRemainingBreakdown.length === remainingMonths);
@@ -1846,20 +1831,19 @@ Click "OK" to process payment or "Cancel" to go back.
             loan.total_interest_charged = loan.interest_paid;
             
             // STEP 21: CHECK IF LOAN IS FULLY PAID OFF
-            // A loan is considered complete when:
-            // - Remaining principal is <= R0.01 (essentially zero)
-            // - OR payments_made >= term_months (all scheduled payments completed)
-            if (loan.remaining_principal <= 0.01 || loan.payments_made >= loan.term_months) {
+            // Principal/progress alone is not enough — an open partial can still
+            // owe initiation, admin, interest, or late penalty. (Bugbot)
+            const hasOpenInstallment = (loan.schedule || []).some(
+                p => p && (p.status === 'pending' || p.status === 'partial')
+            );
+            if (!hasOpenInstallment &&
+                (loan.remaining_principal <= 0.01 || loan.payments_made >= loan.term_months)) {
                 loan.status = 'completed';
                 loan.completion_date = new Date().toISOString();
                 loan.remaining_principal = 0; // Ensure it's exactly zero
-                
-                // Mark all remaining schedule entries as paid
-                loan.schedule.forEach(payment => {
-                    if (payment.status === 'pending' || payment.status === 'partial') {
-                        payment.status = 'paid';
-                    }
-                });
+            } else if (loan.remaining_principal <= 0.01) {
+                // Fees/penalty may still be due on an open installment
+                loan.remaining_principal = 0;
             }
             
             // STEP 22: CALCULATE AND RECORD BONUS FOR STOCKVEL MEMBERS
@@ -2057,6 +2041,52 @@ Click "OK" to process payment or "Cancel" to go back.
         function getNextPendingScheduleEntry(loan) {
             const schedule = Array.isArray(loan.schedule) ? loan.schedule : [];
             return schedule.find(p => p && (p.status === 'pending' || p.status === 'partial')) || null;
+        }
+
+        /**
+         * How many leading schedule months to preserve on adjustment rebuild:
+         * consecutive paid rows, plus at most one open partial. Falls back to
+         * payments_made when the schedule has no usable prefix.
+         */
+        function countSchedulePreserveThrough(loan, term, paymentsMadeHint) {
+            const existingSchedule = Array.isArray(loan && loan.schedule) ? loan.schedule : [];
+            const t = Math.max(0, Number(term) || 0);
+            let preserveThrough = 0;
+            for (let i = 0; i < existingSchedule.length && i < t; i++) {
+                const st = existingSchedule[i] && existingSchedule[i].status;
+                if (st === 'paid') {
+                    preserveThrough = i + 1;
+                    continue;
+                }
+                if (st === 'partial') {
+                    preserveThrough = i + 1;
+                }
+                break;
+            }
+            if (preserveThrough === 0) {
+                const hint = Math.floor(Number(paymentsMadeHint) || 0);
+                if (hint > 0) preserveThrough = Math.min(hint, t);
+            }
+            return preserveThrough;
+        }
+
+        /** Unpaid components still owed on an open partial installment. */
+        function unpaidOnPartialEntry(entry) {
+            if (!entry || entry.status !== 'partial') {
+                return { principal: 0, interest: 0, initiation: 0, admin: 0, latePenalty: 0 };
+            }
+            const paid = entry.paid_breakdown || {};
+            const eff = (due, done) => Math.max(0, (Number(due) || 0) - (Number(done) || 0));
+            return {
+                principal: eff(entry.principal_payment, paid.principal),
+                interest: eff(entry.interest_payment, paid.interest),
+                initiation: eff(entry.initiation_fee, paid.initiation),
+                admin: eff(entry.admin_fee, paid.admin),
+                latePenalty: Math.max(
+                    0,
+                    (Number(entry.late_penalty_assessed) || 0) - (Number(paid.late_penalty) || 0)
+                )
+            };
         }
 
         function snapshotLoanAdjustmentState(loan) {
@@ -3328,7 +3358,8 @@ TBFS - Transparent, Fair, Simple
             
             const currentTerm = loan.term_months;
             const paymentsMade = loan.payments_made || 0;
-            const remainingMonths = currentTerm - paymentsMade;
+            const preserveThrough = countSchedulePreserveThrough(loan, currentTerm, paymentsMade);
+            const remainingMonths = Math.max(0, currentTerm - preserveThrough);
             const remainingPrincipal = loan.remaining_principal || 0;
 
             if (remainingPrincipal <= 0) {
@@ -3342,10 +3373,12 @@ TBFS - Transparent, Fair, Simple
                 `Loan #${loanId} - ${loan.client_name}\n\n` +
                 `Current Term: ${currentTerm} months\n` +
                 `Payments Made: ${paymentsMade} months\n` +
-                `Remaining Months: ${remainingMonths} months\n` +
+                `Schedule preserved through: ${preserveThrough} months` +
+                (getNextPendingScheduleEntry(loan)?.status === 'partial' ? ' (includes open partial)' : '') + `\n` +
+                `Remaining Months after that: ${remainingMonths} months\n` +
                 `Remaining Principal: ${Calculations.formatCurrency(remainingPrincipal)}\n\n` +
                 `Enter new total term (months):\n` +
-                `💡 Must be greater than ${paymentsMade} (payments already made)`
+                `💡 Must be greater than ${preserveThrough} (preserved schedule months)`
             );
             
             if (!newTermInput) {
@@ -3360,8 +3393,8 @@ TBFS - Transparent, Fair, Simple
                 return;
             }
             
-            if (newTerm <= paymentsMade) {
-                alert(`❌ Invalid term!\n\nNew term (${newTerm} months) must be greater than payments already made (${paymentsMade} months).`);
+            if (newTerm <= preserveThrough) {
+                alert(`❌ Invalid term!\n\nNew term (${newTerm} months) must be greater than preserved schedule months (${preserveThrough}).`);
                 return;
             }
             
@@ -3376,8 +3409,10 @@ TBFS - Transparent, Fair, Simple
                 }
             }
             
-            // Calculate new monthly payment based on remaining balance
-            const remainingMonthsNew = newTerm - paymentsMade;
+            // Months regenerated after preserved paid/partial prefix (must match buildAdjustedSchedule)
+            const remainingMonthsNew = newTerm - preserveThrough;
+            const unpaidPartial = unpaidOnPartialEntry(getNextPendingScheduleEntry(loan));
+            const regenPrincipal = Math.max(0, remainingPrincipal - unpaidPartial.principal);
             
             // Get reason for adjustment
             const reason = prompt(
@@ -3402,6 +3437,7 @@ TBFS - Transparent, Fair, Simple
             
             // STEP 2: RECALCULATE REPAYMENT FROM OUTSTANDING BALANCES (calculator style)
             // IMPORTANT: term changes should be based on what is still owed, not full original loan.
+            // Open partial dues stay on that row; only the balance beyond them is re-spread.
             const isStockvel = loan.loan_type === 'stockvel' || loan.isStockvelLoan;
             const originalPrincipal = loan.original_principal || loan.principal_amount || remainingPrincipal;
             const totalContributions = loan.total_contributions || 0;
@@ -3412,13 +3448,16 @@ TBFS - Transparent, Fair, Simple
             let adminFee = Calculations.RATES.ADMIN_FEE_STANDARD;
             let recalculatedRemainingInterest = 0;
             let stockvelPlan = null;
-            const remainingInitiationFee = Math.max(0, totalInitiationFee - initiationFeePaid);
+            const remainingInitiationFeeGross = Math.max(0, totalInitiationFee - initiationFeePaid);
+            const remainingInitiationFee = Math.max(
+                0, remainingInitiationFeeGross - unpaidPartial.initiation
+            );
 
             if (isStockvel && totalContributions) {
                 // Use contributions at this point in the loan lifecycle
                 const contributionsAtAdjustment = totalContributions + ((loan.monthly_contribution || 0) * paymentsMade);
                 stockvelPlan = calculateStockvelOutstandingRepaymentPlan({
-                    remainingPrincipal,
+                    remainingPrincipal: regenPrincipal,
                     remainingMonths: remainingMonthsNew,
                     remainingInitiationFee,
                     startingContributions: contributionsAtAdjustment,
@@ -3428,7 +3467,7 @@ TBFS - Transparent, Fair, Simple
                 adminFee = stockvelPlan.averageAdminFeeRaw;
             } else {
                 recalculatedRemainingInterest = calculateStandardOutstandingInterest(
-                    remainingPrincipal,
+                    regenPrincipal,
                     remainingMonthsNew,
                     remainingInitiationFee,
                     adminFee
@@ -3436,12 +3475,12 @@ TBFS - Transparent, Fair, Simple
             }
 
             const remainingInterest = Math.max(0, recalculatedRemainingInterest);
-            const totalInterest = interestAlreadyPaid + remainingInterest;
+            const totalInterest = interestAlreadyPaid + unpaidPartial.interest + remainingInterest;
             const remainingInterestPeriod = stockvelPlan
                 ? remainingMonthsNew
                 : Calculations.calculateInterestPeriod(remainingMonthsNew).interestMonths;
             const repaymentBreakdown = buildOutstandingRepaymentBreakdown({
-                remainingPrincipal,
+                remainingPrincipal: regenPrincipal,
                 remainingInterest,
                 remainingInitiationFee,
                 remainingMonths: remainingMonthsNew,
@@ -3491,7 +3530,7 @@ TBFS - Transparent, Fair, Simple
             // STEP 3: UPDATE INTEREST TRACKING
             loan.total_interest = totalInterest;
             loan.total_initiation_fee = totalInitiationFee;
-            loan.interest_calculation_months = paymentsMade + remainingInterestPeriod;
+            loan.interest_calculation_months = preserveThrough + remainingInterestPeriod;
             loan.max_interest_allowed = Math.min(loan.total_interest, loan.original_principal || loan.principal_amount || remainingPrincipal);
             loan.expected_monthly_interest = repaymentBreakdown.interestPerMonthRaw;
             
@@ -3501,10 +3540,10 @@ TBFS - Transparent, Fair, Simple
             // STEP 5: REGENERATE PAYMENT SCHEDULE (RESPECT PRIOR PAYMENTS)
             dbg(`🔄 Regenerating schedule for Loan #${loanId} with new term: ${newTerm} months`);
             loan.schedule = buildAdjustedSchedule(loan, {
-                remainingPrincipal: remainingPrincipal,
+                remainingPrincipal: regenPrincipal,
                 remainingInterest: remainingInterest,
                 remainingInitiationFee: remainingInitiationFee,
-                paymentsMade: paymentsMade,
+                paymentsMade: preserveThrough,
                 adminFee: adminFee,
                 customRemainingBreakdown: stockvelPlan ? stockvelPlan.breakdown : null,
                 monthlyPaymentOverride: newMonthlyPayment
@@ -3589,12 +3628,14 @@ TBFS - Transparent, Fair, Simple
             const remainingPrincipal = loan.remaining_principal || 0;
             const currentTerm = loan.term_months;
             const paymentsMade = loan.payments_made || 0;
-            const remainingMonths = currentTerm - paymentsMade;
+            const preserveThrough = countSchedulePreserveThrough(loan, currentTerm, paymentsMade);
+            const remainingMonths = Math.max(0, currentTerm - preserveThrough);
 
             if (remainingMonths <= 0) {
                 alert(
                     `⚠️ This loan has no remaining scheduled months to adjust.\n\n` +
                     `Payments Made: ${paymentsMade}/${currentTerm}\n` +
+                    `Schedule preserved through: ${preserveThrough}\n` +
                     `Please change the repayment period first before adding more amount.`
                 );
                 return;
@@ -3696,9 +3737,15 @@ TBFS - Transparent, Fair, Simple
             }
 
             additionalInitiationFee = newTotalInitiationFee - (loan.total_initiation_fee || 0);
-            const remainingInterest = Math.max(0, recalculatedInterest - interestAlreadyPaid);
-            const remainingInitiationFee = Math.max(0, newTotalInitiationFee - (loan.initiation_fee_paid || 0));
-            const principalPerMonth = newRemainingPrincipal / remainingMonths;
+            const remainingInterestGross = Math.max(0, recalculatedInterest - interestAlreadyPaid);
+            const remainingInitiationFeeGross = Math.max(0, newTotalInitiationFee - (loan.initiation_fee_paid || 0));
+            const unpaidPartial = unpaidOnPartialEntry(getNextPendingScheduleEntry(loan));
+            // Top-up principal goes onto remaining balance; keep unpaid partial
+            // components on that row and spread only the rest across later months.
+            const regenPrincipal = Math.max(0, newRemainingPrincipal - unpaidPartial.principal);
+            const remainingInterest = Math.max(0, remainingInterestGross - unpaidPartial.interest);
+            const remainingInitiationFee = Math.max(0, remainingInitiationFeeGross - unpaidPartial.initiation);
+            const principalPerMonth = regenPrincipal / remainingMonths;
             const interestPerMonth = remainingInterest / remainingMonths;
             const initiationFeePerMonth = remainingInitiationFee / remainingMonths;
 
@@ -3770,10 +3817,10 @@ TBFS - Transparent, Fair, Simple
             // Critical: Schedule must reflect new principal and terms
             dbg(`🔄 Regenerating schedule for Loan #${loanId} with added amount: ${Calculations.formatCurrency(amount)}`);
             loan.schedule = buildAdjustedSchedule(loan, {
-                remainingPrincipal: newRemainingPrincipal,
+                remainingPrincipal: regenPrincipal,
                 remainingInterest: remainingInterest,
                 remainingInitiationFee: remainingInitiationFee,
-                paymentsMade: paymentsMade,
+                paymentsMade: preserveThrough,
                 adminFee: adminFee
             });
             
