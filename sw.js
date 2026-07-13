@@ -1,4 +1,4 @@
-const CACHE_NAME = 'tbfs-loan-manager-v43'; // v1.9.0 - Security remediation: vendored libs, sanitize, cloud-backup
+const CACHE_NAME = 'tbfs-loan-manager-v44'; // v1.9.0 - Security remediation: vendored libs, sanitize, cloud-backup
 const urlsToCache = [
   './',
   './index.html',                    // Dashboard (refactored)
@@ -11,13 +11,13 @@ const urlsToCache = [
   './settings.html',                 // Settings & Backup
   './offline.html',                  // Offline Fallback Page
   './splash.html',                   // Splash/Loading Screen
-  './shared/app-state.js',           // Shared: State Management
-  './shared/navigation.js',          // Shared: Navigation
-  './shared/calculations.js',        // Shared: Calculations
+  './shared/app-state.js?v=44',      // Shared: State Management
+  './shared/navigation.js?v=44',     // Shared: Navigation
+  './shared/calculations.js?v=44',   // Shared: Calculations
   './shared/styles.css',             // Shared: Styles
-  './shared/sw-register.js',         // Shared: SW Registration
-  './shared/sanitize.js',            // Shared: HTML escaping (F-04)
-  './shared/cloud-backup.js',        // Shared: Cloud backup (F-12)
+  './shared/sw-register.js?v=44',    // Shared: SW Registration
+  './shared/sanitize.js?v=44',       // Shared: HTML escaping (F-04)
+  './shared/cloud-backup.js?v=44',   // Shared: Cloud backup (F-12)
   './manifest.json',                 // PWA Manifest
   './vendor/jspdf.umd.min.js',       // Vendored (F-10)
   './vendor/xlsx.full.min.js',       // Vendored, 0.20.3 (F-10)

@@ -30,8 +30,7 @@ const RATES = {
     LATE_PENALTY_MAX_DAYS: 7
 };
 
-const DEBUG = false;
-function dbg(...args) { if (DEBUG) dbg(...args); }
+function dbg(...args) { if (globalThis.TBFS_DEBUG) console.log(...args); }
 
 const Calculations = {
     /** Canonical rates, exposed for pages and tests. */

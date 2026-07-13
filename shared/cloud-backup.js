@@ -24,8 +24,7 @@
  * Version: 2.0.0 (security remediation series)
  */
 
-const DEBUG = false;
-function dbg(...args) { if (DEBUG) console.log(...args); }
+function dbg(...args) { if (globalThis.TBFS_DEBUG) console.log(...args); }
 
 const CloudBackup = {
     repoOwner: 'Ndelo-N',

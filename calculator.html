@@ -336,18 +336,17 @@
     </main>
     
     <!-- Shared Modules -->
-    <script src="shared/sanitize.js"></script>
-    <script src="shared/app-state.js"></script>
-    <script src="shared/calculations.js"></script>
-    <script src="shared/cloud-backup.js"></script>
-    <script src="shared/navigation.js"></script>
+    <script src="shared/sanitize.js?v=44"></script>
+    <script src="shared/app-state.js?v=44"></script>
+    <script src="shared/calculations.js?v=44"></script>
+    <script src="shared/cloud-backup.js?v=44"></script>
+    <script src="shared/navigation.js?v=44"></script>
     
     <!-- Page Logic -->
     <script>
         // Verbose diagnostics are opt-in — client financial details must not
         // stream to the console in normal use. (F-17)
-        const DEBUG = false;
-        function dbg(...args) { if (DEBUG) console.log(...args); }
+                function dbg(...args) { if (globalThis.TBFS_DEBUG) console.log(...args); }
 
         // Global state
         let AppState = {};
@@ -1675,6 +1674,6 @@
         document.addEventListener('DOMContentLoaded', init);
     </script>
     <!-- Service Worker Registration -->
-    <script src="shared/sw-register.js"></script>
+    <script src="shared/sw-register.js?v=44"></script>
 </body>
 </html>

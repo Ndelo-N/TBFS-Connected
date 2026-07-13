@@ -12,8 +12,7 @@
  */
 
 // Verbose diagnostics are opt-in. (F-17)
-const DEBUG = false;
-function dbg(...args) { if (DEBUG) console.log(...args); }
+function dbg(...args) { if (globalThis.TBFS_DEBUG) console.log(...args); }
 
 
 (function() {
