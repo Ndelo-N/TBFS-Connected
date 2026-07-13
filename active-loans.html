@@ -1849,9 +1849,11 @@ Click "OK" to process payment or "Cancel" to go back.
             // Update system-wide financial metrics
             // Capital: All money received goes to capital
             AppState.capital = (AppState.capital || 0) + amount;
-            
-            // Deployed: Reduce by principal paid (money is no longer loaned out)
-            AppState.deployed = Math.max(0, (AppState.deployed || 0) - principalPaid);
+
+            // Deployed is derived from the active book — never hand-kept. (F-06)
+            // Completing a loan must drop its remaining principal from deployed
+            // entirely, not only this payment's principal slice.
+            AppStateManager.recalculateDerivedTotals(AppState);
             
             // Total Interest Earned: Track cumulative interest income
             AppState.totalInterestEarned = (AppState.totalInterestEarned || 0) + interestPaid;

@@ -538,6 +538,7 @@
                 
                 let monthInterest = 0;
                 let monthFees = 0;
+                let monthPenalties = 0;
                 
                 // Calculate from transaction history
                 // E2E-1 fix: legacy transactionHistory is merged into transactions
@@ -549,13 +550,15 @@
                         if (paymentDate >= monthStart && paymentDate <= monthEnd) {
                             monthInterest += (transaction.details.interestPaid || 0);
                             monthFees += (transaction.details.adminFeePaid || 0) + (transaction.details.initiationFeePaid || 0);
+                            monthPenalties += (transaction.details.latePenaltyPaid || 0);
                         }
                     }
                 });
                 
                 interestData.push(monthInterest);
                 feesData.push(monthFees);
-                totalRevenueData.push(monthInterest + monthFees);
+                // Total Revenue matches dashboard / headline: interest + fees + penalties (E2E-2)
+                totalRevenueData.push(monthInterest + monthFees + monthPenalties);
             }
             
             ReportsState.charts.revenueTrend = new Chart(ctx, {
