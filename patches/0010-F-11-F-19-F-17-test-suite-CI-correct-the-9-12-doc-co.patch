@@ -1,0 +1,577 @@
+From a4dac0e2dbeb2b818465c0d80412d210a64ee280 Mon Sep 17 00:00:00 2001
+From: TBFS Security Review <review@tbfs.local>
+Date: Mon, 6 Jul 2026 09:37:43 +0000
+Subject: [PATCH 10/10] F-11/F-19/F-17: test suite + CI; correct the 9%/12% doc
+ contradiction
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+- tests/calculations.test.mjs, tests/app-state.test.mjs (node:test, no
+  deps): lock the reference standard loan (R10,000/10mo → R11,100
+  interest, R22,900 total, R2,290/mo), the payment waterfall order and
+  interest-cap clamp, the 7-day penalty cap, the schedule start-year and
+  due-date roll, the timezone-safe membership date, tier self-
+  consistency, and the importJSON accept/reject contract. 22 tests. (F-11/F-19)
+- .github/workflows/tests.yml: node --test + the inline-script syntax
+  gate on every push/PR.
+- TBFS-COMPLETE-BUSINESS-RULES.md: the standard-loan initiation fee said
+  '9% / × 0.09' in three places but the worked example and the code bill
+  12% (R1,200 on R10,000) — corrected to 12%, with a canonical-rates
+  banner pointing at Calculations.RATES + the test suite as the single
+  source of truth. STOCKVEL-30K-6M-CALCULATION.md: added a note that its
+  hand-worked figures are internally inconsistent and the code is
+  authoritative.
+- shared/navigation.js and shared/sw-register.js: lifecycle logs gated
+  behind DEBUG, completing the F-17 sweep across shared/.
+---
+ .github/workflows/tests.yml     |  25 ++++++
+ STOCKVEL-30K-6M-CALCULATION.md  |  10 +++
+ TBFS-COMPLETE-BUSINESS-RULES.md |  15 +++-
+ shared/navigation.js            |  16 ++--
+ shared/sw-register.js           |  35 ++++----
+ tests/app-state.test.mjs        | 103 +++++++++++++++++++++++
+ tests/calculations.test.mjs     | 140 ++++++++++++++++++++++++++++++++
+ 7 files changed, 320 insertions(+), 24 deletions(-)
+ create mode 100644 .github/workflows/tests.yml
+ create mode 100644 tests/app-state.test.mjs
+ create mode 100644 tests/calculations.test.mjs
+
+diff --git a/.github/workflows/tests.yml b/.github/workflows/tests.yml
+new file mode 100644
+index 0000000..b5390c0
+--- /dev/null
++++ b/.github/workflows/tests.yml
+@@ -0,0 +1,25 @@
++name: Tests
++
++on:
++  push:
++    branches: [ main, security-remediation ]
++  pull_request:
++  workflow_dispatch:
++
++jobs:
++  unit:
++    runs-on: ubuntu-latest
++    steps:
++      - name: Checkout
++        uses: actions/checkout@v4
++
++      - name: Setup Node.js
++        uses: actions/setup-node@v4
++        with:
++          node-version: '20'
++
++      - name: Run unit tests
++        run: node --test
++
++      - name: Verify inline scripts parse
++        run: node tools/check-html-scripts.mjs
+diff --git a/STOCKVEL-30K-6M-CALCULATION.md b/STOCKVEL-30K-6M-CALCULATION.md
+index ee9260e..38e4dcb 100644
+--- a/STOCKVEL-30K-6M-CALCULATION.md
++++ b/STOCKVEL-30K-6M-CALCULATION.md
+@@ -1,5 +1,15 @@
+ # Stockvel Loan Calculation: R30,000 for 6 Months
+ 
++> **Reconciliation note (security remediation).** The monthly figures in the
++> hand-worked table below are internally inconsistent — the stated monthly
++> interest disagrees with this document's own tier arithmetic. The
++> authoritative calculation is the code
++> (`Calculations.calculateTieredStockvelInterest`), which the test suite
++> asserts is self-consistent. Treat the numbers below as illustrative of the
++> *method*, not as exact expected output; regenerate exact figures from the
++> app.
++
++
+ **Member Profile:**
+ - Initial Total Contributions: R10,500
+ - Monthly Contribution: R1,000
+diff --git a/TBFS-COMPLETE-BUSINESS-RULES.md b/TBFS-COMPLETE-BUSINESS-RULES.md
+index 9e254be..2da2df0 100644
+--- a/TBFS-COMPLETE-BUSINESS-RULES.md
++++ b/TBFS-COMPLETE-BUSINESS-RULES.md
+@@ -300,13 +300,22 @@ if (amountDueToTBFS < minimumCharge) {
+ 
+ ## Fee Structure Rules
+ 
++> **Canonical rates (single source of truth).** All rate constants live in
++> `shared/calculations.js` as `Calculations.RATES` and are covered by the
++> test suite (`tests/calculations.test.mjs`). If a rate changes, change it
++> there — this document must mirror `RATES`, not the other way round.
++> The standard-loan **initiation fee is 12%** (`INITIATION_FEE_RATE`),
++> matching the worked example in `STANDARD-LOAN-10K-10M-BREAKDOWN.md`
++> (R1,200 on a R10,000 loan). An earlier "9% / × 0.09" statement here was a
++> documentation error — the code has always billed 12%.
++
+ ### 4.1 Initiation Fees
+ 
+ **Standard Loans:**
+-- **Rate:** 9% of principal amount
++- **Rate:** 12% of principal amount
+ - **Application:** Charged once at loan origination
+ - **Distribution:** Spread evenly across all payment months
+-- **Formula:** `initiationFee = principal × 0.09`
++- **Formula:** `initiationFee = principal × 0.12`
+ - **Monthly Portion:** `initiationFee / term`
+ 
+ **Stockvel Loans:**
+@@ -1842,7 +1851,7 @@ document.addEventListener('keydown', (e) => {
+ - Equal Payments: ALL loans use equal monthly installments
+ 
+ **FEES:**
+-- Standard Initiation: 9% of principal
++- Standard Initiation: 12% of principal
+ - Stockvel Initiation: 12% of excess (waived up to contributions)
+ - Standard Admin: R60/month fixed
+ - Stockvel Admin: R60 × (1 - tieredRate) variable
+diff --git a/shared/navigation.js b/shared/navigation.js
+index 0636ecb..e9ec861 100644
+--- a/shared/navigation.js
++++ b/shared/navigation.js
+@@ -6,6 +6,10 @@
+  * Version: 2.0.0 (Multi-Page Architecture)
+  */
+ 
++// Verbose diagnostics are opt-in. (F-17)
++const DEBUG = false;
++function dbg(...args) { if (DEBUG) console.log(...args); }
++
+ class NavigationManager {
+     static swipeEnabled = false;
+     static lastHamburgerToggle = 0;
+@@ -109,7 +113,7 @@ class NavigationManager {
+         if (this.swipeEnabled) {
+             this.setupSwipeNav();
+         } else {
+-            console.log('👆 Swipe navigation disabled');
++            dbg('👆 Swipe navigation disabled');
+         }
+         
+         // Set up responsive menu
+@@ -121,7 +125,7 @@ class NavigationManager {
+         // Handle hash-based redirects (backwards compatibility)
+         this.handleLegacyHashRouting();
+         
+-        console.log(`🧭 Navigation initialized for page: ${currentPageId}`);
++        dbg(`🧭 Navigation initialized for page: ${currentPageId}`);
+     }
+     
+     /**
+@@ -195,7 +199,7 @@ class NavigationManager {
+             }
+         });
+         
+-        console.log('⌨️ Keyboard navigation enabled (Arrow Left/Right)');
++        dbg('⌨️ Keyboard navigation enabled (Arrow Left/Right)');
+     }
+ 
+     /**
+@@ -248,7 +252,7 @@ class NavigationManager {
+             this.handleSwipe(touchStartX, touchEndX, minSwipeDistance);
+         }, { passive: true });
+         
+-        console.log('👆 Swipe navigation enabled (swipe left/right)');
++        dbg('👆 Swipe navigation enabled (swipe left/right)');
+     }
+     
+     /**
+@@ -287,7 +291,7 @@ class NavigationManager {
+             hamburger.setAttribute('aria-expanded', (!isActive).toString());
+             nav.setAttribute('aria-hidden', isActive ? 'true' : 'false');
+             document.body.classList.toggle('nav-open', !isActive);
+-            console.log('🍔 Menu toggled:', nav.classList.contains('active') ? 'open' : 'closed');
++            dbg('🍔 Menu toggled:', nav.classList.contains('active') ? 'open' : 'closed');
+         } else {
+             console.error('❌ Navigation elements not found:', { nav: !!nav, hamburger: !!hamburger });
+         }
+@@ -346,7 +350,7 @@ class NavigationManager {
+             
+             const newPage = hashMap[window.location.hash];
+             if (newPage) {
+-                console.log(`🔄 Redirecting from legacy hash URL: ${window.location.hash} → ${newPage}`);
++                dbg(`🔄 Redirecting from legacy hash URL: ${window.location.hash} → ${newPage}`);
+                 window.location.href = newPage;
+             }
+         }
+diff --git a/shared/sw-register.js b/shared/sw-register.js
+index f99b5ef..04e71c5 100644
+--- a/shared/sw-register.js
++++ b/shared/sw-register.js
+@@ -11,6 +11,11 @@
+  * Version: 2.1.0 (PWA Review - Future Improvements)
+  */
+ 
++// Verbose diagnostics are opt-in. (F-17)
++const DEBUG = false;
++function dbg(...args) { if (DEBUG) console.log(...args); }
++
++
+ (function() {
+     'use strict';
+ 
+@@ -21,7 +26,7 @@
+         window.addEventListener('load', function() {
+             navigator.serviceWorker.register('./sw.js')
+                 .then(function(registration) {
+-                    console.log('ServiceWorker registration successful with scope:', registration.scope);
++                    dbg('ServiceWorker registration successful with scope:', registration.scope);
+                     
+                     // Check for updates on load
+                     registration.update();
+@@ -32,7 +37,7 @@
+                         if (newWorker) {
+                             newWorker.addEventListener('statechange', function() {
+                                 if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+-                                    console.log('New service worker installed - update available');
++                                    dbg('New service worker installed - update available');
+                                     window.dispatchEvent(new CustomEvent('swUpdateAvailable', {
+                                         detail: { worker: newWorker }
+                                     }));
+@@ -50,12 +55,12 @@
+                     }, 30 * 60 * 1000);
+                 })
+                 .catch(function(err) {
+-                    console.log('ServiceWorker registration failed:', err);
++                    dbg('ServiceWorker registration failed:', err);
+                 });
+             
+             // Listen for controller change (update activated)
+             navigator.serviceWorker.addEventListener('controllerchange', function() {
+-                console.log('Service worker controller changed - reloading page');
++                dbg('Service worker controller changed - reloading page');
+                 setTimeout(function() {
+                     window.location.reload();
+                 }, 100);
+@@ -83,9 +88,9 @@
+             navigator.serviceWorker.ready.then(function(registration) {
+                 return registration.sync.register('cloud-backup-sync');
+             }).then(function() {
+-                console.log('Background sync registered: cloud-backup-sync');
++                dbg('Background sync registered: cloud-backup-sync');
+             }).catch(function(err) {
+-                console.log('Background sync registration failed:', err);
++                dbg('Background sync registration failed:', err);
+             });
+         }
+     };
+@@ -94,7 +99,7 @@
+      * Handle sync request from service worker
+      */
+     function handleSyncRequest(syncType) {
+-        console.log('Sync requested by service worker:', syncType);
++        dbg('Sync requested by service worker:', syncType);
+         
+         // Check if CloudBackup object exists (only on pages with cloud backup UI)
+         if (typeof CloudBackup !== 'undefined' && CloudBackup.syncPendingBackups) {
+@@ -103,7 +108,7 @@
+             // Fallback: check localStorage for pending backup flag
+             var hasPending = localStorage.getItem('pendingCloudBackup');
+             if (hasPending) {
+-                console.log('Pending backup found, but CloudBackup not available on this page');
++                dbg('Pending backup found, but CloudBackup not available on this page');
+                 // The backup will be synced when user navigates to a page with CloudBackup
+             }
+         }
+@@ -124,15 +129,15 @@
+                     registration.periodicSync.register('periodic-cloud-backup', {
+                         minInterval: 12 * 60 * 60 * 1000 // 12 hours
+                     }).then(function() {
+-                        console.log('Periodic background sync registered (12h interval)');
++                        dbg('Periodic background sync registered (12h interval)');
+                     }).catch(function(err) {
+-                        console.log('Periodic sync registration failed:', err);
++                        dbg('Periodic sync registration failed:', err);
+                     });
+                 } else {
+-                    console.log('Periodic background sync permission not granted');
++                    dbg('Periodic background sync permission not granted');
+                 }
+             }).catch(function() {
+-                console.log('Periodic background sync not supported');
++                dbg('Periodic background sync not supported');
+             });
+         }
+     }
+@@ -149,11 +154,11 @@
+         if ('setAppBadge' in navigator) {
+             if (count > 0) {
+                 navigator.setAppBadge(count).catch(function(err) {
+-                    console.log('Failed to set app badge:', err);
++                    dbg('Failed to set app badge:', err);
+                 });
+             } else {
+                 navigator.clearAppBadge().catch(function(err) {
+-                    console.log('Failed to clear app badge:', err);
++                    dbg('Failed to clear app badge:', err);
+                 });
+             }
+         }
+@@ -187,7 +192,7 @@
+             
+             window.updateAppBadge(overdueCount);
+         } catch (err) {
+-            console.log('Badge update failed:', err);
++            dbg('Badge update failed:', err);
+         }
+     };
+ 
+diff --git a/tests/app-state.test.mjs b/tests/app-state.test.mjs
+new file mode 100644
+index 0000000..bbfe08e
+--- /dev/null
++++ b/tests/app-state.test.mjs
+@@ -0,0 +1,103 @@
++/**
++ * State manager tests (F-11 / F-19).
++ * Run: node --test   (Node 20+, no dependencies)
++ *
++ * These lock the schema normalization, the derived-total arithmetic, and
++ * the restore-path validation that the whole app now depends on.
++ */
++import { test } from 'node:test';
++import assert from 'node:assert/strict';
++import { createRequire } from 'node:module';
++
++const require = createRequire(import.meta.url);
++const M = require('../shared/app-state.js');
++
++test('legacy field names migrate to canonical', () => {
++    const s = M.normalizeState({
++        deployedCapital: 500,
++        transactionHistory: [{ type: 'a', timestamp: '2026-01-02' }],
++        transactions: [{ type: 'b', timestamp: '2026-01-01' }]
++    });
++    assert.equal(s.deployed, 500);
++    assert.equal(s.deployedCapital, undefined);
++    assert.equal(s.transactions.length, 2);
++    assert.equal(s.transactions[0].type, 'b');   // time-sorted: Jan 1 before Jan 2
++    assert.equal(s.transactionHistory, undefined);
++});
++
++test('numeric fields are coerced; arrays are guaranteed', () => {
++    const s = M.normalizeState({ capital: '1000', loans: undefined, clients: null });
++    assert.equal(s.capital, 1000);
++    assert.ok(Array.isArray(s.loans));
++    assert.ok(Array.isArray(s.clients));
++    assert.ok(Array.isArray(s.stockvelMembers));
++});
++
++test('counters are monotonic (never derived from array length)', () => {
++    const s = M.normalizeState({
++        loans: [{ loan_id: 7 }, { loan_id: 3 }],
++        stockvelMembers: [{ memberNumber: 1004 }],
++        nextLoanId: 2,          // stale — must not win over max+1
++        nextMemberNumber: 1001
++    });
++    assert.equal(s.nextLoanId, 8);        // max(7,3) + 1
++    assert.equal(s.nextMemberNumber, 1005);
++});
++
++test('getNextLoanId reserves and advances', () => {
++    const s = M.normalizeState({ loans: [{ loan_id: 10 }] });
++    const a = M.getNextLoanId(s);
++    const b = M.getNextLoanId(s);
++    assert.equal(a, 11);
++    assert.equal(b, 12);
++    assert.equal(s.nextLoanId, 13);
++});
++
++test('derived totals come from records, not stored counters', () => {
++    const s = M.normalizeState({
++        loans: [
++            { loan_id: 1, status: 'active', remaining_principal: 300 },
++            { loan_id: 2, status: 'active', remaining_principal: 200 },
++            { loan_id: 3, status: 'completed', remaining_principal: 999 }  // excluded
++        ],
++        stockvelMembers: [
++            { memberNumber: 1001, totalContributions: 100, accumulatedBonus: 5 },
++            { memberNumber: 1002, totalContributions: 50, accumulatedBonus: 0 }
++        ],
++        deployed: 99999,          // stale — must be overwritten
++        memberFundsHeld: 88888
++    });
++    M.recalculateDerivedTotals(s);
++    assert.equal(s.deployed, 500);            // 300 + 200 (active only)
++    assert.equal(s.memberFundsHeld, 155);     // 100+5 + 50+0
++});
++
++test('importJSON accepts a valid backup and fills defaults', () => {
++    const ok = M.importJSON(JSON.stringify({ capital: 100, loans: [], clients: [] }));
++    assert.equal(ok.capital, 100);
++    assert.ok(Array.isArray(ok.stockvelReceipts));
++    assert.equal(ok.gracePeriodDays, 3);
++});
++
++test('importJSON rejects malformed input', () => {
++    assert.throws(() => M.importJSON('not json'), /valid JSON/);
++    assert.throws(() => M.importJSON('[1,2,3]'), /state object/);
++    assert.throws(() => M.importJSON(JSON.stringify({ capital: -5 })), /negative/);
++    assert.throws(
++        () => M.importJSON(JSON.stringify({ loans: [{ loan_id: 1 }, { loan_id: 1 }] })),
++        /Duplicate/
++    );
++});
++
++test('importJSON refuses an oversized payload', () => {
++    const huge = JSON.stringify({ blob: 'x'.repeat(9 * 1024 * 1024) });
++    assert.throws(() => M.importJSON(huge), /large/);
++});
++
++test('validate flags out-of-range grace period', () => {
++    const s = M.getDefaultState();
++    s.gracePeriodDays = 90;
++    const r = M.validate(s);
++    assert.equal(r.valid, false);
++    assert.ok(r.issues.some(i => /gracePeriodDays/.test(i)));
++});
+diff --git a/tests/calculations.test.mjs b/tests/calculations.test.mjs
+new file mode 100644
+index 0000000..bf6e16e
+--- /dev/null
++++ b/tests/calculations.test.mjs
+@@ -0,0 +1,140 @@
++/**
++ * Calculation engine tests (F-11 / F-19).
++ * Run: node --test   (Node 20+, no dependencies)
++ *
++ * These lock the canonical business arithmetic so a future refactor of
++ * shared/calculations.js cannot silently change what a borrower is billed.
++ * The R10,000 / 10-month standard loan is the reference case documented in
++ * STANDARD-LOAN-10K-10M-BREAKDOWN.md.
++ */
++import { test } from 'node:test';
++import assert from 'node:assert/strict';
++import { createRequire } from 'node:module';
++
++const require = createRequire(import.meta.url);
++const C = require('../shared/calculations.js');
++const Sanitize = require('../shared/sanitize.js');
++
++test('canonical rates are exactly as documented', () => {
++    assert.equal(C.RATES.INCOME_TABLE_RATE, 0.30);
++    assert.equal(C.RATES.INITIATION_FEE_RATE, 0.12); // 12% — matches the worked example (R1,200 on R10,000)
++    assert.equal(C.RATES.ADMIN_FEE_STANDARD, 60);
++    assert.equal(C.RATES.STOCKVEL_MIN_MONTHLY_RATE, 0.10);
++    assert.equal(C.RATES.LATE_PENALTY_DAILY_RATE, 0.001);
++    assert.equal(C.RATES.LATE_PENALTY_MAX_DAYS, 7);
++});
++
++test('interest period: ceil(term/2), floor of 3, capped at term', () => {
++    assert.equal(C.calculateInterestPeriod(10).interestMonths, 5);
++    assert.equal(C.calculateInterestPeriod(2).interestMonths, 2);  // min(3,2) = 2
++    assert.equal(C.calculateInterestPeriod(4).interestMonths, 3);  // max(ceil(2),3) = 3
++    assert.equal(C.calculateInterestPeriod(12).interestMonths, 6);
++});
++
++test('reference standard loan: R10,000 over 10 months', () => {
++    const r = C.calculateStandardLoan(10000, 10);
++    assert.equal(r.interestMonths, 5);
++    assert.equal(Math.round(r.totalInterest), 11100);       // 2820+2520+2220+1920+1620
++    assert.equal(Math.round(r.totalInitiationFee), 1200);   // 10000 × 12%
++    assert.equal(Math.round(r.totalAdminFees), 600);        // 60 × 10
++    assert.equal(Math.round(r.totalCost), 22900);           // 10000 + 11100 + 1200 + 600
++    assert.equal(Math.round(r.monthlyPayment), 2290);       // 22900 / 10
++});
++
++test('payment waterfall: production order, no overpay of a component', () => {
++    const entry = { initiation_fee: 120, admin_fee: 60, interest_payment: 1110, principal_payment: 1000 };
++    const full = C.allocateScheduledPayment(2290, {
++        entry, latePenaltyDue: 0, interestCapRemaining: 1110, remainingPrincipal: 10000
++    });
++    assert.deepEqual(
++        [full.initiationPaid, full.adminPaid, full.penaltyPaid, full.interestPaid, full.principalPaid, full.unallocated],
++        [120, 60, 0, 1110, 1000, 0]
++    );
++});
++
++test('payment waterfall: a partial payment fills earlier buckets first', () => {
++    const entry = { initiation_fee: 120, admin_fee: 60, interest_payment: 1110, principal_payment: 1000 };
++    const part = C.allocateScheduledPayment(500, { entry });
++    assert.equal(part.initiationPaid, 120);
++    assert.equal(part.adminPaid, 60);
++    assert.equal(part.interestPaid, 320);   // remainder after fees
++    assert.equal(part.principalPaid, 0);
++});
++
++test('payment waterfall: late penalty is taken before interest', () => {
++    const entry = { initiation_fee: 0, admin_fee: 0, interest_payment: 1000, principal_payment: 500 };
++    const a = C.allocateScheduledPayment(300, { entry, latePenaltyDue: 50 });
++    assert.equal(a.penaltyPaid, 50);
++    assert.equal(a.interestPaid, 250);
++    assert.equal(a.principalPaid, 0);
++});
++
++test('payment waterfall: interest cap is never exceeded', () => {
++    const entry = { initiation_fee: 0, admin_fee: 0, interest_payment: 1110, principal_payment: 1000 };
++    const capped = C.allocateScheduledPayment(2000, {
++        entry, interestCapRemaining: 100, remainingPrincipal: 1000
++    });
++    assert.equal(capped.interestPaid, 100);   // clamped by the cap, not the entry's 1110
++    assert.equal(capped.principalPaid, 1000);
++    assert.ok(capped.unallocated > 0);
++});
++
++test('late penalty: 0.1%/day, capped at 7 days', () => {
++    assert.equal(C.calculateLatePenalty(30, 10000), 70);   // min(30,7) × 0.001 × 10000
++    assert.equal(C.calculateLatePenalty(3, 10000), 30);
++    assert.equal(C.calculateLatePenalty(0, 10000), 0);
++});
++
++test('schedule start year cannot precede disbursement', () => {
++    // December loan, January start → next calendar year
++    assert.equal(C.resolveScheduleStartYear(new Date(2026, 11, 15), 0), 2027);
++    // October loan, November start → same year
++    assert.equal(C.resolveScheduleStartYear(new Date(2026, 9, 15), 10), 2026);
++});
++
++test('payment due date rolls across the year boundary', () => {
++    // start Dec 2026 (month 11), 2nd payment → Jan 2027, last day
++    const due = C.calculateDueDate(2026, 11, 2);
++    assert.equal(due.getFullYear(), 2027);
++    assert.equal(due.getMonth(), 0);
++    assert.equal(due.getDate(), 31);
++});
++
++test('membership end date is one year on, with no timezone drift', () => {
++    // The bug this guards: toISOString() in SAST (UTC+2) shifted the date back a day.
++    assert.equal(C.calculateMembershipEndDate('2026-03-01'), '2027-03-01');
++    assert.equal(C.calculateMembershipEndDate('2026-01-31'), '2027-01-31');
++});
++
++test('stockvel tiered interest is internally self-consistent', () => {
++    // The engine's own tier pieces must sum to its reported tier total.
++    // (STOCKVEL-30K-6M-CALCULATION.md is internally inconsistent — its stated
++    //  monthly figure disagrees with its own tier math — so the CODE is the
++    //  reference here, not that document. See the note in BUSINESS-RULES.md.)
++    const savings = 10500;
++    const balance = 30000;
++    const t = C.calculateTieredStockvelInterest(balance, savings);
++    assert.ok(t.tiers1to4Interest >= 0);
++    // Recompute the tiers independently from RATES and compare.
++    const B = C.RATES.TIER_BOUNDS, R = C.RATES.TIER_RATES;
++    const bounds = [
++        [0, savings * B.T1, R.T1],
++        [savings * B.T1, savings * B.T2, R.T2],
++        [savings * B.T2, savings * B.T3, R.T3],
++        [savings * B.T3, savings * B.T4, R.T4],
++    ];
++    let expected = 0;
++    for (const [lo, hi, rate] of bounds) {
++        const amt = Math.max(0, Math.min(balance, hi) - lo);
++        expected += amt * rate;
++    }
++    assert.ok(Math.abs(t.tiers1to4Interest - expected) < 0.01,
++        `tier total ${t.tiers1to4Interest} vs recomputed ${expected}`);
++});
++
++test('sanitize escapes every HTML-significant character', () => {
++    assert.equal(Sanitize.esc(`<script>&"'`), '&lt;script&gt;&amp;&quot;&#39;');
++    assert.equal(Sanitize.esc(null), '');
++    assert.equal(Sanitize.esc(undefined), '');
++    assert.equal(Sanitize.esc(1234), '1234');
++});
+-- 
+2.43.0
+

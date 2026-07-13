@@ -1,0 +1,165 @@
+From f3a676c278711de64f26603fe12ce282571ce36b Mon Sep 17 00:00:00 2001
+From: TBFS Security Review <review@tbfs.local>
+Date: Sun, 5 Jul 2026 11:09:30 +0000
+Subject: [PATCH 01/10] F-01/F-14/F-15: ignore client PII; deploy allowlisted
+ app shell only
+
+- Add Loans/ (client PII) and dist/ to .gitignore. Untracking the
+  already-committed Loans/ files and desktop.ini, plus the history
+  purge, are one-time commands in the apply guide (kept out of this
+  patch so it applies cleanly before or after the git-filter-repo run).
+- deploy.yml now builds dist/ via tools/build-dist.sh (explicit runtime
+  allowlist) so GitHub Pages can never serve internal docs, client PDFs,
+  or dev/test pages (F-14).
+- Add tools/check-html-scripts.mjs, the inline-script syntax gate used
+  throughout this patch series.
+---
+ .github/workflows/deploy.yml | 12 +++++-----
+ .gitignore                   |  6 +++++
+ tools/build-dist.sh          | 41 ++++++++++++++++++++++++++++++++++
+ tools/check-html-scripts.mjs | 43 ++++++++++++++++++++++++++++++++++++
+ 4 files changed, 97 insertions(+), 5 deletions(-)
+ create mode 100755 tools/build-dist.sh
+ create mode 100644 tools/check-html-scripts.mjs
+
+diff --git a/.github/workflows/deploy.yml b/.github/workflows/deploy.yml
+index dcd73dd..ddd5dec 100644
+--- a/.github/workflows/deploy.yml
++++ b/.github/workflows/deploy.yml
+@@ -19,16 +19,18 @@ jobs:
+     steps:
+       - name: Checkout
+         uses: actions/checkout@v4
+-      
++
++      - name: Build app shell (allowlist only — F-14)
++        run: bash tools/build-dist.sh
++
+       - name: Setup Pages
+         uses: actions/configure-pages@v4
+-      
++
+       - name: Upload artifact
+         uses: actions/upload-pages-artifact@v3
+         with:
+-          path: '.'
+-      
++          path: 'dist'
++
+       - name: Deploy to GitHub Pages
+         id: deployment
+         uses: actions/deploy-pages@v4
+-
+diff --git a/.gitignore b/.gitignore
+index 961dbc0..bc5cc0a 100644
+--- a/.gitignore
++++ b/.gitignore
+@@ -16,3 +16,9 @@ ehthumbs.db
+ 
+ # Node modules (if ever added)
+ node_modules/
++
++# Client PII — must never be committed (F-01)
++Loans/
++
++# Build output
++dist/
+diff --git a/tools/build-dist.sh b/tools/build-dist.sh
+new file mode 100755
+index 0000000..0fa971b
+--- /dev/null
++++ b/tools/build-dist.sh
+@@ -0,0 +1,41 @@
++#!/usr/bin/env bash
++# build-dist.sh — assemble the deployable app shell into dist/
++#
++# F-14 remediation: GitHub Pages must serve ONLY the runtime application,
++# never internal documentation, client files, or dev/test pages.
++# Anything not explicitly listed here does not ship.
++set -euo pipefail
++
++cd "$(dirname "$0")/.."
++rm -rf dist
++mkdir -p dist
++
++# Runtime pages (explicit allowlist)
++PAGES=(
++    index.html
++    calculator.html
++    active-loans.html
++    stockvel.html
++    clients.html
++    reports.html
++    loan-income-calculator.html
++    settings.html
++    offline.html
++    splash.html
++)
++for p in "${PAGES[@]}"; do
++    cp "$p" dist/
++done
++
++# App shell assets
++cp manifest.json sw.js TBFS_Logo.png dist/
++cp -r shared dist/shared
++cp -r icons dist/icons
++
++# Vendored third-party libraries (present from the F-10 patch onward)
++if [ -d vendor ]; then
++    cp -r vendor dist/vendor
++fi
++
++echo "dist/ assembled:"
++find dist -type f | sort
+diff --git a/tools/check-html-scripts.mjs b/tools/check-html-scripts.mjs
+new file mode 100644
+index 0000000..79fa7d4
+--- /dev/null
++++ b/tools/check-html-scripts.mjs
+@@ -0,0 +1,43 @@
++#!/usr/bin/env node
++/**
++ * check-html-scripts.mjs
++ * Extracts every inline <script> block from the given HTML files and
++ * verifies each parses as valid JavaScript. Exits non-zero on any failure.
++ *
++ * Usage: node tools/check-html-scripts.mjs [file1.html file2.html ...]
++ * With no args, checks all top-level *.html files.
++ */
++import { readFileSync, readdirSync } from 'node:fs';
++
++const args = process.argv.slice(2);
++const files = args.length
++    ? args
++    : readdirSync('.').filter(f => f.endsWith('.html'));
++
++let failures = 0;
++
++for (const file of files) {
++    const html = readFileSync(file, 'utf8');
++    const re = /<script(?![^>]*\bsrc=)[^>]*>([\s\S]*?)<\/script>/gi;
++    let m, i = 0;
++    while ((m = re.exec(html)) !== null) {
++        i++;
++        const body = m[1];
++        if (!body.trim()) continue;
++        const line = html.slice(0, m.index).split('\n').length;
++        try {
++            // Parse-only check; never executes the code.
++            new Function(body);
++        } catch (err) {
++            failures++;
++            console.error(`FAIL  ${file}  <script> #${i} (starts line ${line}): ${err.message}`);
++        }
++    }
++    if (i === 0) console.log(`note  ${file}: no inline scripts`);
++}
++
++if (failures) {
++    console.error(`\n${failures} script block(s) failed to parse.`);
++    process.exit(1);
++}
++console.log('All inline scripts parse cleanly.');
+-- 
+2.43.0
+

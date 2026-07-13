@@ -1,0 +1,1489 @@
+From 05cd03ebe5c8ac39f16d8f6bfc831b0a19d1bddf Mon Sep 17 00:00:00 2001
+From: TBFS Security Review <review@tbfs.local>
+Date: Sun, 5 Jul 2026 16:52:32 +0000
+Subject: [PATCH 05/10] =?UTF-8?q?F-13/F-02/F-04/F-06/F-07/F-09/F-17:=20act?=
+ =?UTF-8?q?ive-loans=20=E2=80=94=20payment=20modal=20+=20shared=20waterfal?=
+ =?UTF-8?q?l=20+=20integrity=20fixes?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+- F-13: prompt()/prompt() payment entry replaced by an in-page modal
+  (amount, date picker, live allocation preview via the shared
+  waterfall, review-before-commit). Early-payoff/adjust/reminder
+  prompts remain — noted as UX backlog, they are numeric/confirm inputs.
+- F-02: allocation routed through Calculations.allocateScheduledPayment
+  with the interest cap enforced at allocation time (including the
+  second-half overpayment branch); partial payments now mark the entry
+  'partial' with a per-component paid_breakdown and only 'paid' once
+  dues are met; the first-half overpayment interest recalculation now
+  propagates into remaining schedule entries and the loan's
+  monthly_payment.
+- F-06: markAsDefaulted and early payoff recalculate derived totals;
+  late-penalty income tracked in totalPenaltiesEarned.
+- F-07/F-16: every residual hardcoded rate (12%, 30%, 10%, R60/50/45)
+  now reads Calculations.RATES; getStockvelAdminFee delegates to the
+  shared rule; schedule start-year via resolveScheduleStartYear.
+- F-09: payment/early-payoff/adjustment logs write to the canonical
+  AppState.transactions; dual reads consolidated (normalizer merges
+  legacy data at load) with an id-dedupe in the adjustment timeline.
+- F-04: client-controlled strings escaped in rendered markup; F-17:
+  27 verbose logs gated behind DEBUG.
+
+Transforms preserved for audit: tools/transform-active-loans{,-2}.mjs
+---
+ active-loans.html                  | 478 ++++++++++++++++++-----------
+ tools/transform-active-loans-2.mjs | 133 ++++++++
+ tools/transform-active-loans.mjs   | 423 +++++++++++++++++++++++++
+ 3 files changed, 863 insertions(+), 171 deletions(-)
+ create mode 100644 tools/transform-active-loans-2.mjs
+ create mode 100644 tools/transform-active-loans.mjs
+
+diff --git a/active-loans.html b/active-loans.html
+index 4c5162d..926a78c 100644
+--- a/active-loans.html
++++ b/active-loans.html
+@@ -254,12 +254,18 @@
+     </main>
+     
+     <!-- Shared Modules -->
++    <script src="shared/sanitize.js"></script>
+     <script src="shared/app-state.js"></script>
+     <script src="shared/calculations.js"></script>
+     <script src="shared/navigation.js"></script>
+     
+     <!-- Page Logic -->
+     <script>
++        // Verbose diagnostics are opt-in — client financial details must not
++        // stream to the console in normal use. (F-17)
++        const DEBUG = false;
++        function dbg(...args) { if (DEBUG) console.log(...args); }
++
+         // Global state
+         let AppState = {};
+         let allLoans = [];
+@@ -281,12 +287,12 @@
+             
+             // Listen for state updates from other tabs
+             AppStateManager.onUpdate(() => {
+-                console.log('State updated from another tab, reloading...');
++                dbg('State updated from another tab, reloading...');
+                 AppState = AppStateManager.load();
+                 loadLoans();
+             });
+             
+-            console.log('✅ Active Loans page initialized');
++            dbg('✅ Active Loans page initialized');
+         }
+         
+         /**
+@@ -303,7 +309,9 @@
+                 const term = loan.term_months || loan.term || 0;
+                 const startMonthIndex = loan.start_month_index || 0;
+                 const loanDate = loan.created_at ? new Date(loan.created_at) : new Date();
+-                const currentYear = loanDate.getFullYear();
++                // A schedule cannot start before disbursement: an earlier
++                // calendar month means the NEXT occurrence of that month.
++                const currentYear = Calculations.resolveScheduleStartYear(loanDate, startMonthIndex);
+                 
+                 // Determine if this is a stockvel loan
+                 const isStockvel = loan.loan_type === 'stockvel' || loan.isStockvelLoan;
+@@ -326,7 +334,7 @@
+                     
+                     for (let month = 1; month <= interestPeriod; month++) {
+                         const tieredResult = Calculations.calculateTieredStockvelInterest(balance, currentSavings);
+-                        const minimumInterest = balance * 0.10;
++                        const minimumInterest = balance * Calculations.RATES.STOCKVEL_MIN_MONTHLY_RATE;
+                         const monthInterest = Math.max(tieredResult.tiers1to4Interest, minimumInterest);
+                         totalInterest += monthInterest;
+                         balance -= principalPerMonth;
+@@ -337,13 +345,11 @@
+                     const equalizedInterest = totalInterest / term;
+                     
+                     // Calculate initiation fee (0% if principal <= contributions, 12% on excess)
+-                    const totalInitiationFee = principal <= totalContributions ? 0 : (principal - totalContributions) * 0.12;
++                    const totalInitiationFee = principal <= totalContributions ? 0 : (principal - totalContributions) * Calculations.RATES.INITIATION_FEE_RATE;
+                     const monthlyInitiationFee = totalInitiationFee / term;
+                     
+-                    // Calculate admin fee (reduced for stockvel based on contributions)
+-                    let adminFee = 60; // Default
+-                    if (totalContributions >= 20000) adminFee = 45;
+-                    else if (totalContributions >= 10000) adminFee = 50;
++                    // Admin fee (reduced for stockvel) — shared rule (F-07/F-16)
++                    const adminFee = Calculations.getAdminFeeForContributions(totalContributions);
+                     
+                     // Build schedule
+                     balance = principal;
+@@ -386,8 +392,8 @@
+                         // Fallback: Simple schedule if calculation fails
+                         const principalPerMonth = principal / term;
+                         const monthlyPayment = loan.monthly_payment || (principal * 1.3 / term); // Rough estimate
+-                        const adminFee = 60;
+-                        const initiationFee = (principal * 0.12) / term;
++                        const adminFee = Calculations.RATES.ADMIN_FEE_STANDARD;
++                        const initiationFee = (principal * Calculations.RATES.INITIATION_FEE_RATE) / term;
+                         const estimatedInterest = (monthlyPayment - principalPerMonth - adminFee - initiationFee);
+                         
+                         let balance = principal;
+@@ -449,7 +455,7 @@
+ 
+             for (let month = 1; month <= interestPeriod; month++) {
+                 const tieredResult = Calculations.calculateTieredStockvelInterest(balance, currentSavings);
+-                const minimumInterest = balance * 0.10;
++                const minimumInterest = balance * Calculations.RATES.STOCKVEL_MIN_MONTHLY_RATE;
+                 const monthInterest = Math.max(tieredResult.tiers1to4Interest, minimumInterest);
+                 totalInterest += monthInterest;
+                 balance -= principalPerMonth;
+@@ -460,9 +466,8 @@
+         }
+ 
+         function getStockvelAdminFee(totalContributions) {
+-            if (totalContributions >= 20000) return 45;
+-            if (totalContributions >= 10000) return 50;
+-            return 60;
++            // Shared rule — single source of truth (F-16)
++            return Calculations.getAdminFeeForContributions(totalContributions);
+         }
+ 
+         function hasValidStartMonthIndex(loan) {
+@@ -615,7 +620,7 @@
+             allLoans.forEach(loan => {
+                 // Check if loan needs a schedule
+                 if (!loan.schedule || !Array.isArray(loan.schedule) || loan.schedule.length === 0) {
+-                    console.log(`📋 Generating schedule for Loan #${loan.loan_id} (${loan.client_name})`);
++                    dbg(`📋 Generating schedule for Loan #${loan.loan_id} (${loan.client_name})`);
+                     loan.schedule = generateLoanSchedule(loan);
+                     schedulesGenerated++;
+                     
+@@ -636,7 +641,7 @@
+                     );
+                     
+                     if (needsRegeneration) {
+-                        console.log(`⚠️ Regenerating incomplete schedule for Loan #${loan.loan_id}`);
++                        dbg(`⚠️ Regenerating incomplete schedule for Loan #${loan.loan_id}`);
+                         loan.schedule = generateLoanSchedule(loan);
+                         schedulesGenerated++;
+                     }
+@@ -644,7 +649,7 @@
+             });
+             
+             if (schedulesGenerated > 0) {
+-                console.log(`✅ Generated ${schedulesGenerated} payment schedule(s)`);
++                dbg(`✅ Generated ${schedulesGenerated} payment schedule(s)`);
+                 // Save state after generating schedules
+                 AppStateManager.save(AppState);
+             }
+@@ -708,10 +713,10 @@
+             // This gives a snapshot of current month's income
+             const thisMonth = new Date().getMonth();
+             const thisYear = new Date().getFullYear();
+-            const paymentEvents = [
+-                ...(Array.isArray(AppState.transactionHistory) ? AppState.transactionHistory : []),
+-                ...(Array.isArray(AppState.transactions) ? AppState.transactions : [])
+-            ].filter(t => t && t.type === 'payment');
++            // Legacy transactionHistory is merged into transactions at load
++            // time by the state normalizer. (F-09)
++            const paymentEvents = (Array.isArray(AppState.transactions) ? AppState.transactions : [])
++                .filter(t => t && t.type === 'payment');
+ 
+             const monthRevenue = paymentEvents
+                 .filter(t => {
+@@ -850,7 +855,7 @@
+                 
+                 return `
+                     <div class="loan-card">
+-                        <h4>Loan #${loan.loan_id} - ${loan.client_name}</h4>
++                        <h4>Loan #${esc(loan.loan_id)} - ${esc(loan.client_name)}</h4>
+                         
+                         <div class="info-row">
+                             <span>📅 Loan Date:</span>
+@@ -1134,11 +1139,16 @@ Click "OK" to process payment or "Cancel" to go back.
+                 AppState.deployed = Math.max(0, (AppState.deployed || 0) - principalAmount);
+                 AppState.totalInterestEarned = (AppState.totalInterestEarned || 0) + payoffData.interestOwed;
+                 AppState.totalFeesEarned = (AppState.totalFeesEarned || 0) + payoffData.initiationFeeOwed + payoffData.adminFeesOwed;
++
++                // Deployed capital is derived from the active book. (F-06)
++                AppStateManager.recalculateDerivedTotals(AppState);
+                 
+                 // Log transaction
+-                if (!AppState.transactionHistory) AppState.transactionHistory = [];
+-                AppState.transactionHistory.push({
++                if (!AppState.transactions) AppState.transactions = [];
++                AppState.transactions.push({
++                    id: Date.now(),
+                     type: 'early_payoff',
++                    description: 'Early payoff \u2014 ' + loan.client_name + ' (Loan #' + loan.loan_id + ')',
+                     timestamp: new Date().toISOString(),
+                     details: {
+                         loanId: loan.loan_id,
+@@ -1238,7 +1248,7 @@ Click "OK" to process payment or "Cancel" to go back.
+                 
+                 // Save state after generating schedule
+                 AppStateManager.save(AppState);
+-                console.log(`✅ Schedule generated for Loan #${loanId}`);
++                dbg(`✅ Schedule generated for Loan #${loanId}`);
+             }
+             
+             // STEP 3: INITIALIZE TRACKING FIELDS
+@@ -1260,10 +1270,10 @@ Click "OK" to process payment or "Cancel" to go back.
+                 if (loan.loan_type === 'stockvel' && loan.total_contributions) {
+                     // Stockvel Rule: 0% initiation fee if principal <= total contributions
+                     // 12% initiation fee on the excess amount above contributions
+-                    loan.total_initiation_fee = principal <= loan.total_contributions ? 0 : (principal - loan.total_contributions) * 0.12;
++                    loan.total_initiation_fee = principal <= loan.total_contributions ? 0 : (principal - loan.total_contributions) * Calculations.RATES.INITIATION_FEE_RATE;
+                 } else {
+                     // Standard Rule: 12% of principal
+-                    loan.total_initiation_fee = principal * 0.12;
++                    loan.total_initiation_fee = principal * Calculations.RATES.INITIATION_FEE_RATE;
+                 }
+             }
+             
+@@ -1281,7 +1291,7 @@ Click "OK" to process payment or "Cancel" to go back.
+                     const principal = loan.principal_amount || loan.principal || 0;
+                     const monthlyPayment = loan.monthly_payment || 0;
+                     const totalPayments = monthlyPayment * loan.term_months;
+-                    const totalFees = loan.total_initiation_fee + (60 * loan.term_months); // Admin fees
++                    const totalFees = loan.total_initiation_fee + (Calculations.RATES.ADMIN_FEE_STANDARD * loan.term_months); // Admin fees
+                     loan.total_interest = Math.max(0, totalPayments - principal - totalFees);
+                     console.warn(`⚠️ Loan #${loanId}: Estimated interest (schedule not available)`);
+                 }
+@@ -1323,59 +1333,149 @@ Click "OK" to process payment or "Cancel" to go back.
+             const remainingPrincipal = loan.remaining_principal;
+             const paymentsRemaining = loan.term_months - (loan.payments_made || 0);
+             
+-            const penaltyLine = latePenalty > 0 
+-                ? `\n⚠️ LATE PENALTY: ${Calculations.formatCurrency(latePenalty)} (${daysLate} days late, ${gracePeriodDays}-day grace)\n` 
++            // F-13: a structured in-page form replaces the prompt() flow.
++            // The confirmed input arrives via processPayment().
++            openPaymentModal({
++                loanId, loan,
++                expectedPayment, remainingPrincipal, remainingInterest,
++                remainingInitiationFee, latePenalty, daysLate, isPaymentLate,
++                gracePeriodDays, nextDueDate,
++                paymentsMade: loan.payments_made || 0
++            });
++        }
++
++        /* ==========================================================
++         * F-13: Payment modal — state, preview, and confirmation
++         * ========================================================== */
++        let paymentModalCtx = null;
++
++        /** Effective (still-owed) dues on a schedule entry, net of any
++         *  partial payments already recorded against it. */
++        function getEntryEffectiveDues(entry) {
++            const paid = (entry && entry.paid_breakdown) || {};
++            const eff = (due, done) => Math.max(0, (Number(due) || 0) - (Number(done) || 0));
++            return {
++                initiation_fee: eff(entry.initiation_fee, paid.initiation),
++                admin_fee: eff(entry.admin_fee, paid.admin),
++                interest_payment: eff(entry.interest_payment, paid.interest),
++                principal_payment: eff(entry.principal_payment, paid.principal)
++            };
++        }
++
++        function interestCapRemainingFor(loan) {
++            return Number.isFinite(loan.max_interest_allowed)
++                ? Math.max(0, loan.max_interest_allowed - (loan.interest_paid || 0))
++                : Infinity;
++        }
++
++        function openPaymentModal(ctx) {
++            paymentModalCtx = ctx;
++            const loan = ctx.loan;
++            const today = new Date().toISOString().split('T')[0];
++            document.getElementById('pmTitle').textContent = 'Payment — Loan #' + loan.loan_id;
++            document.getElementById('pmClient').textContent = loan.client_name || '';
++            document.getElementById('pmSummary').innerHTML =
++                '<div class="info-row"><span>Expected monthly:</span><strong>' + esc(Calculations.formatCurrency(ctx.expectedPayment)) + '</strong></div>' +
++                '<div class="info-row"><span>Remaining principal:</span><strong>' + esc(Calculations.formatCurrency(ctx.remainingPrincipal)) + '</strong></div>' +
++                '<div class="info-row"><span>Remaining interest:</span><strong>' + esc(Calculations.formatCurrency(ctx.remainingInterest)) + '</strong></div>' +
++                '<div class="info-row"><span>Remaining initiation fee:</span><strong>' + esc(Calculations.formatCurrency(ctx.remainingInitiationFee)) + '</strong></div>' +
++                (ctx.latePenalty > 0
++                    ? '<div class="info-row"><span>\u26A0\uFE0F Late penalty (' + esc(ctx.daysLate) + ' days late, ' + esc(ctx.gracePeriodDays) + '-day grace):</span><strong>' + esc(Calculations.formatCurrency(ctx.latePenalty)) + '</strong></div>'
++                    : '') +
++                '<div class="info-row"><span>Payments made:</span><strong>' + esc(ctx.paymentsMade) + '/' + esc(loan.term_months) + '</strong></div>';
++            const amountInput = document.getElementById('pmAmount');
++            amountInput.value = ctx.expectedPayment ? Number(ctx.expectedPayment).toFixed(2) : '';
++            document.getElementById('pmDate').value = today;
++            document.getElementById('pmError').textContent = '';
++            updatePaymentPreview();
++            document.getElementById('paymentModal').style.display = 'flex';
++            amountInput.focus();
++            amountInput.select();
++        }
++
++        function closePaymentModal() {
++            paymentModalCtx = null;
++            document.getElementById('paymentModal').style.display = 'none';
++        }
++
++        function updatePaymentPreview() {
++            if (!paymentModalCtx) return;
++            const loan = paymentModalCtx.loan;
++            const amount = parseFloat(document.getElementById('pmAmount').value);
++            const preview = document.getElementById('pmPreview');
++            if (!amount || isNaN(amount) || amount <= 0) {
++                preview.innerHTML = '<em>Enter an amount to preview the allocation.</em>';
++                return;
++            }
++            const entry = loan.schedule && loan.schedule.find(p => p.status === 'pending' || p.status === 'partial');
++            if (!entry) {
++                preview.innerHTML = '<em>No pending installment on the schedule.</em>';
++                return;
++            }
++            const alloc = Calculations.allocateScheduledPayment(amount, {
++                entry: getEntryEffectiveDues(entry),
++                latePenaltyDue: paymentModalCtx.latePenalty,
++                interestCapRemaining: interestCapRemainingFor(loan),
++                remainingPrincipal: loan.remaining_principal
++            });
++            const line = (label, v) => v > 0
++                ? '<div class="info-row"><span>' + label + ':</span><strong>' + esc(Calculations.formatCurrency(v)) + '</strong></div>'
+                 : '';
+-            
+-            const paymentAmount = prompt(
+-                `💰 Enter payment amount for Loan #${loanId}\n\n` +
+-                `Expected Monthly Payment: ${Calculations.formatCurrency(expectedPayment)}\n` +
+-                `Remaining Principal: ${Calculations.formatCurrency(remainingPrincipal)}\n` +
+-                `Remaining Interest: ${Calculations.formatCurrency(remainingInterest)}\n` +
+-                `Remaining Initiation Fee: ${Calculations.formatCurrency(remainingInitiationFee)}\n` +
+-                penaltyLine +
+-                `Payments Made: ${loan.payments_made || 0}/${loan.term_months}\n\n` +
+-                `💡 You can make partial or overpayments`
+-            );
+-            
+-            // Validate payment amount input
+-            if (!paymentAmount || isNaN(paymentAmount) || parseFloat(paymentAmount) <= 0) {
+-                alert('❌ Invalid payment amount!');
++            preview.innerHTML =
++                line('Initiation fee', alloc.initiationPaid) +
++                line('Admin fee', alloc.adminPaid) +
++                line('Late penalty', alloc.penaltyPaid) +
++                line('Interest', alloc.interestPaid) +
++                line('Principal', alloc.principalPaid) +
++                (alloc.unallocated > 0
++                    ? '<div class="info-row"><span>Extra (overpayment):</span><strong>' + esc(Calculations.formatCurrency(alloc.unallocated)) + '</strong></div>'
++                    : '') +
++                '<div class="info-row" style="border-top:1px solid #dfe6ee;margin-top:6px;padding-top:6px;"><span>Total:</span><strong>' + esc(Calculations.formatCurrency(amount)) + '</strong></div>';
++        }
++
++        function confirmPaymentModal() {
++            if (!paymentModalCtx) return;
++            const errEl = document.getElementById('pmError');
++            const amount = parseFloat(document.getElementById('pmAmount').value);
++            if (!amount || isNaN(amount) || amount <= 0) {
++                errEl.textContent = '\u274C Enter a valid payment amount.';
+                 return;
+             }
+-            
+-            const amount = parseFloat(paymentAmount);
+-            
+-            // STEP 8: GET PAYMENT DATE FROM USER
+-            // Payment date allows backdating or future-dating payments
+-            const today = new Date().toISOString().split('T')[0]; // YYYY-MM-DD format
+-            const paymentDateInput = prompt(
+-                `📅 Enter payment date for Loan #${loanId}\n\n` +
+-                `Amount: ${Calculations.formatCurrency(amount)}\n\n` +
+-                `Enter date (YYYY-MM-DD):\n` +
+-                `💡 Press OK for today (${today}) or enter a different date`
+-            , today);
+-            
+-            if (!paymentDateInput) {
+-                alert('❌ Payment cancelled!');
++            const dateVal = document.getElementById('pmDate').value;
++            if (!dateVal) {
++                errEl.textContent = '\u274C Choose a payment date.';
+                 return;
+             }
+-            
+-            // Validate and parse payment date
++            const ctx = paymentModalCtx;
++            closePaymentModal();
++            processPayment(ctx, amount, dateVal);
++        }
++
++        /**
++         * Apply a confirmed payment — the original makePayment flow from the
++         * point where user input has been collected. (F-13)
++         */
++        function processPayment(ctx, amount, paymentDateInput) {
++            const loan = ctx.loan;
++            const loanId = ctx.loanId;
++            let nextDueDate = ctx.nextDueDate;
++            const latePenalty = ctx.latePenalty;
++            const daysLate = ctx.daysLate;
++            const gracePeriodDays = ctx.gracePeriodDays;
++            const expectedPayment = ctx.expectedPayment;
++
++            // Parse payment date (input[type=date] supplies YYYY-MM-DD);
++            // local midday avoids timezone date-shift edge cases.
+             let paymentDate;
+             try {
+-                // Use local midday to avoid timezone date-shift edge cases
+-                paymentDate = new Date(`${paymentDateInput}T12:00:00`);
+-                if (isNaN(paymentDate.getTime())) {
+-                    throw new Error('Invalid date');
+-                }
+-                // Convert to ISO string for consistent storage
++                paymentDate = new Date(paymentDateInput + 'T12:00:00');
++                if (isNaN(paymentDate.getTime())) throw new Error('Invalid date');
+                 paymentDate = paymentDate.toISOString();
+             } catch (error) {
+-                alert(`❌ Invalid date format!\n\nPlease use YYYY-MM-DD format (e.g., ${today})`);
++                alert('\u274C Invalid payment date!');
+                 return;
+             }
+-            
++
+             // STEP 9: PAYMENT ALLOCATION (WATERFALL METHOD)
+             // Initialize allocation variables
+             let remainingAmount = amount;
+@@ -1391,7 +1491,7 @@ Click "OK" to process payment or "Cancel" to go back.
+             // STEP 10: GET NEXT PENDING PAYMENT FROM SCHEDULE
+             // The schedule contains the expected payment breakdown for each month
+             // We find the next unpaid payment to allocate against
+-            let nextPayment = loan.schedule.find(p => p.status === 'pending');
++            let nextPayment = loan.schedule.find(p => p.status === 'pending' || p.status === 'partial');
+             
+             // VALIDATION: Ensure we have a valid next payment
+             if (!nextPayment) {
+@@ -1404,7 +1504,7 @@ Click "OK" to process payment or "Cancel" to go back.
+                     // Schedule exists but no pending payment found - regenerate schedule
+                     console.warn(`⚠️ No pending payment found in schedule for Loan #${loanId}. Regenerating...`);
+                     loan.schedule = generateLoanSchedule(loan);
+-                    nextPayment = loan.schedule.find(p => p.status === 'pending');
++                    nextPayment = loan.schedule.find(p => p.status === 'pending' || p.status === 'partial');
+                     if (!nextPayment) {
+                         alert('❌ Error: Could not find next payment in schedule. Please contact support.');
+                         return;
+@@ -1421,52 +1521,23 @@ Click "OK" to process payment or "Cancel" to go back.
+                 }
+             }
+             
+-            // STEP 11: ALLOCATE PAYMENT USING WATERFALL METHOD
+-            // Payment allocation follows a strict order to ensure fees are paid first
+-            // This order is: Initiation Fee → Admin Fee → Interest → Principal
+-            
+-            // ALLOCATION 1: Pay Initiation Fee (monthly portion)
+-            // Initiation fee is spread across all months of the loan term
+-            const initiationDue = nextPayment.initiation_fee || 0;
+-            if (remainingAmount > 0 && initiationDue > 0) {
+-                initiationFeePaid = Math.min(remainingAmount, initiationDue);
+-                remainingAmount -= initiationFeePaid;
+-            }
+-            
+-            // ALLOCATION 2: Pay Admin Fee
+-            // Admin fee is R60 per month for standard loans
+-            // Reduced for stockvel members (R45 if contributions >= R20k, R50 if >= R10k)
+-            const adminDue = nextPayment.admin_fee || 0;
+-            if (remainingAmount > 0 && adminDue > 0) {
+-                adminFeePaid = Math.min(remainingAmount, adminDue);
+-                remainingAmount -= adminFeePaid;
+-            }
+-            
+-            // ALLOCATION 2.5: Pay Late Penalty (if applicable)
+-            // Late penalties only apply to loans after Jan 31, 2026
+-            if (remainingAmount > 0 && latePenalty > 0) {
+-                latePenaltyPaid = Math.min(remainingAmount, latePenalty);
+-                remainingAmount -= latePenaltyPaid;
+-            }
+-            
+-            // ALLOCATION 3: Pay Interest
+-            // Interest is calculated based on loan type (standard 30% income table or stockvel tiered)
+-            // Interest is equalized across all months for client convenience
+-            const interestDue = nextPayment.interest_payment || 0;
+-            if (remainingAmount > 0 && interestDue > 0) {
+-                interestPaid = Math.min(remainingAmount, interestDue);
+-                remainingAmount -= interestPaid;
+-            }
+-            
+-            // ALLOCATION 4: Pay Principal
+-            // Principal payment reduces the outstanding loan balance
+-            // This is the actual loan amount being repaid
+-            const principalDue = nextPayment.principal_payment || 0;
+-            if (remainingAmount > 0 && principalDue > 0) {
+-                principalPaid = Math.min(remainingAmount, principalDue, loan.remaining_principal);
+-                remainingAmount -= principalPaid;
+-            }
+-            
++            // STEP 11: ALLOCATE VIA THE SHARED WATERFALL (F-02/F-16)
++            // initiation → admin → late penalty → interest → principal,
++            // interest clamped to max_interest_allowed, all against the
++            // entry's EFFECTIVE dues (net of prior partial payments).
++            const alloc = Calculations.allocateScheduledPayment(remainingAmount, {
++                entry: getEntryEffectiveDues(nextPayment),
++                latePenaltyDue: latePenalty,
++                interestCapRemaining: interestCapRemainingFor(loan),
++                remainingPrincipal: loan.remaining_principal
++            });
++            initiationFeePaid = alloc.initiationPaid;
++            adminFeePaid = alloc.adminPaid;
++            latePenaltyPaid = alloc.penaltyPaid;
++            interestPaid = alloc.interestPaid;
++            principalPaid = alloc.principalPaid;
++            remainingAmount = alloc.unallocated;
++
+             // STEP 12: HANDLE OVERPAYMENT
+             // Overpayments are handled differently depending on when they occur in the loan term
+             // This rewards early overpayments with interest recalculation
+@@ -1485,13 +1556,13 @@ Click "OK" to process payment or "Cancel" to go back.
+                     principalPaid += additionalPrincipal;
+                     remainingAmount -= additionalPrincipal;
+                     
+-                    console.log(`💡 Overpayment in first half (month ${currentPaymentNumber}/${halfwayPoint})`);
+-                    console.log(`Extra principal paid: R${additionalPrincipal.toFixed(2)}`);
+-                    console.log(`Interest will be recalculated on reduced balance`);
++                    dbg(`💡 Overpayment in first half (month ${currentPaymentNumber}/${halfwayPoint})`);
++                    dbg(`Extra principal paid: R${additionalPrincipal.toFixed(2)}`);
++                    dbg(`Interest will be recalculated on reduced balance`);
+                 } else {
+                     // SECOND HALF OVERPAYMENT: Apply to fees/interest first, then principal
+                     // In the second half, we prioritize paying off fees and interest before principal
+-                    console.log(`📊 Overpayment in second half (month ${currentPaymentNumber}/${halfwayPoint})`);
++                    dbg(`📊 Overpayment in second half (month ${currentPaymentNumber}/${halfwayPoint})`);
+                     
+                     // Apply to remaining initiation fee balance first
+                     const remainingInitiationFee = Math.max(0, (loan.total_initiation_fee || 0) - (loan.initiation_fee_paid || 0));
+@@ -1499,16 +1570,19 @@ Click "OK" to process payment or "Cancel" to go back.
+                         const extraInitiation = Math.min(remainingAmount, remainingInitiationFee);
+                         initiationFeePaid += extraInitiation;
+                         remainingAmount -= extraInitiation;
+-                        console.log(`Applied R${extraInitiation.toFixed(2)} to initiation fee balance`);
++                        dbg(`Applied R${extraInitiation.toFixed(2)} to initiation fee balance`);
+                     }
+                     
+-                    // Apply to remaining interest balance
+-                    const remainingInterest = Math.max(0, (loan.total_interest || 0) - (loan.interest_paid || 0));
++                    // Apply to remaining interest balance (never beyond the
++                    // loan's interest cap — F-02)
++                    const capLeft = Math.max(0, interestCapRemainingFor(loan) - interestPaid);
++                    const remainingInterest = Math.min(
++                        Math.max(0, (loan.total_interest || 0) - (loan.interest_paid || 0)), capLeft);
+                     if (remainingAmount > 0 && remainingInterest > 0) {
+                         const extraInterest = Math.min(remainingAmount, remainingInterest);
+                         interestPaid += extraInterest;
+                         remainingAmount -= extraInterest;
+-                        console.log(`Applied R${extraInterest.toFixed(2)} to interest balance`);
++                        dbg(`Applied R${extraInterest.toFixed(2)} to interest balance`);
+                     }
+                     
+                     // Finally apply to principal
+@@ -1516,17 +1590,30 @@ Click "OK" to process payment or "Cancel" to go back.
+                         const additionalPrincipal = Math.min(remainingAmount, loan.remaining_principal - principalPaid);
+                         principalPaid += additionalPrincipal;
+                         remainingAmount -= additionalPrincipal;
+-                        console.log(`Applied R${additionalPrincipal.toFixed(2)} to principal`);
++                        dbg(`Applied R${additionalPrincipal.toFixed(2)} to principal`);
+                     }
+                 }
+             }
+             
+             // STEP 13: UPDATE PAYMENT SCHEDULE ENTRY
+-            // Mark the payment as paid in the schedule for tracking
+-            nextPayment.status = 'paid';
++            // Record what this payment covered on the entry; mark it 'paid'
++            // only once its dues are fully met — a partial payment no longer
++            // silently consumes a whole installment. (F-02 fold-in)
++            const pb = nextPayment.paid_breakdown = nextPayment.paid_breakdown || {};
++            pb.initiation = Calculations.round((pb.initiation || 0) + initiationFeePaid);
++            pb.admin = Calculations.round((pb.admin || 0) + adminFeePaid);
++            pb.interest = Calculations.round((pb.interest || 0) + interestPaid);
++            pb.principal = Calculations.round((pb.principal || 0) + principalPaid);
+             nextPayment.payment_date = paymentDate;
+-            nextPayment.amount_paid = amount;
+-            
++            nextPayment.amount_paid = Calculations.round((nextPayment.amount_paid || 0) + amount);
++            const duesLeft = getEntryEffectiveDues(nextPayment);
++            // Interest owed on the entry is only claimable up to the cap.
++            const claimableInterestLeft = Math.min(duesLeft.interest_payment, interestCapRemainingFor(loan));
++            const entryCovered = (duesLeft.initiation_fee + duesLeft.admin_fee +
++                claimableInterestLeft + duesLeft.principal_payment) <= 0.01;
++            nextPayment.status = entryCovered ? 'paid' : 'partial';
++            nextPayment.partial_payment = !entryCovered;
++
+             // Track total principal received (not just this payment)
+             if (!loan.total_principal_received) {
+                 loan.total_principal_received = 0;
+@@ -1586,10 +1673,10 @@ Click "OK" to process payment or "Cancel" to go back.
+             }
+             
+             // Log principal tracking for debugging and verification
+-            console.log(`💰 Principal Tracking:`);
+-            console.log(`Total Principal Received: R${loan.total_principal_received.toFixed(2)}`);
+-            console.log(`Principal Per Month: R${principalPerMonth.toFixed(2)}`);
+-            console.log(`Payments Made (calculated): ${loan.payments_made}/${loan.term_months}`);
++            dbg(`💰 Principal Tracking:`);
++            dbg(`Total Principal Received: R${loan.total_principal_received.toFixed(2)}`);
++            dbg(`Principal Per Month: R${principalPerMonth.toFixed(2)}`);
++            dbg(`Payments Made (calculated): ${loan.payments_made}/${loan.term_months}`);
+             
+             // Check for interest recalculation (if overpayment in first half)
+             const halfwayPoint = Math.ceil(loan.term_months / 2);
+@@ -1597,9 +1684,9 @@ Click "OK" to process payment or "Cancel" to go back.
+             
+             if (loan.payments_made <= halfwayPoint && principalPaid > principalPerMonth * 1.1) {
+                 // Significant overpayment in first half - recalculate interest
+-                console.log(`\n🔄 RECALCULATING INTEREST (Overpayment in first half)`);
+-                console.log(`Previous Principal: R${principalBeforePayment.toFixed(2)}`);
+-                console.log(`New Principal: R${loan.remaining_principal.toFixed(2)}`);
++                dbg(`\n🔄 RECALCULATING INTEREST (Overpayment in first half)`);
++                dbg(`Previous Principal: R${principalBeforePayment.toFixed(2)}`);
++                dbg(`New Principal: R${loan.remaining_principal.toFixed(2)}`);
+                 
+                 try {
+                     // Recalculate interest on new reduced principal
+@@ -1614,7 +1701,7 @@ Click "OK" to process payment or "Cancel" to go back.
+                         
+                         for (let i = 0; i < remainingMonths; i++) {
+                             const tieredResult = Calculations.calculateTieredStockvelInterest(balance, currentSavings);
+-                            const minimumInterest = balance * 0.10;
++                            const minimumInterest = balance * Calculations.RATES.STOCKVEL_MIN_MONTHLY_RATE;
+                             const monthInterest = Math.max(tieredResult.tiers1to4Interest, minimumInterest);
+                             newInterestCalculation += monthInterest;
+                             balance -= principalPerMonth;
+@@ -1626,8 +1713,8 @@ Click "OK" to process payment or "Cancel" to go back.
+                         const remainingMonths = interestPeriod - loan.payments_made;
+                         
+                         for (let i = 0; i < remainingMonths; i++) {
+-                            const tbfsIncome = balance * 0.30;
+-                            const adminFee = 60;
++                            const tbfsIncome = balance * Calculations.RATES.INCOME_TABLE_RATE;
++                            const adminFee = Calculations.RATES.ADMIN_FEE_STANDARD;
+                             const initiationFee = (loan.total_initiation_fee || 0) / loan.term_months;
+                             const monthInterest = tbfsIncome - adminFee - initiationFee;
+                             newInterestCalculation += monthInterest;
+@@ -1640,11 +1727,26 @@ Click "OK" to process payment or "Cancel" to go back.
+                     const newMaxInterest = loan.interest_paid + newInterestCalculation;
+                     loan.max_interest_allowed = newMaxInterest;
+                     loan.expected_monthly_interest = newMaxInterest / loan.term_months;
++
++                    // Propagate the recalculated interest into the remaining
++                    // schedule entries so future allocations and displays use
++                    // the reduced figures. (F-02 fold-in)
++                    const openEntries = loan.schedule.filter(p => p.status !== 'paid');
++                    if (openEntries.length > 0) {
++                        const perEntry = Calculations.round(newInterestCalculation / openEntries.length);
++                        openEntries.forEach(p => {
++                            p.interest_payment = perEntry;
++                            p.monthly_payment = Calculations.round(
++                                (p.principal_payment || 0) + (p.admin_fee || 0) +
++                                (p.initiation_fee || 0) + perEntry);
++                        });
++                        loan.monthly_payment = openEntries[0].monthly_payment;
++                    }
+                     
+-                    console.log(`Previous Max Interest: R${previousMaxInterest.toFixed(2)}`);
+-                    console.log(`New Max Interest: R${newMaxInterest.toFixed(2)}`);
+-                    console.log(`Interest Reduction: R${(previousMaxInterest - newMaxInterest).toFixed(2)}`);
+-                    console.log(`✅ Interest recalculated successfully!`);
++                    dbg(`Previous Max Interest: R${previousMaxInterest.toFixed(2)}`);
++                    dbg(`New Max Interest: R${newMaxInterest.toFixed(2)}`);
++                    dbg(`Interest Reduction: R${(previousMaxInterest - newMaxInterest).toFixed(2)}`);
++                    dbg(`✅ Interest recalculated successfully!`);
+                     
+                     // Flag for display
+                     loan.interest_recalculated = true;
+@@ -1676,7 +1778,7 @@ Click "OK" to process payment or "Cancel" to go back.
+                 
+                 // Mark all remaining schedule entries as paid
+                 loan.schedule.forEach(payment => {
+-                    if (payment.status === 'pending') {
++                    if (payment.status === 'pending' || payment.status === 'partial') {
+                         payment.status = 'paid';
+                     }
+                 });
+@@ -1703,7 +1805,7 @@ Click "OK" to process payment or "Cancel" to go back.
+                     const amountDueToTBFS = interestPaid + adminFeePaid + initiationFeePaid;
+                     
+                     // 10% minimum charge rule: Member must pay at least 10% of balance
+-                    const minimumCharge = remainingBalance * 0.10;
++                    const minimumCharge = remainingBalance * Calculations.RATES.STOCKVEL_MIN_MONTHLY_RATE;
+                     
+                     // Bonus is earned when actual amount due is less than minimum charge
+                     if (amountDueToTBFS < minimumCharge) {
+@@ -1733,7 +1835,7 @@ Click "OK" to process payment or "Cancel" to go back.
+                             previousBonus: stockvelMember.accumulatedBonus - bonusEarned
+                         });
+                         
+-                        console.log(`🎁 Stockvel Bonus Earned: R${bonusEarned.toFixed(2)}`);
++                        dbg(`🎁 Stockvel Bonus Earned: R${bonusEarned.toFixed(2)}`);
+                     }
+                     // else: amountDueToTBFS >= minimumCharge
+                     // Member pays tiered amount (already > 10%), no bonus earned
+@@ -1753,13 +1855,18 @@ Click "OK" to process payment or "Cancel" to go back.
+             
+             // Total Fees Earned: Track cumulative fee income (admin + initiation)
+             AppState.totalFeesEarned = (AppState.totalFeesEarned || 0) + adminFeePaid + initiationFeePaid;
++
++            // Penalty income is neither interest nor fees — track it. (F-06)
++            AppState.totalPenaltiesEarned = (AppState.totalPenaltiesEarned || 0) + latePenaltyPaid;
+             
+             // STEP 24: LOG TRANSACTION FOR AUDIT TRAIL
+             // Transaction history provides a complete record of all financial activity
+             // This is used for reporting, reconciliation, and debugging
+-            if (!AppState.transactionHistory) AppState.transactionHistory = [];
+-            AppState.transactionHistory.push({
++            if (!AppState.transactions) AppState.transactions = [];
++            AppState.transactions.push({
++                id: Date.now(),
+                 type: 'payment',
++                description: 'Payment \u2014 ' + loan.client_name + ' (Loan #' + loanId + ')',
+                 timestamp: new Date().toISOString(),
+                 paymentDate: paymentDate,
+                 details: {
+@@ -1868,7 +1975,7 @@ Click "OK" to process payment or "Cancel" to go back.
+ 
+         function getNextPendingScheduleEntry(loan) {
+             const schedule = Array.isArray(loan.schedule) ? loan.schedule : [];
+-            return schedule.find(p => p && p.status === 'pending') || null;
++            return schedule.find(p => p && (p.status === 'pending' || p.status === 'partial')) || null;
+         }
+ 
+         function snapshotLoanAdjustmentState(loan) {
+@@ -2005,7 +2112,7 @@ Click "OK" to process payment or "Cancel" to go back.
+          * - minus admin + initiation components
+          * - interest calculated for interest period, then equalized across remaining months
+          */
+-        function calculateStandardOutstandingInterest(remainingPrincipal, remainingMonths, remainingInitiationFee, adminFee = 60) {
++        function calculateStandardOutstandingInterest(remainingPrincipal, remainingMonths, remainingInitiationFee, adminFee = Calculations.RATES.ADMIN_FEE_STANDARD) {
+             if (remainingMonths <= 0 || remainingPrincipal <= 0) return 0;
+ 
+             const principalPerMonth = remainingPrincipal / remainingMonths;
+@@ -2016,7 +2123,7 @@ Click "OK" to process payment or "Cancel" to go back.
+             let totalInterestForPeriod = 0;
+ 
+             for (let month = 1; month <= interestMonths; month++) {
+-                const tbfsIncome = balance * 0.30;
++                const tbfsIncome = balance * Calculations.RATES.INCOME_TABLE_RATE;
+                 const monthInterest = Math.max(0, tbfsIncome - adminFee - initiationFeePerMonth);
+                 totalInterestForPeriod += monthInterest;
+                 balance = Math.max(0, balance - principalPerMonth);
+@@ -2109,16 +2216,16 @@ Click "OK" to process payment or "Cancel" to go back.
+                 let interestPayment = 0;
+                 if (tieredResult && tieredResult.tiers1to4Interest !== undefined) {
+                     const tieredInterest = tieredResult.tiers1to4Interest * (principal / Math.max(outstandingBalance, 0.01));
+-                    const minimumInterest = principalPerMonth * 0.10;
++                    const minimumInterest = principalPerMonth * Calculations.RATES.STOCKVEL_MIN_MONTHLY_RATE;
+                     interestPayment = Math.max(tieredInterest, minimumInterest);
+                 } else {
+-                    interestPayment = principalPerMonth * 0.10;
++                    interestPayment = principalPerMonth * Calculations.RATES.STOCKVEL_MIN_MONTHLY_RATE;
+                 }
+ 
+-                let adminPayment = 60;
++                let adminPayment = Calculations.RATES.ADMIN_FEE_STANDARD;
+                 if (tieredResult && tieredResult.tier1to4Amount > 0) {
+                     const effectiveRate = tieredResult.tiers1to4Interest / tieredResult.tier1to4Amount;
+-                    adminPayment = 60 * (1 - effectiveRate);
++                    adminPayment = Calculations.RATES.ADMIN_FEE_STANDARD * (1 - effectiveRate);
+                 }
+                 adminPayment = Math.max(0, adminPayment);
+ 
+@@ -2178,7 +2285,7 @@ Click "OK" to process payment or "Cancel" to go back.
+         /**
+          * Persist a loan adjustment event in:
+          * - loan.adjustment_history (loan-local, best for statements)
+-         * - AppState.transactionHistory (legacy/compat)
++         * - AppState.transactions (legacy history merged in at load)
+          * - AppState.transactions (AppStateManager/backup)
+          */
+         function logLoanAdjustment(loan, { adjustmentType, reason, beforeSnapshot, afterSnapshot, meta = {} }) {
+@@ -2201,11 +2308,12 @@ Click "OK" to process payment or "Cancel" to go back.
+             if (!Array.isArray(loan.adjustment_history)) loan.adjustment_history = [];
+             loan.adjustment_history.push(event);
+ 
+-            // Legacy global history
+-            if (!Array.isArray(AppState.transactionHistory)) AppState.transactionHistory = [];
+-            AppState.transactionHistory.push({
++            // Global transaction log (canonical field — F-09)
++            if (!Array.isArray(AppState.transactions)) AppState.transactions = [];
++            AppState.transactions.push({
+                 id,
+                 type: 'loan_adjustment',
++                description: 'Loan adjustment \u2014 ' + loan.client_name + ' (Loan #' + loan.loan_id + ')',
+                 timestamp,
+                 details: {
+                     id,
+@@ -2259,11 +2367,14 @@ Click "OK" to process payment or "Cancel" to go back.
+                 });
+             });
+ 
+-            // 2) Legacy: AppState.transactionHistory (older shape)
+-            (Array.isArray(AppState.transactionHistory) ? AppState.transactionHistory : []).forEach(tx => {
++            // 2) Global log — adjustment events recorded before loan-local
++            // history existed (legacy records were merged in at load time).
++            (Array.isArray(AppState.transactions) ? AppState.transactions : []).forEach(tx => {
+                 if (!tx || tx.type !== 'loan_adjustment') return;
+                 const details = tx.details || {};
+                 if (details.loanId !== loanId) return;
++                const txId = tx.id || details.id;
++                if (txId && events.some(e2 => e2.id === txId)) return; // already in loan-local history
+ 
+                 events.push({
+                     id: tx.id || details.id,
+@@ -3225,11 +3336,11 @@ TBFS - Transparent, Fair, Simple
+             const isStockvel = loan.loan_type === 'stockvel' || loan.isStockvelLoan;
+             const originalPrincipal = loan.original_principal || loan.principal_amount || remainingPrincipal;
+             const totalContributions = loan.total_contributions || 0;
+-            const totalInitiationFee = loan.total_initiation_fee || (originalPrincipal * 0.12);
++            const totalInitiationFee = loan.total_initiation_fee || (originalPrincipal * Calculations.RATES.INITIATION_FEE_RATE);
+             const initiationFeePaid = loan.initiation_fee_paid || 0;
+             const interestAlreadyPaid = loan.interest_paid || 0;
+ 
+-            let adminFee = 60;
++            let adminFee = Calculations.RATES.ADMIN_FEE_STANDARD;
+             let recalculatedRemainingInterest = 0;
+             let stockvelPlan = null;
+             const remainingInitiationFee = Math.max(0, totalInitiationFee - initiationFeePaid);
+@@ -3319,7 +3430,7 @@ TBFS - Transparent, Fair, Simple
+             loan.monthly_payment = newMonthlyPayment;
+             
+             // STEP 5: REGENERATE PAYMENT SCHEDULE (RESPECT PRIOR PAYMENTS)
+-            console.log(`🔄 Regenerating schedule for Loan #${loanId} with new term: ${newTerm} months`);
++            dbg(`🔄 Regenerating schedule for Loan #${loanId} with new term: ${newTerm} months`);
+             loan.schedule = buildAdjustedSchedule(loan, {
+                 remainingPrincipal: remainingPrincipal,
+                 remainingInterest: remainingInterest,
+@@ -3494,11 +3605,11 @@ TBFS - Transparent, Fair, Simple
+             let newMonthlyPayment = 0;
+             let additionalInitiationFee = 0;
+             let newTotalInitiationFee = 0;
+-            let adminFee = 60;
++            let adminFee = Calculations.RATES.ADMIN_FEE_STANDARD;
+ 
+             if (isStockvel && totalContributions) {
+                 // STOCKVEL: Tiered interest on the new principal for the full term
+-                newTotalInitiationFee = newPrincipal <= totalContributions ? 0 : (newPrincipal - totalContributions) * 0.12;
++                newTotalInitiationFee = newPrincipal <= totalContributions ? 0 : (newPrincipal - totalContributions) * Calculations.RATES.INITIATION_FEE_RATE;
+                 adminFee = getStockvelAdminFee(totalContributions);
+ 
+                 const fullInterest = calculateStockvelTotalInterest(
+@@ -3510,7 +3621,7 @@ TBFS - Transparent, Fair, Simple
+                 recalculatedInterest = Math.max(fullInterest, interestAlreadyPaid);
+             } else {
+                 // STANDARD: 30% Income Table method on the new principal for full term
+-                newTotalInitiationFee = newPrincipal * 0.12;
++                newTotalInitiationFee = newPrincipal * Calculations.RATES.INITIATION_FEE_RATE;
+                 const fullInterest = calculateStandardTotalInterest(newPrincipal, currentTerm);
+                 recalculatedInterest = Math.max(fullInterest, interestAlreadyPaid);
+             }
+@@ -3586,7 +3697,7 @@ TBFS - Transparent, Fair, Simple
+             
+             // STEP 6: REGENERATE PAYMENT SCHEDULE
+             // Critical: Schedule must reflect new principal and terms
+-            console.log(`🔄 Regenerating schedule for Loan #${loanId} with added amount: ${Calculations.formatCurrency(amount)}`);
++            dbg(`🔄 Regenerating schedule for Loan #${loanId} with added amount: ${Calculations.formatCurrency(amount)}`);
+             loan.schedule = buildAdjustedSchedule(loan, {
+                 remainingPrincipal: newRemainingPrincipal,
+                 remainingInterest: remainingInterest,
+@@ -3746,6 +3857,10 @@ TBFS - Transparent, Fair, Simple
+                 description: `Loan #${loanId} marked as DEFAULTED`,
+                 data: { loanId: loanId, newStatus: 'defaulted' }
+             });
++
++            // Deployed capital is derived — a defaulted loan leaves the
++            // active book immediately. (F-06)
++            AppStateManager.recalculateDerivedTotals(AppState);
+             
+             // Save state
+             AppStateManager.save(AppState);
+@@ -3983,6 +4098,27 @@ TBFS - Transparent, Fair, Simple
+         // Initialize on page load
+         document.addEventListener('DOMContentLoaded', init);
+     </script>
++
++    <!-- F-13: Payment entry modal -->
++    <div id="paymentModal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.55); z-index:2000; align-items:center; justify-content:center; padding:16px;">
++        <div style="background:#fff; border-radius:14px; max-width:520px; width:100%; max-height:90vh; overflow-y:auto; padding:24px; box-shadow:0 20px 60px rgba(0,0,0,0.3);">
++            <h3 id="pmTitle" style="margin:0 0 4px 0; color:#2c3e50;">Payment</h3>
++            <p id="pmClient" style="margin:0 0 14px 0; color:#636e72; font-weight:600;"></p>
++            <div id="pmSummary" style="background:#f8f9fa; border-radius:10px; padding:12px 14px; margin-bottom:14px; font-size:14px;"></div>
++            <label for="pmAmount" style="display:block; font-weight:600; color:#2c3e50; margin-bottom:6px;">Payment amount (R)</label>
++            <input type="number" id="pmAmount" min="0" step="0.01" inputmode="decimal" oninput="updatePaymentPreview()" style="width:100%; padding:12px; border:2px solid #e0e6ed; border-radius:10px; font-size:16px; margin-bottom:12px;">
++            <label for="pmDate" style="display:block; font-weight:600; color:#2c3e50; margin-bottom:6px;">Payment date</label>
++            <input type="date" id="pmDate" style="width:100%; padding:12px; border:2px solid #e0e6ed; border-radius:10px; font-size:16px; margin-bottom:12px;">
++            <div style="font-weight:600; color:#2c3e50; margin-bottom:6px;">Allocation preview</div>
++            <div id="pmPreview" style="background:#f0f4ff; border-radius:10px; padding:12px 14px; font-size:14px; margin-bottom:10px;"></div>
++            <p id="pmError" style="color:#e74c3c; font-size:14px; min-height:18px; margin:0 0 10px 0;"></p>
++            <div style="display:flex; gap:10px; justify-content:flex-end;">
++                <button class="btn btn-secondary" type="button" onclick="closePaymentModal()">Cancel</button>
++                <button class="btn btn-success" type="button" onclick="confirmPaymentModal()">&#9989; Confirm Payment</button>
++            </div>
++        </div>
++    </div>
++
+     <!-- Service Worker Registration -->
+     <script src="shared/sw-register.js"></script>
+ </body>
+diff --git a/tools/transform-active-loans-2.mjs b/tools/transform-active-loans-2.mjs
+new file mode 100644
+index 0000000..ef944ca
+--- /dev/null
++++ b/tools/transform-active-loans-2.mjs
+@@ -0,0 +1,133 @@
++#!/usr/bin/env node
++/**
++ * Pass 2 of the active-loans.html transform (run after pass 1).
++ * Sweeps the sites the first pass's anchors did not cover:
++ *  - residual hardcoded rates → Calculations.RATES (F-07)
++ *  - getStockvelAdminFee() delegates to the shared rule (F-16)
++ *  - early-payoff and loan-adjustment logs write to the canonical
++ *    AppState.transactions (F-09), with derived totals refreshed after
++ *    an early payoff (F-06)
++ *  - the two remaining transactionHistory READS consolidated onto
++ *    transactions (the load-time normalizer merges legacy data there),
++ *    with an id-dedupe guard in the adjustment-timeline reader.
++ */
++import { readFileSync, writeFileSync } from 'node:fs';
++
++const FILE = 'active-loans.html';
++let src = readFileSync(FILE, 'utf8');
++let count = 0;
++
++function rep(from, to, label) {
++    if (!src.includes(from)) {
++        console.error(`MISSING PATTERN [${label}]`);
++        process.exit(1);
++    }
++    src = src.split(from).join(to);
++    count++;
++}
++
++/* ---- residual rates ---------------------------------------------------- */
++rep(`                            const tbfsIncome = balance * Calculations.RATES.INCOME_TABLE_RATE;
++                            const adminFee = 60;`,
++`                            const tbfsIncome = balance * Calculations.RATES.INCOME_TABLE_RATE;
++                            const adminFee = Calculations.RATES.ADMIN_FEE_STANDARD;`,
++'recalc admin fee');
++
++rep('principalPerMonth * 0.10;',
++    'principalPerMonth * Calculations.RATES.STOCKVEL_MIN_MONTHLY_RATE;',
++    'breakdown minimum (both sites)');
++
++rep(`                let adminPayment = 60;`,
++    `                let adminPayment = Calculations.RATES.ADMIN_FEE_STANDARD;`,
++    'breakdown admin base');
++rep(`                    adminPayment = 60 * (1 - effectiveRate);`,
++    `                    adminPayment = Calculations.RATES.ADMIN_FEE_STANDARD * (1 - effectiveRate);`,
++    'breakdown admin variable');
++
++rep(`const totalInitiationFee = loan.total_initiation_fee || (originalPrincipal * 0.12);`,
++    `const totalInitiationFee = loan.total_initiation_fee || (originalPrincipal * Calculations.RATES.INITIATION_FEE_RATE);`,
++    'adjust initiation fallback');
++rep(`            let adminFee = 60;`,
++    `            let adminFee = Calculations.RATES.ADMIN_FEE_STANDARD;`,
++    'adjust admin fee (both sites)');
++rep(`newTotalInitiationFee = newPrincipal <= totalContributions ? 0 : (newPrincipal - totalContributions) * 0.12;`,
++    `newTotalInitiationFee = newPrincipal <= totalContributions ? 0 : (newPrincipal - totalContributions) * Calculations.RATES.INITIATION_FEE_RATE;`,
++    'increase stockvel initiation');
++rep(`newTotalInitiationFee = newPrincipal * 0.12;`,
++    `newTotalInitiationFee = newPrincipal * Calculations.RATES.INITIATION_FEE_RATE;`,
++    'increase standard initiation');
++
++/* ---- shared admin-fee rule --------------------------------------------- */
++rep(`        function getStockvelAdminFee(totalContributions) {
++            if (totalContributions >= 20000) return 45;
++            if (totalContributions >= 10000) return 50;
++            return 60;
++        }`,
++`        function getStockvelAdminFee(totalContributions) {
++            // Shared rule — single source of truth (F-16)
++            return Calculations.getAdminFeeForContributions(totalContributions);
++        }`,
++'admin-fee helper delegates');
++
++/* ---- early payoff: canonical log + derived totals ----------------------- */
++rep(`                AppState.totalFeesEarned = (AppState.totalFeesEarned || 0) + payoffData.initiationFeeOwed + payoffData.adminFeesOwed;`,
++`                AppState.totalFeesEarned = (AppState.totalFeesEarned || 0) + payoffData.initiationFeeOwed + payoffData.adminFeesOwed;
++
++                // Deployed capital is derived from the active book. (F-06)
++                AppStateManager.recalculateDerivedTotals(AppState);`,
++'payoff derived totals');
++
++rep(`                if (!AppState.transactionHistory) AppState.transactionHistory = [];
++                AppState.transactionHistory.push({
++                    type: 'early_payoff',`,
++`                if (!AppState.transactions) AppState.transactions = [];
++                AppState.transactions.push({
++                    id: Date.now(),
++                    type: 'early_payoff',
++                    description: 'Early payoff \\u2014 ' + loan.client_name + ' (Loan #' + loan.loan_id + ')',`,
++'payoff transactions push');
++
++/* ---- adjustment log: canonical field ------------------------------------ */
++rep(`            // Legacy global history
++            if (!Array.isArray(AppState.transactionHistory)) AppState.transactionHistory = [];
++            AppState.transactionHistory.push({
++                id,
++                type: 'loan_adjustment',`,
++`            // Global transaction log (canonical field — F-09)
++            if (!Array.isArray(AppState.transactions)) AppState.transactions = [];
++            AppState.transactions.push({
++                id,
++                type: 'loan_adjustment',
++                description: 'Loan adjustment \\u2014 ' + loan.client_name + ' (Loan #' + loan.loan_id + ')',`,
++'adjustment transactions push');
++
++/* ---- reads consolidated on the canonical field --------------------------- */
++rep(`            const paymentEvents = [
++                ...(Array.isArray(AppState.transactionHistory) ? AppState.transactionHistory : []),
++                ...(Array.isArray(AppState.transactions) ? AppState.transactions : [])
++            ].filter(t => t && t.type === 'payment');`,
++`            // Legacy transactionHistory is merged into transactions at load
++            // time by the state normalizer. (F-09)
++            const paymentEvents = (Array.isArray(AppState.transactions) ? AppState.transactions : [])
++                .filter(t => t && t.type === 'payment');`,
++'revenue reader');
++
++rep(`            // 2) Legacy: AppState.transactionHistory (older shape)
++            (Array.isArray(AppState.transactionHistory) ? AppState.transactionHistory : []).forEach(tx => {
++                if (!tx || tx.type !== 'loan_adjustment') return;
++                const details = tx.details || {};
++                if (details.loanId !== loanId) return;
++`,
++`            // 2) Global log — adjustment events recorded before loan-local
++            // history existed (legacy records were merged in at load time).
++            (Array.isArray(AppState.transactions) ? AppState.transactions : []).forEach(tx => {
++                if (!tx || tx.type !== 'loan_adjustment') return;
++                const details = tx.details || {};
++                if (details.loanId !== loanId) return;
++                const txId = tx.id || details.id;
++                if (txId && events.some(e2 => e2.id === txId)) return; // already in loan-local history
++`,
++'adjustment timeline reader');
++
++writeFileSync(FILE, src);
++console.log(`Pass 2: applied ${count} transforms to ${FILE}`);
+diff --git a/tools/transform-active-loans.mjs b/tools/transform-active-loans.mjs
+new file mode 100644
+index 0000000..a4c01a1
+--- /dev/null
++++ b/tools/transform-active-loans.mjs
+@@ -0,0 +1,423 @@
++#!/usr/bin/env node
++/**
++ * One-shot transform of active-loans.html for the security patch series.
++ * Single-line changes use exact-match rep(); the three large surgeries use
++ * line-anchored splices (start-of-line to start-of-line) so incidental
++ * trailing whitespace cannot break the patch. Aborts loudly on any miss.
++ *
++ * F-13  In-page payment form (amount + date + live allocation preview)
++ *       replaces the prompt()/prompt() flow.
++ * F-02  Waterfall routed through Calculations.allocateScheduledPayment
++ *       (interest cap enforced); partial payments no longer consume a
++ *       whole installment; first-half overpayment recalculation now
++ *       propagates into the remaining schedule entries.
++ * F-06  markAsDefaulted recalculates derived totals; penalty income
++ *       tracked in totalPenaltiesEarned.
++ * F-07  Remaining hardcoded rates → Calculations.RATES / shared helpers.
++ * F-09  Payments log to canonical AppState.transactions.
++ * F-04  Client-controlled strings escaped in rendered markup.
++ */
++import { readFileSync, writeFileSync } from 'node:fs';
++
++const FILE = 'active-loans.html';
++let src = readFileSync(FILE, 'utf8');
++let count = 0;
++
++function rep(from, to, label) {
++    if (!src.includes(from)) {
++        console.error(`MISSING PATTERN [${label}]`);
++        process.exit(1);
++    }
++    src = src.split(from).join(to);
++    count++;
++}
++
++/** Replace from the start of the line containing startMarker up to (not
++ *  including) the start of the line containing endMarker. */
++function splice(startMarker, endMarker, replacement, label) {
++    const s = src.indexOf(startMarker);
++    if (s === -1) { console.error(`MISSING SPLICE START [${label}]`); process.exit(1); }
++    const sol = src.lastIndexOf('\n', s) + 1;
++    const e = src.indexOf(endMarker, s + startMarker.length);
++    if (e === -1) { console.error(`MISSING SPLICE END [${label}]`); process.exit(1); }
++    const eol = src.lastIndexOf('\n', e) + 1;
++    src = src.slice(0, sol) + replacement + src.slice(eol);
++    count++;
++}
++
++/* ---- T1: load sanitize.js ------------------------------------------- */
++rep(
++`    <script src="shared/app-state.js"></script>
++    <script src="shared/calculations.js"></script>`,
++`    <script src="shared/sanitize.js"></script>
++    <script src="shared/app-state.js"></script>
++    <script src="shared/calculations.js"></script>`,
++'sanitize tag');
++
++/* ---- T2: escape client-controlled strings (F-04) --------------------- */
++rep('<h4>Loan #${loan.loan_id} - ${loan.client_name}</h4>',
++    '<h4>Loan #${esc(loan.loan_id)} - ${esc(loan.client_name)}</h4>',
++    'esc card heading');
++
++/* ---- T3: schedule start-year via shared resolver ---------------------- */
++rep(
++`                const loanDate = loan.created_at ? new Date(loan.created_at) : new Date();
++                const currentYear = loanDate.getFullYear();`,
++`                const loanDate = loan.created_at ? new Date(loan.created_at) : new Date();
++                // A schedule cannot start before disbursement: an earlier
++                // calendar month means the NEXT occurrence of that month.
++                const currentYear = Calculations.resolveScheduleStartYear(loanDate, startMonthIndex);`,
++'start-year resolver');
++
++/* ---- T4: rates → RATES / shared helpers (F-07) ------------------------ */
++rep('= balance * 0.10;', '= balance * Calculations.RATES.STOCKVEL_MIN_MONTHLY_RATE;', 'stockvel 10% minimum (all sites)');
++rep('= balance * 0.30;', '= balance * Calculations.RATES.INCOME_TABLE_RATE;', 'income-table 30% (all sites)');
++rep('const minimumCharge = remainingBalance * 0.10;',
++    'const minimumCharge = remainingBalance * Calculations.RATES.STOCKVEL_MIN_MONTHLY_RATE;',
++    'bonus minimum charge');
++rep('adminFee = 60)', 'adminFee = Calculations.RATES.ADMIN_FEE_STANDARD)', 'outstanding-interest admin default');
++rep(`                    const totalInitiationFee = principal <= totalContributions ? 0 : (principal - totalContributions) * 0.12;`,
++    `                    const totalInitiationFee = principal <= totalContributions ? 0 : (principal - totalContributions) * Calculations.RATES.INITIATION_FEE_RATE;`,
++    'schedule stockvel initiation');
++rep(`                    // Calculate admin fee (reduced for stockvel based on contributions)
++                    let adminFee = 60; // Default
++                    if (totalContributions >= 20000) adminFee = 45;
++                    else if (totalContributions >= 10000) adminFee = 50;`,
++`                    // Admin fee (reduced for stockvel) — shared rule (F-07/F-16)
++                    const adminFee = Calculations.getAdminFeeForContributions(totalContributions);`,
++'schedule stockvel admin fee');
++rep(`                        const adminFee = 60;
++                        const initiationFee = (principal * 0.12) / term;`,
++`                        const adminFee = Calculations.RATES.ADMIN_FEE_STANDARD;
++                        const initiationFee = (principal * Calculations.RATES.INITIATION_FEE_RATE) / term;`,
++'fallback schedule rates');
++rep(`loan.total_initiation_fee = principal <= loan.total_contributions ? 0 : (principal - loan.total_contributions) * 0.12;`,
++    `loan.total_initiation_fee = principal <= loan.total_contributions ? 0 : (principal - loan.total_contributions) * Calculations.RATES.INITIATION_FEE_RATE;`,
++    'makePayment stockvel initiation');
++rep(`loan.total_initiation_fee = principal * 0.12;`,
++    `loan.total_initiation_fee = principal * Calculations.RATES.INITIATION_FEE_RATE;`,
++    'makePayment standard initiation');
++rep(`const totalFees = loan.total_initiation_fee + (60 * loan.term_months); // Admin fees`,
++    `const totalFees = loan.total_initiation_fee + (Calculations.RATES.ADMIN_FEE_STANDARD * loan.term_months); // Admin fees`,
++    'makePayment estimated fees');
++
++/* ---- T5: schedule finders include partially-paid entries -------------- */
++rep(`loan.schedule.find(p => p.status === 'pending');`,
++    `loan.schedule.find(p => p.status === 'pending' || p.status === 'partial');`,
++    'pending finder (both sites)');
++rep(`schedule.find(p => p && p.status === 'pending') || null;`,
++    `schedule.find(p => p && (p.status === 'pending' || p.status === 'partial')) || null;`,
++    'helper finder');
++
++/* ---- T6: prompt()/prompt() flow → payment modal (F-13) ---------------- */
++splice(
++'const penaltyLine = latePenalty > 0',
++'// STEP 9: PAYMENT ALLOCATION (WATERFALL METHOD)',
++`            // F-13: a structured in-page form replaces the prompt() flow.
++            // The confirmed input arrives via processPayment().
++            openPaymentModal({
++                loanId, loan,
++                expectedPayment, remainingPrincipal, remainingInterest,
++                remainingInitiationFee, latePenalty, daysLate, isPaymentLate,
++                gracePeriodDays, nextDueDate,
++                paymentsMade: loan.payments_made || 0
++            });
++        }
++
++        /* ==========================================================
++         * F-13: Payment modal — state, preview, and confirmation
++         * ========================================================== */
++        let paymentModalCtx = null;
++
++        /** Effective (still-owed) dues on a schedule entry, net of any
++         *  partial payments already recorded against it. */
++        function getEntryEffectiveDues(entry) {
++            const paid = (entry && entry.paid_breakdown) || {};
++            const eff = (due, done) => Math.max(0, (Number(due) || 0) - (Number(done) || 0));
++            return {
++                initiation_fee: eff(entry.initiation_fee, paid.initiation),
++                admin_fee: eff(entry.admin_fee, paid.admin),
++                interest_payment: eff(entry.interest_payment, paid.interest),
++                principal_payment: eff(entry.principal_payment, paid.principal)
++            };
++        }
++
++        function interestCapRemainingFor(loan) {
++            return Number.isFinite(loan.max_interest_allowed)
++                ? Math.max(0, loan.max_interest_allowed - (loan.interest_paid || 0))
++                : Infinity;
++        }
++
++        function openPaymentModal(ctx) {
++            paymentModalCtx = ctx;
++            const loan = ctx.loan;
++            const today = new Date().toISOString().split('T')[0];
++            document.getElementById('pmTitle').textContent = 'Payment — Loan #' + loan.loan_id;
++            document.getElementById('pmClient').textContent = loan.client_name || '';
++            document.getElementById('pmSummary').innerHTML =
++                '<div class="info-row"><span>Expected monthly:</span><strong>' + esc(Calculations.formatCurrency(ctx.expectedPayment)) + '</strong></div>' +
++                '<div class="info-row"><span>Remaining principal:</span><strong>' + esc(Calculations.formatCurrency(ctx.remainingPrincipal)) + '</strong></div>' +
++                '<div class="info-row"><span>Remaining interest:</span><strong>' + esc(Calculations.formatCurrency(ctx.remainingInterest)) + '</strong></div>' +
++                '<div class="info-row"><span>Remaining initiation fee:</span><strong>' + esc(Calculations.formatCurrency(ctx.remainingInitiationFee)) + '</strong></div>' +
++                (ctx.latePenalty > 0
++                    ? '<div class="info-row"><span>\\u26A0\\uFE0F Late penalty (' + esc(ctx.daysLate) + ' days late, ' + esc(ctx.gracePeriodDays) + '-day grace):</span><strong>' + esc(Calculations.formatCurrency(ctx.latePenalty)) + '</strong></div>'
++                    : '') +
++                '<div class="info-row"><span>Payments made:</span><strong>' + esc(ctx.paymentsMade) + '/' + esc(loan.term_months) + '</strong></div>';
++            const amountInput = document.getElementById('pmAmount');
++            amountInput.value = ctx.expectedPayment ? Number(ctx.expectedPayment).toFixed(2) : '';
++            document.getElementById('pmDate').value = today;
++            document.getElementById('pmError').textContent = '';
++            updatePaymentPreview();
++            document.getElementById('paymentModal').style.display = 'flex';
++            amountInput.focus();
++            amountInput.select();
++        }
++
++        function closePaymentModal() {
++            paymentModalCtx = null;
++            document.getElementById('paymentModal').style.display = 'none';
++        }
++
++        function updatePaymentPreview() {
++            if (!paymentModalCtx) return;
++            const loan = paymentModalCtx.loan;
++            const amount = parseFloat(document.getElementById('pmAmount').value);
++            const preview = document.getElementById('pmPreview');
++            if (!amount || isNaN(amount) || amount <= 0) {
++                preview.innerHTML = '<em>Enter an amount to preview the allocation.</em>';
++                return;
++            }
++            const entry = loan.schedule && loan.schedule.find(p => p.status === 'pending' || p.status === 'partial');
++            if (!entry) {
++                preview.innerHTML = '<em>No pending installment on the schedule.</em>';
++                return;
++            }
++            const alloc = Calculations.allocateScheduledPayment(amount, {
++                entry: getEntryEffectiveDues(entry),
++                latePenaltyDue: paymentModalCtx.latePenalty,
++                interestCapRemaining: interestCapRemainingFor(loan),
++                remainingPrincipal: loan.remaining_principal
++            });
++            const line = (label, v) => v > 0
++                ? '<div class="info-row"><span>' + label + ':</span><strong>' + esc(Calculations.formatCurrency(v)) + '</strong></div>'
++                : '';
++            preview.innerHTML =
++                line('Initiation fee', alloc.initiationPaid) +
++                line('Admin fee', alloc.adminPaid) +
++                line('Late penalty', alloc.penaltyPaid) +
++                line('Interest', alloc.interestPaid) +
++                line('Principal', alloc.principalPaid) +
++                (alloc.unallocated > 0
++                    ? '<div class="info-row"><span>Extra (overpayment):</span><strong>' + esc(Calculations.formatCurrency(alloc.unallocated)) + '</strong></div>'
++                    : '') +
++                '<div class="info-row" style="border-top:1px solid #dfe6ee;margin-top:6px;padding-top:6px;"><span>Total:</span><strong>' + esc(Calculations.formatCurrency(amount)) + '</strong></div>';
++        }
++
++        function confirmPaymentModal() {
++            if (!paymentModalCtx) return;
++            const errEl = document.getElementById('pmError');
++            const amount = parseFloat(document.getElementById('pmAmount').value);
++            if (!amount || isNaN(amount) || amount <= 0) {
++                errEl.textContent = '\\u274C Enter a valid payment amount.';
++                return;
++            }
++            const dateVal = document.getElementById('pmDate').value;
++            if (!dateVal) {
++                errEl.textContent = '\\u274C Choose a payment date.';
++                return;
++            }
++            const ctx = paymentModalCtx;
++            closePaymentModal();
++            processPayment(ctx, amount, dateVal);
++        }
++
++        /**
++         * Apply a confirmed payment — the original makePayment flow from the
++         * point where user input has been collected. (F-13)
++         */
++        function processPayment(ctx, amount, paymentDateInput) {
++            const loan = ctx.loan;
++            const loanId = ctx.loanId;
++            let nextDueDate = ctx.nextDueDate;
++            const latePenalty = ctx.latePenalty;
++            const daysLate = ctx.daysLate;
++            const gracePeriodDays = ctx.gracePeriodDays;
++            const expectedPayment = ctx.expectedPayment;
++
++            // Parse payment date (input[type=date] supplies YYYY-MM-DD);
++            // local midday avoids timezone date-shift edge cases.
++            let paymentDate;
++            try {
++                paymentDate = new Date(paymentDateInput + 'T12:00:00');
++                if (isNaN(paymentDate.getTime())) throw new Error('Invalid date');
++                paymentDate = paymentDate.toISOString();
++            } catch (error) {
++                alert('\\u274C Invalid payment date!');
++                return;
++            }
++
++`,
++'prompt flow → modal + processPayment');
++
++/* ---- T7: waterfall via the shared engine (F-02/F-16) ------------------ */
++splice(
++'// STEP 11: ALLOCATE PAYMENT USING WATERFALL METHOD',
++'// STEP 12: HANDLE OVERPAYMENT',
++`            // STEP 11: ALLOCATE VIA THE SHARED WATERFALL (F-02/F-16)
++            // initiation → admin → late penalty → interest → principal,
++            // interest clamped to max_interest_allowed, all against the
++            // entry's EFFECTIVE dues (net of prior partial payments).
++            const alloc = Calculations.allocateScheduledPayment(remainingAmount, {
++                entry: getEntryEffectiveDues(nextPayment),
++                latePenaltyDue: latePenalty,
++                interestCapRemaining: interestCapRemainingFor(loan),
++                remainingPrincipal: loan.remaining_principal
++            });
++            initiationFeePaid = alloc.initiationPaid;
++            adminFeePaid = alloc.adminPaid;
++            latePenaltyPaid = alloc.penaltyPaid;
++            interestPaid = alloc.interestPaid;
++            principalPaid = alloc.principalPaid;
++            remainingAmount = alloc.unallocated;
++
++`,
++'waterfall → shared allocation');
++
++/* ---- T8: second-half extra interest respects the cap ------------------ */
++rep(
++`                    // Apply to remaining interest balance
++                    const remainingInterest = Math.max(0, (loan.total_interest || 0) - (loan.interest_paid || 0));`,
++`                    // Apply to remaining interest balance (never beyond the
++                    // loan's interest cap — F-02)
++                    const capLeft = Math.max(0, interestCapRemainingFor(loan) - interestPaid);
++                    const remainingInterest = Math.min(
++                        Math.max(0, (loan.total_interest || 0) - (loan.interest_paid || 0)), capLeft);`,
++'second-half interest cap');
++
++/* ---- T9: partial payments recorded honestly (STEP 13) ----------------- */
++splice(
++'// STEP 13: UPDATE PAYMENT SCHEDULE ENTRY',
++'// Track total principal received',
++`            // STEP 13: UPDATE PAYMENT SCHEDULE ENTRY
++            // Record what this payment covered on the entry; mark it 'paid'
++            // only once its dues are fully met — a partial payment no longer
++            // silently consumes a whole installment. (F-02 fold-in)
++            const pb = nextPayment.paid_breakdown = nextPayment.paid_breakdown || {};
++            pb.initiation = Calculations.round((pb.initiation || 0) + initiationFeePaid);
++            pb.admin = Calculations.round((pb.admin || 0) + adminFeePaid);
++            pb.interest = Calculations.round((pb.interest || 0) + interestPaid);
++            pb.principal = Calculations.round((pb.principal || 0) + principalPaid);
++            nextPayment.payment_date = paymentDate;
++            nextPayment.amount_paid = Calculations.round((nextPayment.amount_paid || 0) + amount);
++            const duesLeft = getEntryEffectiveDues(nextPayment);
++            // Interest owed on the entry is only claimable up to the cap.
++            const claimableInterestLeft = Math.min(duesLeft.interest_payment, interestCapRemainingFor(loan));
++            const entryCovered = (duesLeft.initiation_fee + duesLeft.admin_fee +
++                claimableInterestLeft + duesLeft.principal_payment) <= 0.01;
++            nextPayment.status = entryCovered ? 'paid' : 'partial';
++            nextPayment.partial_payment = !entryCovered;
++
++`,
++'partial-payment schedule entry');
++
++/* ---- T10: completion sweep includes partial entries -------------------- */
++rep(
++`                loan.schedule.forEach(payment => {
++                    if (payment.status === 'pending') {
++                        payment.status = 'paid';
++                    }
++                });`,
++`                loan.schedule.forEach(payment => {
++                    if (payment.status === 'pending' || payment.status === 'partial') {
++                        payment.status = 'paid';
++                    }
++                });`,
++'completion sweep');
++
++/* ---- T11: propagate recalculated interest into the schedule ------------ */
++rep(
++`                    loan.max_interest_allowed = newMaxInterest;
++                    loan.expected_monthly_interest = newMaxInterest / loan.term_months;`,
++`                    loan.max_interest_allowed = newMaxInterest;
++                    loan.expected_monthly_interest = newMaxInterest / loan.term_months;
++
++                    // Propagate the recalculated interest into the remaining
++                    // schedule entries so future allocations and displays use
++                    // the reduced figures. (F-02 fold-in)
++                    const openEntries = loan.schedule.filter(p => p.status !== 'paid');
++                    if (openEntries.length > 0) {
++                        const perEntry = Calculations.round(newInterestCalculation / openEntries.length);
++                        openEntries.forEach(p => {
++                            p.interest_payment = perEntry;
++                            p.monthly_payment = Calculations.round(
++                                (p.principal_payment || 0) + (p.admin_fee || 0) +
++                                (p.initiation_fee || 0) + perEntry);
++                        });
++                        loan.monthly_payment = openEntries[0].monthly_payment;
++                    }`,
++'recalc propagation');
++
++/* ---- T12: penalty income tracked (F-06) -------------------------------- */
++rep(
++`            AppState.totalFeesEarned = (AppState.totalFeesEarned || 0) + adminFeePaid + initiationFeePaid;`,
++`            AppState.totalFeesEarned = (AppState.totalFeesEarned || 0) + adminFeePaid + initiationFeePaid;
++
++            // Penalty income is neither interest nor fees — track it. (F-06)
++            AppState.totalPenaltiesEarned = (AppState.totalPenaltiesEarned || 0) + latePenaltyPaid;`,
++'penalties earned');
++
++/* ---- T13: canonical transactions field (F-09) --------------------------- */
++rep(
++`            if (!AppState.transactionHistory) AppState.transactionHistory = [];
++            AppState.transactionHistory.push({
++                type: 'payment',`,
++`            if (!AppState.transactions) AppState.transactions = [];
++            AppState.transactions.push({
++                id: Date.now(),
++                type: 'payment',
++                description: 'Payment \\u2014 ' + loan.client_name + ' (Loan #' + loanId + ')',`,
++'transactions push');
++
++/* ---- T14: defaulting recomputes derived totals (F-06) -------------------- */
++rep(
++`                data: { loanId: loanId, newStatus: 'defaulted' }
++            });`,
++`                data: { loanId: loanId, newStatus: 'defaulted' }
++            });
++
++            // Deployed capital is derived — a defaulted loan leaves the
++            // active book immediately. (F-06)
++            AppStateManager.recalculateDerivedTotals(AppState);`,
++'default → derived totals');
++
++/* ---- T15: modal markup ---------------------------------------------------- */
++rep(
++`    </script>
++    <!-- Service Worker Registration -->`,
++`    </script>
++
++    <!-- F-13: Payment entry modal -->
++    <div id="paymentModal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.55); z-index:2000; align-items:center; justify-content:center; padding:16px;">
++        <div style="background:#fff; border-radius:14px; max-width:520px; width:100%; max-height:90vh; overflow-y:auto; padding:24px; box-shadow:0 20px 60px rgba(0,0,0,0.3);">
++            <h3 id="pmTitle" style="margin:0 0 4px 0; color:#2c3e50;">Payment</h3>
++            <p id="pmClient" style="margin:0 0 14px 0; color:#636e72; font-weight:600;"></p>
++            <div id="pmSummary" style="background:#f8f9fa; border-radius:10px; padding:12px 14px; margin-bottom:14px; font-size:14px;"></div>
++            <label for="pmAmount" style="display:block; font-weight:600; color:#2c3e50; margin-bottom:6px;">Payment amount (R)</label>
++            <input type="number" id="pmAmount" min="0" step="0.01" inputmode="decimal" oninput="updatePaymentPreview()" style="width:100%; padding:12px; border:2px solid #e0e6ed; border-radius:10px; font-size:16px; margin-bottom:12px;">
++            <label for="pmDate" style="display:block; font-weight:600; color:#2c3e50; margin-bottom:6px;">Payment date</label>
++            <input type="date" id="pmDate" style="width:100%; padding:12px; border:2px solid #e0e6ed; border-radius:10px; font-size:16px; margin-bottom:12px;">
++            <div style="font-weight:600; color:#2c3e50; margin-bottom:6px;">Allocation preview</div>
++            <div id="pmPreview" style="background:#f0f4ff; border-radius:10px; padding:12px 14px; font-size:14px; margin-bottom:10px;"></div>
++            <p id="pmError" style="color:#e74c3c; font-size:14px; min-height:18px; margin:0 0 10px 0;"></p>
++            <div style="display:flex; gap:10px; justify-content:flex-end;">
++                <button class="btn btn-secondary" type="button" onclick="closePaymentModal()">Cancel</button>
++                <button class="btn btn-success" type="button" onclick="confirmPaymentModal()">&#9989; Confirm Payment</button>
++            </div>
++        </div>
++    </div>
++
++    <!-- Service Worker Registration -->`,
++'modal markup');
++
++writeFileSync(FILE, src);
++console.log(`Applied ${count} transforms to ${FILE}`);
+-- 
+2.43.0
+

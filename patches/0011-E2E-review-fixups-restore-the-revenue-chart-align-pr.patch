@@ -1,0 +1,212 @@
+From ee8f1b60ee3f485cf1a398b8e4402f9b641c76a4 Mon Sep 17 00:00:00 2001
+From: TBFS Security Review <review@tbfs.local>
+Date: Tue, 7 Jul 2026 13:09:01 +0000
+Subject: [PATCH] E2E review fixups: restore the revenue chart, align profit
+ composition, close F-17
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+Findings from the post-remediation end-to-end review:
+
+- E2E-1 (HIGH, introduced by the F-09 field unification): reports.html's
+  monthly revenue chart still read the legacy AppState.transactionHistory,
+  which the load-time normalizer now always removes — the chart rendered
+  zeros. Reads the canonical AppState.transactions (the normalizer merges
+  legacy records there, and the payment objects carry the same details).
+- E2E-2 (MEDIUM): the dashboard's Total Profit includes penalty income;
+  reports' Total Revenue did not, so the two figures diverged after the
+  first late penalty. Reports now includes totalPenaltiesEarned.
+- E2E-3 (LOW): settings wrote the legacy deployedCapital field back onto
+  state on every settings save ('Ensure compatibility') — a zombie the
+  normalizer deleted on next load; removed, along with a dead fallback read.
+- E2E-4 (LOW): the add-amount adjustment hand-incremented deployed;
+  arithmetically correct, but it was the last spot trusting a hand-kept
+  counter — now recalculates derived totals like every other mutation.
+- E2E-5 (MEDIUM, pre-existing): the Web-Share-Target 'amount' parameter
+  autofilled #loanAmount, an element that does not exist (the input is
+  #principal) — shared-link amounts were silently dropped. Retargeted.
+- E2E-6 (LOW, F-17): clients.html logged the calculator hand-off URL
+  params (client name + account number) and 5 other lines; reports.html
+  logged 2 — both pages' logs now gated behind DEBUG, completing F-17.
+---
+ active-loans.html |  2 ++
+ calculator.html   |  2 +-
+ clients.html      | 17 +++++++++++------
+ reports.html      | 17 ++++++++++++-----
+ settings.html     |  3 +--
+ 5 files changed, 27 insertions(+), 14 deletions(-)
+
+diff --git a/active-loans.html b/active-loans.html
+index 3056740..7cf8332 100644
+--- a/active-loans.html
++++ b/active-loans.html
+@@ -3695,6 +3695,8 @@ TBFS - Transparent, Fair, Simple
+             // STEP 5: UPDATE APPSTATE
+             AppState.capital = availableCapital - amount;
+             AppState.deployed = (AppState.deployed || 0) + amount;
++            // Deployed capital is derived from the active book. (F-06)
++            AppStateManager.recalculateDerivedTotals(AppState);
+             
+             // STEP 6: REGENERATE PAYMENT SCHEDULE
+             // Critical: Schedule must reflect new principal and terms
+diff --git a/calculator.html b/calculator.html
+index c45404c..ae7fc06 100644
+--- a/calculator.html
++++ b/calculator.html
+@@ -418,7 +418,7 @@
+                 const amountMatch = sharedDetails.match(/R?\s?(\d[\d,]*\.?\d*)/);
+                 if (amountMatch) {
+                     const amount = parseFloat(amountMatch[1].replace(/,/g, ''));
+-                    const loanAmountEl = document.getElementById('loanAmount');
++                    const loanAmountEl = document.getElementById('principal');
+                     if (loanAmountEl && amount > 0) {
+                         loanAmountEl.value = amount;
+                         dbg('Web Share Target: Parsed loan amount:', amount);
+diff --git a/clients.html b/clients.html
+index 1ccd18e..0e0a568 100644
+--- a/clients.html
++++ b/clients.html
+@@ -310,6 +310,11 @@
+     
+     <!-- Page Logic -->
+     <script>
++        // Verbose diagnostics are opt-in — client details must not
++        // stream to the console in normal use. (F-17)
++        const DEBUG = false;
++        function dbg(...args) { if (DEBUG) console.log(...args); }
++
+         // Global state
+         let AppState = {};
+         let allClients = [];
+@@ -326,7 +331,7 @@
+             
+             // Listen for state updates from other tabs
+             AppStateManager.onUpdate(() => {
+-                console.log('State updated from another tab, reloading...');
++                dbg('State updated from another tab, reloading...');
+                 AppState = AppStateManager.load();
+                 loadClients();
+             });
+@@ -334,7 +339,7 @@
+             // Add client form
+             document.getElementById('addClientForm').addEventListener('submit', handleAddClient);
+             
+-            console.log('✅ Clients page initialized');
++            dbg('✅ Clients page initialized');
+         }
+         
+         /**
+@@ -702,16 +707,16 @@
+                     }
+                 } else {
+                     // Client is stockvel but member not found - set to false
+-                    console.log('Client is stockvel but member not found - setting isStockvelMember=false');
++                    dbg('Client is stockvel but member not found - setting isStockvelMember=false');
+                     params.append('isStockvelMember', 'false');
+                 }
+             } else {
+                 // Client is not stockvel - explicitly set to false
+-                console.log('Client is not stockvel - setting isStockvelMember=false');
++                dbg('Client is not stockvel - setting isStockvelMember=false');
+                 params.append('isStockvelMember', 'false');
+             }
+             
+-            console.log('Final URL params:', params.toString());
++            dbg('Final URL params:', params.toString());
+             
+             // Store comprehensive debug info in sessionStorage so we can see it after navigation
+             // Reuse the client variable that was already found above
+@@ -764,7 +769,7 @@
+                 };
+                 AppState.stockvelMembers.push(member);
+                 AppStateManager.save(AppState);
+-                console.log('✅ Created missing stockvel member entry for client:', client.account_number);
++                dbg('✅ Created missing stockvel member entry for client:', client.account_number);
+             } else if (member) {
+                 // Sync member data with client
+                 member.account_number = client.account_number;
+diff --git a/reports.html b/reports.html
+index 4678717..155631f 100644
+--- a/reports.html
++++ b/reports.html
+@@ -366,6 +366,11 @@
+     
+     <!-- Page Logic -->
+     <script>
++        // Verbose diagnostics are opt-in — client details must not
++        // stream to the console in normal use. (F-17)
++        const DEBUG = false;
++        function dbg(...args) { if (DEBUG) console.log(...args); }
++
+         // Global state
+         let AppState = {};
+         let ReportsState = {
+@@ -388,12 +393,12 @@
+             
+             // Listen for state updates from other tabs
+             AppStateManager.onUpdate(() => {
+-                console.log('State updated from another tab, reloading...');
++                dbg('State updated from another tab, reloading...');
+                 AppState = AppStateManager.load();
+                 generateReports();
+             });
+             
+-            console.log('✅ Reports page initialized');
++            dbg('✅ Reports page initialized');
+         }
+         
+         /**
+@@ -468,7 +473,7 @@
+          * Update report summary
+          */
+         function updateReportSummary(loans) {
+-            const totalRevenue = (AppState.totalInterestEarned || 0) + (AppState.totalFeesEarned || 0);
++            const totalRevenue = (AppState.totalInterestEarned || 0) + (AppState.totalFeesEarned || 0) + (AppState.totalPenaltiesEarned || 0);
+             const avgLoanSize = loans.length > 0 ? loans.reduce((sum, l) => sum + l.principal_amount, 0) / loans.length : 0;
+             const avgLoanTerm = loans.length > 0 ? loans.reduce((sum, l) => sum + l.term_months, 0) / loans.length : 0;
+             
+@@ -485,7 +490,7 @@
+          */
+         function updatePerformanceMetrics(loans) {
+             // ROCD (Return on Capital Deployed)
+-            const totalRevenue = (AppState.totalInterestEarned || 0) + (AppState.totalFeesEarned || 0);
++            const totalRevenue = (AppState.totalInterestEarned || 0) + (AppState.totalFeesEarned || 0) + (AppState.totalPenaltiesEarned || 0);
+             const rocd = (AppState.deployed || 0) > 0 ? (totalRevenue / AppState.deployed) * 100 : 0;
+             
+             // Default Rate
+@@ -535,7 +540,9 @@
+                 let monthFees = 0;
+                 
+                 // Calculate from transaction history
+-                (AppState.transactionHistory || []).forEach(transaction => {
++                // E2E-1 fix: legacy transactionHistory is merged into transactions
++                // at load time by the state normalizer (F-09).
++                (AppState.transactions || []).forEach(transaction => {
+                     if (transaction.type === 'payment' && transaction.details) {
+                         const paymentDate = new Date(transaction.details.paymentDate || transaction.timestamp);
+                         
+diff --git a/settings.html b/settings.html
+index e390f0d..9f7c7c6 100644
+--- a/settings.html
++++ b/settings.html
+@@ -533,7 +533,7 @@
+          */
+         function updateFinancialSettings() {
+             // Update capital display
+-            const capital = AppState.capital || AppState.deployedCapital || 0;
++            const capital = AppState.capital || 0;
+             document.getElementById('currentCapital').textContent = Calculations.formatCurrency(capital);
+             if (document.getElementById('capitalInput')) {
+                 document.getElementById('capitalInput').value = capital;
+@@ -685,7 +685,6 @@
+             }
+             
+             AppState.capital = amount;
+-            AppState.deployedCapital = AppState.deployed || 0; // Ensure compatibility
+             
+             // Log transaction
+             if (!AppState.transactions) AppState.transactions = [];
+-- 
+2.43.0
+

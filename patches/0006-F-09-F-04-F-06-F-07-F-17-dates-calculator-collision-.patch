@@ -1,0 +1,424 @@
+From 8f17c4696a074dca1096c27c37ecc52277fd3b61 Mon Sep 17 00:00:00 2001
+From: TBFS Security Review <review@tbfs.local>
+Date: Sun, 5 Jul 2026 16:54:08 +0000
+Subject: [PATCH 06/10] =?UTF-8?q?F-09/F-04/F-06/F-07/F-17=20+=20dates:=20c?=
+ =?UTF-8?q?alculator=20=E2=80=94=20collision-free=20IDs,=20resolved=20star?=
+ =?UTF-8?q?t=20year,=20escaped=20output?=
+MIME-Version: 1.0
+Content-Type: text/plain; charset=UTF-8
+Content-Transfer-Encoding: 8bit
+
+- loan_id now reserved via AppStateManager.getNextLoanId(); creating a
+  loan after deletions or restores can no longer collide with an
+  existing ID. Loan creation is logged to the canonical
+  AppState.transactions and derived totals are recalculated on
+  acceptance. (F-09/F-06)
+- Both start-year derivations use Calculations.resolveScheduleStartYear
+  — a December loan with a January start month schedules into the next
+  year instead of eleven months into the past.
+- Remaining hardcoded rates (12% initiation on stockvel excess, 10%
+  per-month minimum, R60 admin and its stockvel-variable form) read
+  Calculations.RATES / the shared admin rule. (F-07/F-16)
+- Client name and account number escaped in the results panel;
+  sanitize.js loaded. (F-04)
+- 16 verbose logs gated behind DEBUG. (F-17)
+---
+ calculator.html                |  88 ++++++++++++++--------
+ tools/transform-calculator.mjs | 134 +++++++++++++++++++++++++++++++++
+ 2 files changed, 191 insertions(+), 31 deletions(-)
+ create mode 100644 tools/transform-calculator.mjs
+
+diff --git a/calculator.html b/calculator.html
+index 13675d8..09bef99 100644
+--- a/calculator.html
++++ b/calculator.html
+@@ -336,12 +336,18 @@
+     </main>
+     
+     <!-- Shared Modules -->
++    <script src="shared/sanitize.js"></script>
+     <script src="shared/app-state.js"></script>
+     <script src="shared/calculations.js"></script>
+     <script src="shared/navigation.js"></script>
+     
+     <!-- Page Logic -->
+     <script>
++        // Verbose diagnostics are opt-in — client financial details must not
++        // stream to the console in normal use. (F-17)
++        const DEBUG = false;
++        function dbg(...args) { if (DEBUG) console.log(...args); }
++
+         // Global state
+         let AppState = {};
+         let loanData = null;
+@@ -376,11 +382,11 @@
+             
+             // Listen for state updates from other tabs
+             AppStateManager.onUpdate(() => {
+-                console.log('State updated from another tab, reloading...');
++                dbg('State updated from another tab, reloading...');
+                 AppState = AppStateManager.load();
+             });
+             
+-            console.log('✅ Calculator page initialized');
++            dbg('✅ Calculator page initialized');
+         }
+         
+         /**
+@@ -403,7 +409,7 @@
+                 if (firstNameEl && firstName) firstNameEl.value = firstName;
+                 if (lastNameEl && lastName) lastNameEl.value = lastName;
+                 
+-                console.log('Web Share Target: Received client name:', sharedName);
++                dbg('Web Share Target: Received client name:', sharedName);
+             }
+             
+             if (sharedDetails) {
+@@ -414,10 +420,10 @@
+                     const loanAmountEl = document.getElementById('loanAmount');
+                     if (loanAmountEl && amount > 0) {
+                         loanAmountEl.value = amount;
+-                        console.log('Web Share Target: Parsed loan amount:', amount);
++                        dbg('Web Share Target: Parsed loan amount:', amount);
+                     }
+                 }
+-                console.log('Web Share Target: Received details:', sharedDetails);
++                dbg('Web Share Target: Received details:', sharedDetails);
+             }
+         }
+         
+@@ -559,7 +565,7 @@
+                         }
+                     } else {
+                         // Client is not stockvel - ensure checkbox is unchecked
+-                        console.log('Fallback: Client is not stockvel - ensuring checkbox is FALSE');
++                        dbg('Fallback: Client is not stockvel - ensuring checkbox is FALSE');
+                         stockvelCheckbox.removeAttribute('checked');
+                         stockvelCheckbox.checked = false;
+                         setTimeout(() => toggleStockvelFields(), 10);
+@@ -648,9 +654,11 @@
+                 const loanDate = document.getElementById('loanDate').value;
+                 const startMonthIndex = parseInt(document.getElementById('startMonth').value);
+                 const loanDateObj = loanDate ? new Date(`${loanDate}T12:00:00`) : null;
+-                const startYear = (loanDateObj && !isNaN(loanDateObj.getTime()))
+-                    ? loanDateObj.getFullYear()
+-                    : new Date().getFullYear();
++                // A schedule cannot start before disbursement: an earlier
++                // calendar month means the NEXT occurrence of that month.
++                const startYear = Calculations.resolveScheduleStartYear(
++                    (loanDateObj && !isNaN(loanDateObj.getTime())) ? loanDateObj : new Date(),
++                    startMonthIndex);
+                 
+                 // Stockvel fields
+                 const isStockvelMember = document.getElementById('stockvelMember').checked;
+@@ -813,7 +821,7 @@
+                 let currentSavings = totalContributions || 0;
+                 
+                 // Calculate initiation fee
+-                const initiationFee = principal <= currentSavings ? 0 : (principal - currentSavings) * 0.12;
++                const initiationFee = principal <= currentSavings ? 0 : (principal - currentSavings) * Calculations.RATES.INITIATION_FEE_RATE;
+                 const monthlyInitiationFee = initiationFee / term;
+                 
+                 // Calculate each month
+@@ -831,18 +839,18 @@
+                     let interestPayment = 0;
+                     if (tieredResult && tieredResult.tiers1to4Interest !== undefined) {
+                         const tieredInterest = tieredResult.tiers1to4Interest * (principal / outstandingBalance);
+-                        const minimumInterest = (principal / term) * 0.10;
++                        const minimumInterest = (principal / term) * Calculations.RATES.STOCKVEL_MIN_MONTHLY_RATE;
+                         interestPayment = Math.max(tieredInterest, minimumInterest);
+                     } else {
+                         // Fallback: 10% minimum
+-                        interestPayment = (principal / term) * 0.10;
++                        interestPayment = (principal / term) * Calculations.RATES.STOCKVEL_MIN_MONTHLY_RATE;
+                     }
+                     
+                     // Calculate admin fee
+-                    let adminFee = 60; // Default R60
++                    let adminFee = Calculations.RATES.ADMIN_FEE_STANDARD;
+                     if (tieredResult && tieredResult.tier1to4Amount > 0) {
+                         const effectiveRate = tieredResult.tiers1to4Interest / tieredResult.tier1to4Amount;
+-                        adminFee = 60 * (1 - effectiveRate);
++                        adminFee = Calculations.RATES.ADMIN_FEE_STANDARD * (1 - effectiveRate);
+                     }
+                     adminFee = Math.max(0, adminFee); // Ensure non-negative
+                     
+@@ -905,8 +913,8 @@
+             // Display client info
+             const clientInfo = `
+                 <div style="background: #f8f9fa; padding: 15px; border-radius: 8px; margin-bottom: 20px;">
+-                    <strong>Client:</strong> ${loanData.firstName} ${loanData.lastName} | 
+-                    <strong>Account:</strong> ${loanData.accountNumber} | 
++                    <strong>Client:</strong> ${esc(loanData.firstName)} ${esc(loanData.lastName)} | 
++                    <strong>Account:</strong> ${esc(loanData.accountNumber)} | 
+                     <strong>Type:</strong> ${loanData.isStockvelMember ? 'Stockvel Member' : 'Standard Client'}
+                 </div>
+             `;
+@@ -973,7 +981,7 @@
+                 const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+                 
+                 if (isMobile) {
+-                    console.log('Mobile device detected - using blob URL method');
++                    dbg('Mobile device detected - using blob URL method');
+                     
+                     // Create blob from PDF
+                     const blob = doc.output('blob');
+@@ -983,7 +991,7 @@
+                     const newWindow = window.open(blobUrl, '_blank');
+                     
+                     if (newWindow) {
+-                        console.log('PDF opened in new window for mobile viewing');
++                        dbg('PDF opened in new window for mobile viewing');
+                         
+                         // Show success message with instructions
+                         alert('📄 PDF generated successfully!\n\n📱 The PDF has opened in a new tab.\n\nTo save it:\n• Tap the share/download icon\n• Choose "Save to Files" or "Download"\n\nThe PDF will then be saved to your device.');
+@@ -992,7 +1000,7 @@
+                         setTimeout(() => URL.revokeObjectURL(blobUrl), 60000);
+                     } else {
+                         // Popup blocked - try alternative method
+-                        console.log('Popup blocked - trying alternative method');
++                        dbg('Popup blocked - trying alternative method');
+                         
+                         // Create a download link
+                         const link = document.createElement('a');
+@@ -1014,9 +1022,9 @@
+                     }
+                 } else {
+                     // Desktop - use standard save method
+-                    console.log('Desktop device - using standard save method');
++                    dbg('Desktop device - using standard save method');
+                     doc.save(filename);
+-                    console.log('PDF downloaded successfully:', filename);
++                    dbg('PDF downloaded successfully:', filename);
+                 }
+                 
+                 return true;
+@@ -1039,7 +1047,7 @@
+          * Generate PDF report - Professional version
+          */
+         function generatePDF() {
+-            console.log('generatePDF function called');
++            dbg('generatePDF function called');
+             
+             try {
+                 if (!loanData || !loanData.firstName) {
+@@ -1059,7 +1067,7 @@
+                     const { jsPDF } = window.jspdf;
+                     const doc = new jsPDF();
+ 
+-                    console.log('Creating PDF document');
++                    dbg('Creating PDF document');
+ 
+                     // Set font
+                     doc.setFont('helvetica');
+@@ -1301,7 +1309,7 @@
+                     const success = downloadPDFMobileFriendly(doc, filename);
+ 
+                     if (success) {
+-                        console.log('PDF generated successfully:', filename);
++                        dbg('PDF generated successfully:', filename);
+ 
+                         // Show success message (on desktop, mobile gets alert)
+                         const statusEl = document.getElementById('pdfStatus');
+@@ -1477,9 +1485,9 @@
+                         const standardResult = Calculations.calculateStandardLoan(loanData.principal, loanData.term);
+                         if (standardResult && standardResult.breakdown) {
+                             const loanDateObj = loanData.loanDate ? new Date(`${loanData.loanDate}T12:00:00`) : new Date();
+-                            const startYear = !isNaN(loanDateObj.getTime())
+-                                ? loanDateObj.getFullYear()
+-                                : new Date().getFullYear();
++                            const startYear = Calculations.resolveScheduleStartYear(
++                                !isNaN(loanDateObj.getTime()) ? loanDateObj : new Date(),
++                                loanData.startMonthIndex);
+ 
+                             loanData.schedule = standardResult.breakdown.map((item) => {
+                                 const dueDate = Calculations.calculateDueDate(startYear, loanData.startMonthIndex, item.month);
+@@ -1553,14 +1561,14 @@
+                 totalInterest: loanData.totalInterest
+             });
+             
+-            console.log('Interest Cap Applied:', interestCapFields._interest_cap_description);
++            dbg('Interest Cap Applied:', interestCapFields._interest_cap_description);
+             
+             // Calculate total cost
+             const totalCost = loanData.schedule.reduce((sum, p) => sum + p.monthly_payment, 0);
+             
+             // Create loan record with payment flexibility tracking
+             const loan = {
+-                loan_id: (AppState.loans || []).length + 1,
++                loan_id: AppStateManager.getNextLoanId(AppState),
+                 client_name: `${loanData.firstName} ${loanData.lastName}`,
+                 account_number: loanData.accountNumber,
+                 
+@@ -1627,8 +1635,26 @@
+             
+             // Update capital
+             AppState.capital = (AppState.capital || 0) - loanData.principal;
+-            AppState.deployed = (AppState.deployed || 0) + loanData.principal;
+-            
++
++            // Deployed capital is derived from the active book. (F-06)
++            AppStateManager.recalculateDerivedTotals(AppState);
++
++            // Log creation to the canonical transaction history (F-09)
++            if (!AppState.transactions) AppState.transactions = [];
++            AppState.transactions.push({
++                id: Date.now(),
++                type: 'loan_created',
++                timestamp: new Date().toISOString(),
++                description: 'Loan created \u2014 ' + loan.client_name + ' (Loan #' + loan.loan_id + ')',
++                details: {
++                    loanId: loan.loan_id,
++                    clientName: loan.client_name,
++                    principal: loan.principal_amount,
++                    termMonths: loan.term_months,
++                    loanType: loan.loan_type
++                }
++            });
++
+             // Save state
+             AppStateManager.save(AppState);
+             
+diff --git a/tools/transform-calculator.mjs b/tools/transform-calculator.mjs
+new file mode 100644
+index 0000000..a164a0d
+--- /dev/null
++++ b/tools/transform-calculator.mjs
+@@ -0,0 +1,134 @@
++#!/usr/bin/env node
++/**
++ * One-shot transform of calculator.html for the security patch series.
++ *
++ * F-09  loan_id via AppStateManager.getNextLoanId() — deleting or importing
++ *       loans can no longer produce colliding IDs; loan creation logged to
++ *       the canonical AppState.transactions.
++ * dates Start-year via Calculations.resolveScheduleStartYear (a schedule
++ *       cannot begin before disbursement).
++ * F-07  Remaining hardcoded rates → Calculations.RATES / shared admin rule.
++ * F-04  Client-controlled strings escaped in rendered markup; sanitize.js
++ *       loaded.
++ * F-06  Derived totals recalculated on acceptance.
++ * F-17  Verbose logs gated behind DEBUG.
++ */
++import { readFileSync, writeFileSync } from 'node:fs';
++
++const FILE = 'calculator.html';
++let src = readFileSync(FILE, 'utf8');
++let count = 0;
++
++function rep(from, to, label) {
++    if (!src.includes(from)) {
++        console.error(`MISSING PATTERN [${label}]`);
++        process.exit(1);
++    }
++    src = src.split(from).join(to);
++    count++;
++}
++
++/* ---- sanitize.js + DEBUG gate ---------------------------------------- */
++rep(`    <script src="shared/app-state.js"></script>
++    <script src="shared/calculations.js"></script>`,
++`    <script src="shared/sanitize.js"></script>
++    <script src="shared/app-state.js"></script>
++    <script src="shared/calculations.js"></script>`,
++'sanitize tag');
++
++rep(`    <!-- Page Logic -->
++    <script>
++        // Global state`,
++`    <!-- Page Logic -->
++    <script>
++        // Verbose diagnostics are opt-in — client financial details must not
++        // stream to the console in normal use. (F-17)
++        const DEBUG = false;
++        function dbg(...args) { if (DEBUG) console.log(...args); }
++
++        // Global state`,
++'DEBUG gate');
++
++/* ---- start-year via shared resolver (both derivation sites) ----------- */
++rep(`                const loanDateObj = loanDate ? new Date(\`\${loanDate}T12:00:00\`) : null;
++                const startYear = (loanDateObj && !isNaN(loanDateObj.getTime()))
++                    ? loanDateObj.getFullYear()
++                    : new Date().getFullYear();`,
++`                const loanDateObj = loanDate ? new Date(\`\${loanDate}T12:00:00\`) : null;
++                // A schedule cannot start before disbursement: an earlier
++                // calendar month means the NEXT occurrence of that month.
++                const startYear = Calculations.resolveScheduleStartYear(
++                    (loanDateObj && !isNaN(loanDateObj.getTime())) ? loanDateObj : new Date(),
++                    startMonthIndex);`,
++'calculateLoan start year');
++
++rep(`                            const loanDateObj = loanData.loanDate ? new Date(\`\${loanData.loanDate}T12:00:00\`) : new Date();
++                            const startYear = !isNaN(loanDateObj.getTime())
++                                ? loanDateObj.getFullYear()
++                                : new Date().getFullYear();`,
++`                            const loanDateObj = loanData.loanDate ? new Date(\`\${loanData.loanDate}T12:00:00\`) : new Date();
++                            const startYear = Calculations.resolveScheduleStartYear(
++                                !isNaN(loanDateObj.getTime()) ? loanDateObj : new Date(),
++                                loanData.startMonthIndex);`,
++'acceptLoan expired-member start year');
++
++/* ---- rates → RATES / shared rule (F-07) -------------------------------- */
++rep(`                const initiationFee = principal <= currentSavings ? 0 : (principal - currentSavings) * 0.12;`,
++    `                const initiationFee = principal <= currentSavings ? 0 : (principal - currentSavings) * Calculations.RATES.INITIATION_FEE_RATE;`,
++    'stockvel schedule initiation');
++rep(`(principal / term) * 0.10;`,
++    `(principal / term) * Calculations.RATES.STOCKVEL_MIN_MONTHLY_RATE;`,
++    'stockvel per-month minimum (both sites)');
++rep(`                    let adminFee = 60; // Default R60`,
++    `                    let adminFee = Calculations.RATES.ADMIN_FEE_STANDARD;`,
++    'schedule admin base');
++rep(`                        adminFee = 60 * (1 - effectiveRate);`,
++    `                        adminFee = Calculations.RATES.ADMIN_FEE_STANDARD * (1 - effectiveRate);`,
++    'schedule admin variable');
++
++/* ---- F-09: collision-free loan IDs + creation log + derived totals ------ */
++rep(`                loan_id: (AppState.loans || []).length + 1,`,
++    `                loan_id: AppStateManager.getNextLoanId(AppState),`,
++    'monotonic loan id');
++
++rep(`            // Update capital
++            AppState.capital = (AppState.capital || 0) - loanData.principal;
++            AppState.deployed = (AppState.deployed || 0) + loanData.principal;
++            
++            // Save state
++            AppStateManager.save(AppState);`,
++`            // Update capital
++            AppState.capital = (AppState.capital || 0) - loanData.principal;
++
++            // Deployed capital is derived from the active book. (F-06)
++            AppStateManager.recalculateDerivedTotals(AppState);
++
++            // Log creation to the canonical transaction history (F-09)
++            if (!AppState.transactions) AppState.transactions = [];
++            AppState.transactions.push({
++                id: Date.now(),
++                type: 'loan_created',
++                timestamp: new Date().toISOString(),
++                description: 'Loan created \\u2014 ' + loan.client_name + ' (Loan #' + loan.loan_id + ')',
++                details: {
++                    loanId: loan.loan_id,
++                    clientName: loan.client_name,
++                    principal: loan.principal_amount,
++                    termMonths: loan.term_months,
++                    loanType: loan.loan_type
++                }
++            });
++
++            // Save state
++            AppStateManager.save(AppState);`,
++'creation: derived totals + log');
++
++/* ---- F-04: escape client-controlled strings ------------------------------ */
++rep(`                    <strong>Client:</strong> \${loanData.firstName} \${loanData.lastName} | 
++                    <strong>Account:</strong> \${loanData.accountNumber} | `,
++`                    <strong>Client:</strong> \${esc(loanData.firstName)} \${esc(loanData.lastName)} | 
++                    <strong>Account:</strong> \${esc(loanData.accountNumber)} | `,
++'esc client info');
++
++writeFileSync(FILE, src);
++console.log(`Applied ${count} transforms to ${FILE}`);
+-- 
+2.43.0
+
