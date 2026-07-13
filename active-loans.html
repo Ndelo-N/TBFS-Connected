@@ -1344,17 +1344,23 @@ Click "OK" to process payment or "Cancel" to go back.
             
             // STEP 7: CALCULATE LATE PENALTY (if applicable)
             // Late penalties only apply to loans distributed after 31 January 2026.
-            // Partial installments must not re-bill penalty already paid on the
-            // open entry — track assessed vs paid_breakdown.late_penalty.
+            // Prefer the open installment's due_date (pending/partial) over a
+            // payments_made-derived date — principal-floor progress can advance
+            // while the row is still partial. Do NOT persist late_penalty_assessed
+            // until the payment is confirmed (cancel must not leave assessment).
             const gracePeriodDays = AppState.gracePeriodDays || 3;
-            let nextDueDate = Calculations.getLoanPaymentDueDate(loan, loan.payments_made || 0);
             const openScheduleEntry = (loan.schedule || []).find(p =>
                 p && (p.status === 'pending' || p.status === 'partial'));
-            if ((!nextDueDate || isNaN(new Date(nextDueDate).getTime())) && openScheduleEntry?.due_date) {
+            let nextDueDate = null;
+            if (openScheduleEntry && openScheduleEntry.due_date) {
                 const scheduleDue = new Date(openScheduleEntry.due_date);
                 if (!isNaN(scheduleDue.getTime())) nextDueDate = scheduleDue;
             }
+            if (!nextDueDate || isNaN(new Date(nextDueDate).getTime())) {
+                nextDueDate = Calculations.getLoanPaymentDueDate(loan, loan.payments_made || 0);
+            }
             let latePenalty = 0;
+            let latePenaltyAssessedCandidate = 0;
             let daysLate = 0;
             let isPaymentLate = false;
             
@@ -1367,19 +1373,14 @@ Click "OK" to process payment or "Cancel" to go back.
                     daysLate = Math.floor((todayDate - nextDueDate) / (1000 * 60 * 60 * 24));
                     const assessed = Calculations.calculateLatePenalty(
                         daysLate - gracePeriodDays, loan.remaining_principal);
-                    if (openScheduleEntry) {
-                        openScheduleEntry.late_penalty_assessed = Math.max(
-                            Number(openScheduleEntry.late_penalty_assessed) || 0,
-                            assessed
-                        );
-                        const alreadyPaid = Number(
-                            (openScheduleEntry.paid_breakdown || {}).late_penalty
-                        ) || 0;
-                        latePenalty = Math.max(
-                            0, openScheduleEntry.late_penalty_assessed - alreadyPaid);
-                    } else {
-                        latePenalty = assessed;
-                    }
+                    const priorAssessed = Number(
+                        openScheduleEntry && openScheduleEntry.late_penalty_assessed
+                    ) || 0;
+                    latePenaltyAssessedCandidate = Math.max(priorAssessed, assessed);
+                    const alreadyPaid = Number(
+                        (openScheduleEntry && openScheduleEntry.paid_breakdown || {}).late_penalty
+                    ) || 0;
+                    latePenalty = Math.max(0, latePenaltyAssessedCandidate - alreadyPaid);
                     isPaymentLate = latePenalty > 0.01 || assessed > 0;
                 }
             }
@@ -1395,7 +1396,8 @@ Click "OK" to process payment or "Cancel" to go back.
             openPaymentModal({
                 loanId, loan,
                 expectedPayment, remainingPrincipal, remainingInterest,
-                remainingInitiationFee, latePenalty, daysLate, isPaymentLate,
+                remainingInitiationFee, latePenalty, latePenaltyAssessedCandidate,
+                daysLate, isPaymentLate,
                 gracePeriodDays, nextDueDate,
                 paymentsMade: loan.payments_made || 0
             });
@@ -1516,7 +1518,7 @@ Click "OK" to process payment or "Cancel" to go back.
             const loan = ctx.loan;
             const loanId = ctx.loanId;
             let nextDueDate = ctx.nextDueDate;
-            const latePenalty = ctx.latePenalty;
+            let latePenalty = ctx.latePenalty;
             const daysLate = ctx.daysLate;
             const gracePeriodDays = ctx.gracePeriodDays;
             const expectedPayment = ctx.expectedPayment;
@@ -1570,12 +1572,26 @@ Click "OK" to process payment or "Cancel" to go back.
                 }
             }
 
-            // Fallback: if calculated due date is unavailable, use schedule due date
-            if ((!nextDueDate || isNaN(new Date(nextDueDate).getTime())) && nextPayment?.due_date) {
+            // Prefer the open installment due date over any payments_made-derived date
+            if (nextPayment && nextPayment.due_date) {
                 const scheduleDue = new Date(nextPayment.due_date);
                 if (!isNaN(scheduleDue.getTime())) {
                     nextDueDate = scheduleDue;
                 }
+            }
+
+            // Persist late-penalty assessment only on confirmed payment.
+            const assessedCandidate = Number(ctx.latePenaltyAssessedCandidate) || 0;
+            if (nextPayment && assessedCandidate > 0) {
+                nextPayment.late_penalty_assessed = Math.max(
+                    Number(nextPayment.late_penalty_assessed) || 0,
+                    assessedCandidate
+                );
+                const alreadyPaidPenalty = Number(
+                    (nextPayment.paid_breakdown || {}).late_penalty
+                ) || 0;
+                latePenalty = Math.max(
+                    0, nextPayment.late_penalty_assessed - alreadyPaidPenalty);
             }
             
             // STEP 11: ALLOCATE VIA THE SHARED WATERFALL (F-02/F-16)
