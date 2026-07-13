@@ -720,6 +720,232 @@ const Calculations = {
         return (d2.getFullYear() - d1.getFullYear()) * 12 + 
                (d2.getMonth() - d1.getMonth());
     },
+
+    /**
+     * Whole months remaining until membership end (pro-rata early-exit).
+     * Clamped to [0, 12]. Exit on/after end date → 0.
+     */
+    monthsRemainingInMembership(exitDate, membershipEndDate) {
+        const exit = new Date(exitDate);
+        const end = new Date(membershipEndDate);
+        if (isNaN(exit.getTime()) || isNaN(end.getTime())) return 0;
+        if (exit >= end) return 0;
+        const months = this.monthsBetween(exit, end);
+        return Math.max(0, Math.min(12, months));
+    },
+
+    /**
+     * Loans linked to a stockvel member (by memberNumber or account/phone).
+     */
+    loansForStockvelMember(member, loans) {
+        if (!member || !Array.isArray(loans)) return [];
+        const acc = member.account_number || member.phone || '';
+        return loans.filter((loan) => {
+            if (member.memberNumber != null && loan.memberNumber === member.memberNumber) {
+                return true;
+            }
+            if (acc && loan.account_number === acc) return true;
+            if (member.phone && loan.account_number === member.phone) return true;
+            return false;
+        });
+    },
+
+    /**
+     * Hybrid early-exit settlement (Model C).
+     * Benefit = interest saved + initiation waived + admin saved
+     *          + bonuses paid + unpaid accumulated bonus.
+     * ExitCost = Benefit × (monthsRemaining / 12)
+     * NetPayout = max(0, contributions − ExitCost)
+     * Unpaid bonus is clawed back (not paid out).
+     *
+     * @param {object} member
+     * @param {array}  loans
+     * @param {array}  receipts  stockvelReceipts
+     * @param {string|Date} [exitDate] defaults to today
+     * @param {object} [opts]
+     * @param {number} [opts.availableCapital]
+     * @returns settlement object with blockers[]
+     */
+    calculateEarlyExitSettlement(member, loans, receipts, exitDate, opts) {
+        const blockers = [];
+        if (!member) {
+            return {
+                canExit: false,
+                blockers: ['Member not found'],
+                contributions: 0,
+                benefit: {
+                    interestSaved: 0,
+                    initiationWaived: 0,
+                    adminSaved: 0,
+                    bonusPaid: 0,
+                    bonusUnpaid: 0,
+                    total: 0
+                },
+                monthsRemaining: 0,
+                membershipTermMonths: 12,
+                exitCost: 0,
+                netPayout: 0,
+                exitDate: null,
+                loanBreakdown: []
+            };
+        }
+
+        const exit = exitDate
+            ? new Date(exitDate)
+            : new Date();
+        const exitIso = isNaN(exit.getTime())
+            ? new Date().toISOString().slice(0, 10)
+            : [
+                exit.getFullYear(),
+                String(exit.getMonth() + 1).padStart(2, '0'),
+                String(exit.getDate()).padStart(2, '0')
+            ].join('-');
+
+        const startStr = member.membershipStartDate || '';
+        const endStr = member.membershipEndDate || '';
+        const startMs = startStr ? new Date(startStr + 'T00:00:00').getTime() : NaN;
+        const endMs = endStr ? new Date(endStr + 'T23:59:59').getTime() : NaN;
+
+        const contributions = this.round(Math.max(0, Number(member.totalContributions) || 0));
+        const bonusUnpaid = this.round(Math.max(0, Number(member.accumulatedBonus) || 0));
+
+        const memberLoans = this.loansForStockvelMember(member, loans || []);
+        const activeLoans = memberLoans.filter((l) => (l.status || '') === 'active');
+        if (activeLoans.length > 0) {
+            blockers.push(
+                'Member has ' + activeLoans.length +
+                ' active loan(s). Settle or pay off before early exit.'
+            );
+        }
+
+        const monthsRemaining = this.monthsRemainingInMembership(exitIso, endStr);
+        if (monthsRemaining <= 0) {
+            blockers.push(
+                'Membership period has ended (or ends today). ' +
+                'Use Contribution Payout and Bonus Payout instead of Early Exit.'
+            );
+        }
+
+        if (member.status === 'exited_early') {
+            blockers.push('Member has already exited early.');
+        }
+
+        // Bonuses paid in this membership window
+        let bonusPaid = 0;
+        for (const r of receipts || []) {
+            if (r.memberNumber !== member.memberNumber) continue;
+            if (r.type !== 'bonus_payout') continue;
+            const rMs = new Date(r.date).getTime();
+            if (!isNaN(startMs) && rMs < startMs) continue;
+            if (!isNaN(endMs) && rMs > endMs) continue;
+            bonusPaid += Math.max(0, Number(r.amount) || 0);
+        }
+        bonusPaid = this.round(bonusPaid);
+
+        let interestSaved = 0;
+        let initiationWaived = 0;
+        let adminSaved = 0;
+        const loanBreakdown = [];
+
+        for (const loan of memberLoans) {
+            const isStockvel = loan.loan_type === 'stockvel' || loan.isStockvelLoan;
+            if (!isStockvel) continue;
+
+            const loanDateRaw = loan.disbursement_date || loan.created_at || loan.loan_date;
+            const loanMs = new Date(loanDateRaw).getTime();
+            if (!isNaN(startMs) && !isNaN(loanMs) && loanMs < startMs) continue;
+            if (!isNaN(endMs) && !isNaN(loanMs) && loanMs > endMs) continue;
+
+            const principal = Number(loan.original_principal || loan.principal_amount || loan.principal) || 0;
+            const term = Number(loan.term_months) || 0;
+            if (principal <= 0 || term <= 0) continue;
+
+            const standard = this.calculateStandardLoan(principal, term);
+            const actualInterest = Number(loan.total_interest);
+            const interestActual = Number.isFinite(actualInterest)
+                ? actualInterest
+                : ((loan.schedule || []).reduce(
+                    (s, e) => s + (Number(e.interest_payment) || 0), 0));
+            const iSaved = Math.max(0, standard.totalInterest - interestActual);
+
+            const actualInit = Number(
+                loan.total_initiation_fee != null
+                    ? loan.total_initiation_fee
+                    : loan.initiation_fee
+            );
+            const initActual = Number.isFinite(actualInit) ? actualInit : standard.totalInitiationFee;
+            const fInit = Math.max(0, standard.totalInitiationFee - initActual);
+
+            let adminActual = 0;
+            if (loan.schedule && loan.schedule.length) {
+                adminActual = loan.schedule.reduce(
+                    (s, e) => s + (Number(e.admin_fee) || 0), 0);
+            } else if (Number.isFinite(Number(loan.total_admin_fees))) {
+                adminActual = Number(loan.total_admin_fees);
+            } else {
+                adminActual = this.getAdminFeeForContributions(
+                    loan.total_contributions || member.totalContributions || 0
+                ) * term;
+            }
+            const fAdmin = Math.max(0, standard.totalAdminFees - adminActual);
+
+            interestSaved += iSaved;
+            initiationWaived += fInit;
+            adminSaved += fAdmin;
+
+            loanBreakdown.push({
+                loanId: loan.loan_id,
+                principal: this.round(principal),
+                term,
+                interestSaved: this.round(iSaved),
+                initiationWaived: this.round(fInit),
+                adminSaved: this.round(fAdmin)
+            });
+        }
+
+        interestSaved = this.round(interestSaved);
+        initiationWaived = this.round(initiationWaived);
+        adminSaved = this.round(adminSaved);
+
+        const benefitTotal = this.round(
+            interestSaved + initiationWaived + adminSaved + bonusPaid + bonusUnpaid
+        );
+        const exitCost = this.round(benefitTotal * (monthsRemaining / 12));
+        const netPayout = this.round(Math.max(0, contributions - exitCost));
+
+        const availableCapital = opts && Number.isFinite(opts.availableCapital)
+            ? opts.availableCapital
+            : null;
+        if (availableCapital != null && netPayout > availableCapital) {
+            blockers.push(
+                'Insufficient capital on hand for net payout of ' +
+                this.formatCurrency(netPayout) + '.'
+            );
+        }
+
+        return {
+            canExit: blockers.length === 0,
+            blockers,
+            contributions,
+            benefit: {
+                interestSaved,
+                initiationWaived,
+                adminSaved,
+                bonusPaid,
+                bonusUnpaid,
+                total: benefitTotal
+            },
+            monthsRemaining,
+            membershipTermMonths: 12,
+            exitCost,
+            netPayout,
+            exitDate: exitIso,
+            membershipStartDate: startStr,
+            membershipEndDate: endStr,
+            loanBreakdown,
+            activeLoanCount: activeLoans.length
+        };
+    },
     
     /**
      * Validate loan parameters

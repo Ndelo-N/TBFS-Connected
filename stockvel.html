@@ -164,6 +164,88 @@
             color: #856404;
             margin-bottom: 8px;
         }
+
+        .early-exit-modal-card {
+            background: #fff;
+            border-radius: 12px;
+            max-width: 520px;
+            width: 100%;
+            max-height: 90vh;
+            overflow: auto;
+            padding: 24px;
+            box-shadow: 0 12px 40px rgba(0, 0, 0, 0.25);
+        }
+
+        .early-exit-modal-card h2 {
+            margin: 0 0 8px;
+            color: #2c3e50;
+            font-size: 1.25rem;
+        }
+
+        .early-exit-modal-card .ee-sub {
+            color: #636e72;
+            font-size: 13px;
+            margin-bottom: 16px;
+        }
+
+        .early-exit-row {
+            display: flex;
+            justify-content: space-between;
+            gap: 12px;
+            padding: 8px 0;
+            border-bottom: 1px solid #f0f0f0;
+            font-size: 14px;
+        }
+
+        .early-exit-row:last-child {
+            border-bottom: none;
+        }
+
+        .early-exit-row .ee-label {
+            color: #636e72;
+        }
+
+        .early-exit-row .ee-value {
+            font-weight: 600;
+            color: #2c3e50;
+            text-align: right;
+        }
+
+        .early-exit-total {
+            margin-top: 16px;
+            padding: 14px;
+            background: #f8f9fa;
+            border-radius: 8px;
+        }
+
+        .early-exit-total .ee-net {
+            font-size: 1.35rem;
+            font-weight: 700;
+            color: #27ae60;
+        }
+
+        .early-exit-blockers {
+            margin-top: 12px;
+            padding: 12px;
+            background: #fdecea;
+            color: #c0392b;
+            border-radius: 8px;
+            font-size: 13px;
+        }
+
+        .early-exit-note {
+            margin-top: 12px;
+            font-size: 12px;
+            color: #636e72;
+            line-height: 1.45;
+        }
+
+        .early-exit-actions {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+            margin-top: 18px;
+        }
     </style>
 </head>
 <body>
@@ -450,6 +532,23 @@
             </div>
         </div>
     </main>
+
+    <!-- Early Exit settlement modal (hybrid Model C, pro-rata remaining) -->
+    <div id="earlyExitModal" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.55); z-index:2000; align-items:center; justify-content:center; padding:16px;">
+        <div class="early-exit-modal-card" role="dialog" aria-modal="true" aria-labelledby="earlyExitTitle">
+            <h2 id="earlyExitTitle">Early Exit Settlement</h2>
+            <p class="ee-sub" id="earlyExitMemberLabel"></p>
+
+            <div id="earlyExitBody"></div>
+
+            <div class="early-exit-actions">
+                <button type="button" class="btn btn-secondary" onclick="closeEarlyExitModal()">Cancel</button>
+                <button type="button" class="btn btn-success" id="earlyExitConfirmBtn" onclick="confirmEarlyExit()" disabled>
+                    Confirm Early Exit
+                </button>
+            </div>
+        </div>
+    </div>
     
     <!-- Shared Modules -->
     <script src="shared/sanitize.js"></script>
@@ -466,6 +565,7 @@
 
         // Global state
         let AppState = {};
+        let pendingEarlyExit = null; // { memberNumber, settlement }
         
         /**
          * Initialize page
@@ -768,6 +868,7 @@
                             <button onclick="viewMemberDetails(${member.memberNumber})" class="btn btn-secondary" style="padding: 6px 12px; font-size: 12px; margin-top: 5px;">👁️ View</button>
                             <button onclick="editMemberAccountNumber(${member.memberNumber})" class="btn" style="padding: 6px 12px; font-size: 12px; margin-top: 5px; background: #3498db; color: white;">✏️ Edit Account #</button>
                             <button onclick="renewMembership(${member.memberNumber})" class="btn btn-success" style="padding: 6px 12px; font-size: 12px; margin-top: 5px;">🔄 Renew</button>
+                            ${member.status !== 'exited_early' ? `<button onclick="openEarlyExitModal(${member.memberNumber})" class="btn" style="padding: 6px 12px; font-size: 12px; margin-top: 5px; background: #e67e22; color: white;">🚪 Early Exit</button>` : ''}
                         </td>
                     </tr>
                 `;
@@ -1433,6 +1534,185 @@ Client Linked: ${client ? 'Yes (' + client.account_number + ')' : 'No'}
             alert(`✅ Contributions paid out successfully!\n\nAmount: ${Calculations.formatCurrency(currentContributions)}\n\nMember's contribution total has been reset to zero.`);
             
             // Reload displays
+            loadStockvelDashboard();
+        }
+
+        /**
+         * Open Early Exit modal — hybrid Model C, pro-rata remaining,
+         * unpaid bonus included in clawback (not paid out).
+         */
+        function openEarlyExitModal(memberNumber) {
+            const member = Calculations.findStockvelMember({ memberNumber }, AppState.stockvelMembers);
+            if (!member) {
+                alert('❌ Member not found!');
+                return;
+            }
+
+            const settlement = Calculations.calculateEarlyExitSettlement(
+                member,
+                AppState.loans || [],
+                AppState.stockvelReceipts || [],
+                new Date(),
+                { availableCapital: AppState.capital || 0 }
+            );
+
+            pendingEarlyExit = { memberNumber, settlement };
+
+            document.getElementById('earlyExitMemberLabel').textContent =
+                '#' + member.memberNumber + ' — ' + (member.name || 'Unknown');
+
+            const b = settlement.benefit;
+            const fc = Calculations.formatCurrency.bind(Calculations);
+            let html = '';
+
+            html += '<div class="early-exit-row"><span class="ee-label">Contributions on hand</span><span class="ee-value">' + fc(settlement.contributions) + '</span></div>';
+            html += '<div class="early-exit-row"><span class="ee-label">Months remaining</span><span class="ee-value">' + settlement.monthsRemaining + ' / ' + settlement.membershipTermMonths + '</span></div>';
+            html += '<div class="early-exit-row"><span class="ee-label">Interest saved vs standard</span><span class="ee-value">' + fc(b.interestSaved) + '</span></div>';
+            html += '<div class="early-exit-row"><span class="ee-label">Initiation waived</span><span class="ee-value">' + fc(b.initiationWaived) + '</span></div>';
+            html += '<div class="early-exit-row"><span class="ee-label">Admin fees saved</span><span class="ee-value">' + fc(b.adminSaved) + '</span></div>';
+            html += '<div class="early-exit-row"><span class="ee-label">Bonuses already paid</span><span class="ee-value">' + fc(b.bonusPaid) + '</span></div>';
+            html += '<div class="early-exit-row"><span class="ee-label">Unpaid bonus (in clawback)</span><span class="ee-value">' + fc(b.bonusUnpaid) + '</span></div>';
+            html += '<div class="early-exit-row"><span class="ee-label">Total benefit used</span><span class="ee-value">' + fc(b.total) + '</span></div>';
+            html += '<div class="early-exit-row"><span class="ee-label">Early-exit cost (pro-rata)</span><span class="ee-value">' + fc(settlement.exitCost) + '</span></div>';
+
+            html += '<div class="early-exit-total">';
+            html += '<div class="early-exit-row" style="border:none;padding:0;"><span class="ee-label">Net payout</span><span class="ee-net">' + fc(settlement.netPayout) + '</span></div>';
+            html += '</div>';
+
+            html += '<p class="early-exit-note">Unpaid bonus is included in the clawback and will <strong>not</strong> be paid out. Membership will be marked exited early.</p>';
+
+            if (settlement.blockers.length) {
+                html += '<div class="early-exit-blockers"><strong>Cannot exit yet:</strong><ul style="margin:8px 0 0 18px;">';
+                for (const msg of settlement.blockers) {
+                    html += '<li>' + esc(msg) + '</li>';
+                }
+                html += '</ul></div>';
+            }
+
+            document.getElementById('earlyExitBody').innerHTML = html;
+
+            const confirmBtn = document.getElementById('earlyExitConfirmBtn');
+            confirmBtn.disabled = !settlement.canExit;
+
+            const modal = document.getElementById('earlyExitModal');
+            modal.style.display = 'flex';
+        }
+
+        function closeEarlyExitModal() {
+            pendingEarlyExit = null;
+            const modal = document.getElementById('earlyExitModal');
+            modal.style.display = 'none';
+            document.getElementById('earlyExitConfirmBtn').disabled = true;
+        }
+
+        /**
+         * Commit early-exit settlement after preview confirmation.
+         */
+        function confirmEarlyExit() {
+            if (!pendingEarlyExit || !pendingEarlyExit.settlement) {
+                alert('❌ No settlement pending.');
+                return;
+            }
+
+            const memberNumber = pendingEarlyExit.memberNumber;
+            const member = Calculations.findStockvelMember({ memberNumber }, AppState.stockvelMembers);
+            if (!member) {
+                alert('❌ Member not found!');
+                closeEarlyExitModal();
+                return;
+            }
+
+            // Recompute at confirm time so capital / loans cannot drift.
+            const settlement = Calculations.calculateEarlyExitSettlement(
+                member,
+                AppState.loans || [],
+                AppState.stockvelReceipts || [],
+                new Date(),
+                { availableCapital: AppState.capital || 0 }
+            );
+
+            if (!settlement.canExit) {
+                alert('❌ Cannot complete early exit:\n\n• ' + settlement.blockers.join('\n• '));
+                openEarlyExitModal(memberNumber);
+                return;
+            }
+
+            const net = settlement.netPayout;
+            const previousContributions = member.totalContributions || 0;
+            const previousBonus = member.accumulatedBonus || 0;
+
+            if (!confirm(
+                'Confirm early exit for ' + member.name + '?\n\n' +
+                'Net payout: ' + Calculations.formatCurrency(net) + '\n' +
+                'Exit cost: ' + Calculations.formatCurrency(settlement.exitCost) + '\n' +
+                'Unpaid bonus forfeited: ' + Calculations.formatCurrency(previousBonus)
+            )) {
+                return;
+            }
+
+            const receiptId = Date.now();
+            const receipt = {
+                id: receiptId,
+                memberNumber: memberNumber,
+                memberName: member.name,
+                type: 'early_exit',
+                amount: net,
+                date: settlement.exitDate,
+                notes: 'Early exit — hybrid clawback, pro-rata remaining; unpaid bonus forfeited',
+                previousTotal: previousContributions,
+                newTotal: 0,
+                bonusAmount: 0,
+                settlement: {
+                    contributions: settlement.contributions,
+                    benefit: settlement.benefit,
+                    monthsRemaining: settlement.monthsRemaining,
+                    exitCost: settlement.exitCost,
+                    netPayout: settlement.netPayout,
+                    bonusForfeited: previousBonus,
+                    loanBreakdown: settlement.loanBreakdown
+                }
+            };
+
+            member.totalContributions = 0;
+            member.accumulatedBonus = 0;
+            member.status = 'exited_early';
+            member.exitedAt = settlement.exitDate;
+            member.exitSettlement = receipt.settlement;
+
+            if (net > 0) {
+                AppState.capital = (AppState.capital || 0) - net;
+            }
+            AppStateManager.recalculateDerivedTotals(AppState);
+
+            if (!AppState.stockvelReceipts) AppState.stockvelReceipts = [];
+            AppState.stockvelReceipts.push(receipt);
+
+            if (!AppState.transactions) AppState.transactions = [];
+            AppState.transactions.push({
+                id: receiptId,
+                type: 'stockvel_early_exit',
+                timestamp: new Date().toISOString(),
+                description: 'Early exit \u2014 ' + member.name,
+                details: {
+                    memberNumber: memberNumber,
+                    memberName: member.name,
+                    netPayout: net,
+                    exitCost: settlement.exitCost,
+                    benefitTotal: settlement.benefit.total,
+                    monthsRemaining: settlement.monthsRemaining,
+                    bonusForfeited: previousBonus
+                }
+            });
+
+            AppStateManager.save(AppState);
+            closeEarlyExitModal();
+
+            alert(
+                '✅ Early exit completed for ' + member.name + '.\n\n' +
+                'Net payout: ' + Calculations.formatCurrency(net) + '\n' +
+                'Exit cost retained: ' + Calculations.formatCurrency(settlement.exitCost)
+            );
+
             loadStockvelDashboard();
         }
         
