@@ -1049,8 +1049,9 @@ const Calculations = {
             // If paid, stop counting
             if (entry.status === 'paid') break;
             
-            // If pending and due date has passed, it's missed
-            if (entry.status === 'pending') {
+            // Pending or partial past due counts as missed (partials can still
+            // owe fees/penalty after principal progress advances).
+            if (entry.status === 'pending' || entry.status === 'partial') {
                 consecutiveMissed++;
             }
         }
@@ -1068,6 +1069,22 @@ const Calculations = {
         if (missedCount >= 2) return 'at-risk';
         if (missedCount >= 1) return 'warning';
         return 'none';
+    },
+
+    /**
+     * Due date for the open installment (pending or partial), falling back to
+     * payments_made-derived date when the schedule has no open row.
+     */
+    getOpenInstallmentDueDate(loan) {
+        if (!loan) return null;
+        const schedule = Array.isArray(loan.schedule) ? loan.schedule : [];
+        const open = schedule.find(p =>
+            p && (p.status === 'pending' || p.status === 'partial') && p.due_date);
+        if (open) {
+            const due = new Date(open.due_date);
+            if (!isNaN(due.getTime())) return due;
+        }
+        return this.getLoanPaymentDueDate(loan, loan.payments_made || 0);
     },
 
     /**

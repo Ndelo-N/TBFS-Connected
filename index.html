@@ -889,8 +889,7 @@
                 const today = new Date();
                 const overdue = [], atRisk = [], suggested = [];
                 activeLoans.forEach(loan => {
-                    if (!loan.created_at || loan.start_month_index === undefined) return;
-                    const dueDate = Calculations.getLoanPaymentDueDate(loan, loan.payments_made || 0);
+                    const dueDate = Calculations.getOpenInstallmentDueDate(loan);
                     if (!dueDate || dueDate >= today) return;
                     const daysOverdue = Math.floor((today - dueDate) / 86400000);
                     const missed = Calculations.countConsecutiveMissedPayments(loan);

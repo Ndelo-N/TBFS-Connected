@@ -1130,6 +1130,24 @@ Click "OK" to process payment or "Cancel" to go back.
                     alert('⏸️ Early payoff cancelled.');
                     return;
                 }
+
+                // Collect unpaid late penalty on an open partial — early-payoff
+                // math covers principal/interest/initiation/admin, not penalties.
+                const openEntry = getNextPendingScheduleEntry(loan);
+                const unpaidPartial = unpaidOnPartialEntry(openEntry);
+                const partialPenalty = unpaidPartial.latePenalty || 0;
+                if (partialPenalty > 0.01) {
+                    const extraConfirm = confirm(
+                        `Open installment still has an unpaid late penalty of ` +
+                        `${Calculations.formatCurrency(partialPenalty)}.\n\n` +
+                        `This will be added to the payoff total.\nProceed?`
+                    );
+                    if (!extraConfirm) {
+                        alert('⏸️ Early payoff cancelled.');
+                        return;
+                    }
+                }
+                const totalCollected = Calculations.round(totalPayoff + partialPenalty);
                 
                 // STEP 2: UPDATE LOAN RECORD
                 // Mark loan as completed and record early payoff details
@@ -1147,25 +1165,43 @@ Click "OK" to process payment or "Cancel" to go back.
                 loan.early_payoff = true;
                 loan.payoff_month = payoffMonth;
                 loan.payoff_date = new Date().toISOString();
-                loan.payoff_amount = totalPayoff;
+                loan.payoff_amount = totalCollected;
                 loan.savings_from_early_payoff = payoffData.savings;
                 
-                // Mark all schedule entries as paid
+                // Settle open partial breakdown then close every schedule row
                 if (loan.schedule) {
                     loan.schedule.forEach(payment => {
+                        if (payment === openEntry && payment.status === 'partial') {
+                            const pb = payment.paid_breakdown = payment.paid_breakdown || {};
+                            pb.initiation = Calculations.round(
+                                Math.max(pb.initiation || 0, Number(payment.initiation_fee) || 0));
+                            pb.admin = Calculations.round(
+                                Math.max(pb.admin || 0, Number(payment.admin_fee) || 0));
+                            pb.interest = Calculations.round(
+                                Math.max(pb.interest || 0, Number(payment.interest_payment) || 0));
+                            pb.principal = Calculations.round(
+                                Math.max(pb.principal || 0, Number(payment.principal_payment) || 0));
+                            if (partialPenalty > 0) {
+                                pb.late_penalty = Calculations.round(
+                                    (pb.late_penalty || 0) + partialPenalty);
+                            }
+                        }
                         payment.status = 'paid';
+                        payment.partial_payment = false;
                     });
                 }
                 
                 // STEP 3: UPDATE APPSTATE (GLOBAL FINANCIAL TRACKING)
-                // Update system-wide financial metrics
-                const principalAmount = loan.principal_amount || loan.principal || 0;
-                AppState.capital = (AppState.capital || 0) + totalPayoff;
-                AppState.deployed = Math.max(0, (AppState.deployed || 0) - principalAmount);
+                AppState.capital = (AppState.capital || 0) + totalCollected;
                 AppState.totalInterestEarned = (AppState.totalInterestEarned || 0) + payoffData.interestOwed;
-                AppState.totalFeesEarned = (AppState.totalFeesEarned || 0) + payoffData.initiationFeeOwed + payoffData.adminFeesOwed;
+                AppState.totalFeesEarned = (AppState.totalFeesEarned || 0) +
+                    payoffData.initiationFeeOwed + payoffData.adminFeesOwed;
+                if (partialPenalty > 0) {
+                    AppState.totalPenaltiesEarned =
+                        (AppState.totalPenaltiesEarned || 0) + partialPenalty;
+                }
 
-                // Deployed capital is derived from the active book. (F-06)
+                // Deployed is derived from the active book. (F-06)
                 AppStateManager.recalculateDerivedTotals(AppState);
                 
                 // Log transaction
@@ -1181,7 +1217,8 @@ Click "OK" to process payment or "Cancel" to go back.
                         originalTerm: loan.term_months,
                         payoffMonth: payoffMonth,
                         paymentsMade: loan.payments_made || 0,
-                        payoffAmount: totalPayoff,
+                        payoffAmount: totalCollected,
+                        latePenaltyPaid: partialPenalty,
                         remainingPrincipal: payoffData.remainingPrincipal,
                         interestOwed: payoffData.interestOwed,
                         initiationFeeOwed: payoffData.initiationFeeOwed,
@@ -1200,7 +1237,10 @@ Click "OK" to process payment or "Cancel" to go back.
                     `✅ LOAN PAID OFF SUCCESSFULLY!\n\n` +
                     `🎉 Congratulations!\n\n` +
                     `Loan #${loan.loan_id} has been fully paid off.\n\n` +
-                    `💰 Total Paid: ${Calculations.formatCurrency(totalPayoff)}\n` +
+                    `💰 Total Paid: ${Calculations.formatCurrency(totalCollected)}` +
+                    (partialPenalty > 0
+                        ? `\n• Includes late penalty: ${Calculations.formatCurrency(partialPenalty)}`
+                        : '') + `\n` +
                     `💵 You Saved: ${payoffData.formatted.savings}\n` +
                     `⏰ Finished ${payoffData.monthsSaved} months early!\n\n` +
                     `Thank you for your business! 🌟`
@@ -3455,7 +3495,8 @@ TBFS - Transparent, Fair, Simple
 
             if (isStockvel && totalContributions) {
                 // Use contributions at this point in the loan lifecycle
-                const contributionsAtAdjustment = totalContributions + ((loan.monthly_contribution || 0) * paymentsMade);
+                const contributionsAtAdjustment = totalContributions +
+                    ((loan.monthly_contribution || 0) * preserveThrough);
                 stockvelPlan = calculateStockvelOutstandingRepaymentPlan({
                     remainingPrincipal: regenPrincipal,
                     remainingMonths: remainingMonthsNew,
