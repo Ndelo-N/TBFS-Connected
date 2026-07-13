@@ -710,8 +710,8 @@
             });
             
             // STEP 4: CALCULATE THIS MONTH'S REVENUE
-            // Revenue = Interest + Admin Fees + Initiation Fees from payments this month
-            // This gives a snapshot of current month's income
+            // Revenue = Interest + Admin Fees + Initiation Fees + Late Penalties
+            // from payments this month (aligned with totalPenaltiesEarned / Reports).
             const thisMonth = new Date().getMonth();
             const thisYear = new Date().getFullYear();
             // Legacy transactionHistory is merged into transactions at load
@@ -721,8 +721,9 @@
 
             const monthRevenue = paymentEvents
                 .filter(t => {
-                    // Filter transactions from this month
-                    const rawDate = t.paymentDate || t.timestamp || t.date;
+                    // Prefer user-selected paymentDate (incl. details) over processing timestamp
+                    const details = t.details || t.data || {};
+                    const rawDate = t.paymentDate || details.paymentDate || t.timestamp || t.date;
                     if (!rawDate) return false;
                     const tDate = new Date(rawDate);
                     if (isNaN(tDate.getTime())) return false;
@@ -734,7 +735,8 @@
                     return sum +
                         (details.interestPaid || 0) +
                         (details.adminFeePaid || 0) +
-                        (details.initiationFeePaid || 0);
+                        (details.initiationFeePaid || 0) +
+                        (details.latePenaltyPaid || 0);
                 }, 0);
             
             // STEP 5: UPDATE DISPLAY
@@ -1873,6 +1875,7 @@ Click "OK" to process payment or "Cancel" to go back.
                 details: {
                     loanId: loanId,
                     clientName: loan.client_name,
+                    paymentDate: paymentDate,
                     paymentAmount: amount,
                     principalPaid: principalPaid,
                     interestPaid: interestPaid,
@@ -2309,34 +2312,19 @@ Click "OK" to process payment or "Cancel" to go back.
             if (!Array.isArray(loan.adjustment_history)) loan.adjustment_history = [];
             loan.adjustment_history.push(event);
 
-            // Global transaction log (canonical field — F-09)
+            // Global transaction log — single canonical write (F-09).
+            // Do not also push a legacy `data:` twin; that duplicated every
+            // adjustment in the ledger / backups / dashboard timeline.
             if (!Array.isArray(AppState.transactions)) AppState.transactions = [];
             AppState.transactions.push({
                 id,
                 type: 'loan_adjustment',
-                description: 'Loan adjustment \u2014 ' + loan.client_name + ' (Loan #' + loan.loan_id + ')',
+                description: 'Loan adjustment \u2014 ' + loan.client_name +
+                    ' (Loan #' + loan.loan_id + ') — ' + humanizeAdjustmentType(adjustmentType),
                 timestamp,
+                date: timestamp,
                 details: {
                     id,
-                    loanId: loan.loan_id,
-                    clientName: loan.client_name,
-                    adjustmentType,
-                    reason: reason || '',
-                    before: beforeSnapshot,
-                    after: afterSnapshot,
-                    changes,
-                    ...meta
-                }
-            });
-
-            // AppStateManager "transactions" (used by settings backup and some pages)
-            if (!Array.isArray(AppState.transactions)) AppState.transactions = [];
-            AppState.transactions.push({
-                id,
-                type: 'loan_adjustment',
-                date: timestamp,
-                description: `Loan #${loan.loan_id} adjusted (${humanizeAdjustmentType(adjustmentType)})`,
-                data: {
                     loanId: loan.loan_id,
                     clientName: loan.client_name,
                     adjustmentType,
@@ -2387,11 +2375,14 @@ Click "OK" to process payment or "Cancel" to go back.
                 });
             });
 
-            // 3) AppStateManager transactions
+            // 3) Legacy AppStateManager-shaped rows (tx.data) from older dual-write.
+            // Skip if this id was already taken from loan-local or details form.
             (Array.isArray(AppState.transactions) ? AppState.transactions : []).forEach(tx => {
                 if (!tx || tx.type !== 'loan_adjustment') return;
                 const data = tx.data || {};
                 if (data.loanId !== loanId) return;
+                const txId = tx.id || data.id;
+                if (txId && events.some(e2 => e2.id === txId)) return;
 
                 events.push({
                     id: tx.id,
