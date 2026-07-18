@@ -23,3 +23,6 @@ jobs:
 
       - name: Verify inline scripts parse
         run: node tools/check-html-scripts.mjs
+
+      - name: Verify shared global scope (script collision guard)
+        run: node tools/check-global-scope.mjs
