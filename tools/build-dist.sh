@@ -17,6 +17,7 @@ PAGES=(
     active-loans.html
     stockvel.html
     clients.html
+    client-relationship.html
     reports.html
     loan-income-calculator.html
     settings.html

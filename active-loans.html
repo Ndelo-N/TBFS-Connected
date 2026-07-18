@@ -254,11 +254,11 @@
     </main>
     
     <!-- Shared Modules -->
-    <script src="shared/sanitize.js?v=44"></script>
-    <script src="shared/app-state.js?v=44"></script>
-    <script src="shared/calculations.js?v=44"></script>
-    <script src="shared/cloud-backup.js?v=44"></script>
-    <script src="shared/navigation.js?v=44"></script>
+    <script src="shared/sanitize.js?v=48"></script>
+    <script src="shared/app-state.js?v=48"></script>
+    <script src="shared/calculations.js?v=48"></script>
+    <script src="shared/cloud-backup.js?v=48"></script>
+    <script src="shared/navigation.js?v=48"></script>
     
     <!-- Page Logic -->
     <script>
@@ -517,7 +517,8 @@
         /**
          * Build a schedule that respects previously paid months and recalculated totals.
          * Fully paid rows and an open partial installment (paid_breakdown /
-         * late_penalty_assessed) are preserved; only later months are regenerated.
+         * late_penalty_assessed / extra_admin_assessed) are preserved; only
+         * later months are regenerated.
          */
         function buildAdjustedSchedule(loan, options) {
             const term = loan.term_months || loan.term || 0;
@@ -573,6 +574,9 @@
                 }
                 if (existing.late_penalty_assessed != null) {
                     entry.late_penalty_assessed = existing.late_penalty_assessed;
+                }
+                if (existing.extra_admin_assessed != null) {
+                    entry.extra_admin_assessed = existing.extra_admin_assessed;
                 }
                 if (status === 'partial') {
                     entry.partial_payment = true;
@@ -1130,23 +1134,46 @@ Click "OK" to process payment or "Cancel" to go back.
                     return;
                 }
 
-                // Collect unpaid late penalty on an open partial — early-payoff
-                // math covers principal/interest/initiation/admin, not penalties.
+                // Collect unpaid late penalty + post-grace extra admin on the
+                // open installment — early-payoff math covers scheduled
+                // principal/interest/initiation/base admin, not these.
                 const openEntry = getNextPendingScheduleEntry(loan);
-                const unpaidPartial = unpaidOnPartialEntry(openEntry);
+                const gracePeriodDays = AppState.gracePeriodDays || 3;
+                const extraDue = Calculations.calculateExtraAdminDue
+                    ? Calculations.calculateExtraAdminDue(
+                        loan, openEntry, new Date(), gracePeriodDays)
+                    : { amount: 0, months: 0 };
+                const extraAdminAssessedCandidate = Math.max(
+                    Number(openEntry && openEntry.extra_admin_assessed) || 0,
+                    Number(extraDue.amount) || 0
+                );
+                const unpaidPartial = unpaidOnPartialEntry(openEntry, {
+                    extraAdminAssessedCandidate
+                });
                 const partialPenalty = unpaidPartial.latePenalty || 0;
-                if (partialPenalty > 0.01) {
+                const partialExtraAdmin = unpaidPartial.extraAdmin || 0;
+                const addOnFees = Calculations.round(partialPenalty + partialExtraAdmin);
+                if (addOnFees > 0.01) {
+                    const feeLines = [];
+                    if (partialPenalty > 0.01) {
+                        feeLines.push(
+                            `• Late penalty: ${Calculations.formatCurrency(partialPenalty)}`);
+                    }
+                    if (partialExtraAdmin > 0.01) {
+                        feeLines.push(
+                            `• Extra admin (post-grace): ${Calculations.formatCurrency(partialExtraAdmin)}`);
+                    }
                     const extraConfirm = confirm(
-                        `Open installment still has an unpaid late penalty of ` +
-                        `${Calculations.formatCurrency(partialPenalty)}.\n\n` +
-                        `This will be added to the payoff total.\nProceed?`
+                        `Open installment still has unpaid charges:\n` +
+                        feeLines.join('\n') + `\n\n` +
+                        `These will be added to the payoff total.\nProceed?`
                     );
                     if (!extraConfirm) {
                         alert('⏸️ Early payoff cancelled.');
                         return;
                     }
                 }
-                const totalCollected = Calculations.round(totalPayoff + partialPenalty);
+                const totalCollected = Calculations.round(totalPayoff + addOnFees);
                 
                 // STEP 2: UPDATE LOAN RECORD
                 // Mark loan as completed and record early payoff details
@@ -1167,15 +1194,27 @@ Click "OK" to process payment or "Cancel" to go back.
                 loan.payoff_amount = totalCollected;
                 loan.savings_from_early_payoff = payoffData.savings;
                 
-                // Settle open partial breakdown then close every schedule row
+                // Settle open installment breakdown then close every schedule row
                 if (loan.schedule) {
                     loan.schedule.forEach(payment => {
-                        if (payment === openEntry && payment.status === 'partial') {
+                        const isOpen = payment === openEntry &&
+                            (payment.status === 'partial' || payment.status === 'pending');
+                        if (isOpen) {
                             const pb = payment.paid_breakdown = payment.paid_breakdown || {};
+                            const baseAdmin = Number(payment.admin_fee) || 0;
+                            if (extraAdminAssessedCandidate > 0) {
+                                payment.extra_admin_assessed = Math.max(
+                                    Number(payment.extra_admin_assessed) || 0,
+                                    extraAdminAssessedCandidate
+                                );
+                            }
                             pb.initiation = Calculations.round(
                                 Math.max(pb.initiation || 0, Number(payment.initiation_fee) || 0));
                             pb.admin = Calculations.round(
-                                Math.max(pb.admin || 0, Number(payment.admin_fee) || 0));
+                                Math.max(
+                                    pb.admin || 0,
+                                    baseAdmin + (Number(payment.extra_admin_assessed) || 0)
+                                ));
                             pb.interest = Calculations.round(
                                 Math.max(pb.interest || 0, Number(payment.interest_payment) || 0));
                             pb.principal = Calculations.round(
@@ -1194,7 +1233,7 @@ Click "OK" to process payment or "Cancel" to go back.
                 AppState.capital = (AppState.capital || 0) + totalCollected;
                 AppState.totalInterestEarned = (AppState.totalInterestEarned || 0) + payoffData.interestOwed;
                 AppState.totalFeesEarned = (AppState.totalFeesEarned || 0) +
-                    payoffData.initiationFeeOwed + payoffData.adminFeesOwed;
+                    payoffData.initiationFeeOwed + payoffData.adminFeesOwed + partialExtraAdmin;
                 if (partialPenalty > 0) {
                     AppState.totalPenaltiesEarned =
                         (AppState.totalPenaltiesEarned || 0) + partialPenalty;
@@ -1218,15 +1257,22 @@ Click "OK" to process payment or "Cancel" to go back.
                         paymentsMade: loan.payments_made || 0,
                         payoffAmount: totalCollected,
                         latePenaltyPaid: partialPenalty,
+                        extraAdminPaid: partialExtraAdmin,
                         remainingPrincipal: payoffData.remainingPrincipal,
                         interestOwed: payoffData.interestOwed,
                         initiationFeeOwed: payoffData.initiationFeeOwed,
-                        adminFeesOwed: payoffData.adminFeesOwed,
+                        adminFeesOwed: Calculations.round(
+                            (payoffData.adminFeesOwed || 0) + partialExtraAdmin),
                         savings: payoffData.savings,
                         savingsPercentage: payoffData.savingsPercentage,
                         monthsSaved: payoffData.monthsSaved
                     }
                 });
+
+                // Keep client payment_score / metrics in sync (same as processPayment).
+                Calculations.updateLoanPaymentSignals(
+                    loan, AppState.gracePeriodDays || 3, new Date());
+                refreshClientPaymentMetrics(loan);
                 
                 // Save state
                 AppStateManager.save(AppState);
@@ -1239,6 +1285,9 @@ Click "OK" to process payment or "Cancel" to go back.
                     `💰 Total Paid: ${Calculations.formatCurrency(totalCollected)}` +
                     (partialPenalty > 0
                         ? `\n• Includes late penalty: ${Calculations.formatCurrency(partialPenalty)}`
+                        : '') +
+                    (partialExtraAdmin > 0
+                        ? `\n• Includes extra admin: ${Calculations.formatCurrency(partialExtraAdmin)}`
                         : '') + `\n` +
                     `💵 You Saved: ${payoffData.formatted.savings}\n` +
                     `⏰ Finished ${payoffData.monthsSaved} months early!\n\n` +
@@ -1266,9 +1315,10 @@ Click "OK" to process payment or "Cancel" to go back.
          * 
          * Payment Allocation Order (Waterfall Method):
          * 1. Initiation Fee (monthly portion)
-         * 2. Admin Fee (R60 per month, or reduced for stockvel)
-         * 3. Interest (from schedule)
-         * 4. Principal (remaining amount)
+         * 2. Admin Fee (base + post-grace extra)
+         * 3. Late penalty
+         * 4. Interest (from schedule)
+         * 5. Principal (remaining amount)
          * 
          * Overpayment Handling:
          * - First Half: Applied to principal (triggers interest recalculation)
@@ -1276,6 +1326,89 @@ Click "OK" to process payment or "Cancel" to go back.
          * 
          * @param {number} loanId - The ID of the loan to make payment on
          */
+        function refreshClientPaymentMetrics(loan) {
+            if (!loan || !AppState.clients || !Array.isArray(AppState.clients)) return;
+            const acct = loan.account_number || loan.client_account;
+            const name = loan.client_name;
+            const client = AppState.clients.find(c => {
+                if (!c) return false;
+                if (acct && (c.account_number === acct || c.accountNumber === acct)) return true;
+                if (loan.memberNumber != null && c.memberNumber === loan.memberNumber) return true;
+                const cName = c.name || [c.first_name || c.firstName || '', c.last_name || c.lastName || ''].join(' ').trim();
+                return name && cName && String(cName).toLowerCase() === String(name).toLowerCase();
+            });
+            if (!client) return;
+            const metrics = Calculations.computeClientPaymentMetrics(
+                client, AppState.loans || allLoans || [], {
+                    stockvelMembers: AppState.stockvelMembers,
+                    stockvelReceipts: AppState.stockvelReceipts,
+                    gracePeriodDays: AppState.gracePeriodDays || 3
+                });
+            client.payment_score = metrics.score;
+            client.payment_metrics = metrics;
+        }
+
+        /**
+         * Resolve client record (or synthetic key) for lending-pattern lookups.
+         */
+        function resolveClientForLoan(loan) {
+            if (!loan) return null;
+            const acct = loan.account_number || loan.client_account;
+            const name = loan.client_name;
+            const clients = AppState.clients || [];
+            const found = clients.find(c => {
+                if (!c) return false;
+                if (acct && (c.account_number === acct || c.accountNumber === acct)) return true;
+                if (loan.memberNumber != null && c.memberNumber === loan.memberNumber) return true;
+                const cName = c.name || [c.first_name || c.firstName || '', c.last_name || c.lastName || ''].join(' ').trim();
+                return name && cName && String(cName).toLowerCase() === String(name).toLowerCase();
+            });
+            if (found) return found;
+            return {
+                account_number: acct,
+                memberNumber: loan.memberNumber,
+                name: name,
+                first_name: name
+            };
+        }
+
+        function getLendingPatternsForLoan(loan) {
+            if (!Calculations.buildClientLendingPatterns) return null;
+            const client = resolveClientForLoan(loan);
+            if (!client) return null;
+            return Calculations.buildClientLendingPatterns(client, {
+                loans: AppState.loans || allLoans || []
+            });
+        }
+
+        /**
+         * Show amount/term pattern context before top-up or term change.
+         * Returns false if operator cancels.
+         */
+        function confirmAdjustmentAgainstPatterns(loan, kind, assess) {
+            const patterns = getLendingPatternsForLoan(loan);
+            const brief = patterns && Calculations.formatLendingPatternBrief
+                ? Calculations.formatLendingPatternBrief(patterns)
+                : 'No prior loan history for amount/term patterns.';
+            const notes = (assess && assess.notes) || [];
+            const severity = (assess && assess.severity) || 'info';
+            const head = severity === 'caution'
+                ? '⚠️ Pattern caution'
+                : severity === 'watch'
+                    ? '👀 Pattern watch'
+                    : '📊 Lending pattern';
+            const title = kind === 'top_up'
+                ? 'Additional capital request'
+                : 'Term change request';
+            return window.confirm(
+                head + ' — ' + title + '\n\n' +
+                brief + '\n\n' +
+                'This request:\n' +
+                (notes.length ? notes.map(n => '• ' + n).join('\n') : '• No extra notes') +
+                '\n\nContinue? (Patterns inform the decision; they do not block it.)'
+            );
+        }
+
         function makePayment(loanId) {
             // STEP 1: VALIDATION - Find and validate loan
             const loan = allLoans.find(l => l.loan_id === loanId);
@@ -1383,31 +1516,18 @@ Click "OK" to process payment or "Cancel" to go back.
             if (!nextDueDate || isNaN(new Date(nextDueDate).getTime())) {
                 nextDueDate = Calculations.getLoanPaymentDueDate(loan, loan.payments_made || 0);
             }
-            let latePenalty = 0;
-            let latePenaltyAssessedCandidate = 0;
-            let daysLate = 0;
-            let isPaymentLate = false;
-            
-            if (nextDueDate && Calculations.isLateFeesEligible(loan)) {
-                const graceCutoff = new Date(nextDueDate);
-                graceCutoff.setDate(graceCutoff.getDate() + gracePeriodDays);
-                const todayDate = new Date();
-                
-                if (todayDate > graceCutoff) {
-                    daysLate = Math.floor((todayDate - nextDueDate) / (1000 * 60 * 60 * 24));
-                    const assessed = Calculations.calculateLatePenalty(
-                        daysLate - gracePeriodDays, loan.remaining_principal);
-                    const priorAssessed = Number(
-                        openScheduleEntry && openScheduleEntry.late_penalty_assessed
-                    ) || 0;
-                    latePenaltyAssessedCandidate = Math.max(priorAssessed, assessed);
-                    const alreadyPaid = Number(
-                        (openScheduleEntry && openScheduleEntry.paid_breakdown || {}).late_penalty
-                    ) || 0;
-                    latePenalty = Math.max(0, latePenaltyAssessedCandidate - alreadyPaid);
-                    isPaymentLate = latePenalty > 0.01 || assessed > 0;
-                }
-            }
+            const todayDate = new Date();
+            const feeAssess = assessOpenInstallmentFees(
+                loan, openScheduleEntry, nextDueDate, todayDate, gracePeriodDays);
+            const latePenalty = feeAssess.latePenalty;
+            const latePenaltyAssessedCandidate = feeAssess.latePenaltyAssessedCandidate;
+            const daysLate = feeAssess.daysLate;
+            const isPaymentLate = feeAssess.isPaymentLate;
+            const extraAdminDue = feeAssess.extraAdminDue;
+            const extraAdminMonths = feeAssess.extraAdminMonths;
+            const extraAdminAssessedCandidate = feeAssess.extraAdminAssessedCandidate;
+
+            Calculations.updateLoanPaymentSignals(loan, gracePeriodDays, todayDate);
             
             // STEP 7b: GET PAYMENT AMOUNT FROM USER
             // Display loan details and prompt for payment amount
@@ -1421,6 +1541,7 @@ Click "OK" to process payment or "Cancel" to go back.
                 loanId, loan,
                 expectedPayment, remainingPrincipal, remainingInterest,
                 remainingInitiationFee, latePenalty, latePenaltyAssessedCandidate,
+                extraAdminDue, extraAdminMonths, extraAdminAssessedCandidate,
                 daysLate, isPaymentLate,
                 gracePeriodDays, nextDueDate,
                 paymentsMade: loan.payments_made || 0
@@ -1432,14 +1553,71 @@ Click "OK" to process payment or "Cancel" to go back.
          * ========================================================== */
         let paymentModalCtx = null;
 
+        /**
+         * Late penalty + post-grace extra admin for an open installment as of
+         * a given date (modal open, preview, or confirmed payment date).
+         */
+        function assessOpenInstallmentFees(loan, openEntry, nextDueDate, asOfDate, gracePeriodDays) {
+            const result = {
+                latePenalty: 0,
+                latePenaltyAssessedCandidate: 0,
+                daysLate: 0,
+                isPaymentLate: false,
+                extraAdminDue: 0,
+                extraAdminMonths: 0,
+                extraAdminAssessedCandidate: 0
+            };
+            if (!loan || !nextDueDate || !Calculations.isLateFeesEligible(loan)) return result;
+            const asOf = asOfDate instanceof Date ? asOfDate : new Date(asOfDate);
+            if (isNaN(asOf.getTime())) return result;
+            const due = nextDueDate instanceof Date ? nextDueDate : new Date(nextDueDate);
+            if (isNaN(due.getTime())) return result;
+
+            const graceCutoff = new Date(due.getTime());
+            graceCutoff.setDate(graceCutoff.getDate() + gracePeriodDays);
+            if (asOf > graceCutoff) {
+                result.daysLate = Math.floor((asOf - due) / (1000 * 60 * 60 * 24));
+                const assessed = Calculations.calculateLatePenalty(
+                    result.daysLate - gracePeriodDays, loan.remaining_principal);
+                const priorAssessed = Number(openEntry && openEntry.late_penalty_assessed) || 0;
+                result.latePenaltyAssessedCandidate = Math.max(priorAssessed, assessed);
+                const alreadyPaid = Number(
+                    (openEntry && openEntry.paid_breakdown || {}).late_penalty
+                ) || 0;
+                result.latePenalty = Math.max(
+                    0, result.latePenaltyAssessedCandidate - alreadyPaid);
+                result.isPaymentLate = result.latePenalty > 0.01 || assessed > 0;
+            }
+
+            const extra = Calculations.calculateExtraAdminDue(
+                loan, openEntry, asOf, gracePeriodDays);
+            const priorExtra = Number(openEntry && openEntry.extra_admin_assessed) || 0;
+            result.extraAdminAssessedCandidate = Math.max(priorExtra, extra.amount);
+            result.extraAdminMonths = extra.months;
+            const baseAdmin = Number(openEntry && openEntry.admin_fee) || 0;
+            const paidAdmin = Number(
+                (openEntry && openEntry.paid_breakdown || {}).admin
+            ) || 0;
+            const totalAdminOwed = baseAdmin + result.extraAdminAssessedCandidate;
+            const unpaidAdmin = Math.max(0, totalAdminOwed - paidAdmin);
+            const unpaidBase = Math.max(0, baseAdmin - Math.min(paidAdmin, baseAdmin));
+            result.extraAdminDue = Math.max(0, unpaidAdmin - unpaidBase);
+            return result;
+        }
+
         /** Effective (still-owed) dues on a schedule entry, net of any
          *  partial payments already recorded against it. */
-        function getEntryEffectiveDues(entry) {
+        function getEntryEffectiveDues(entry, opts) {
             const paid = (entry && entry.paid_breakdown) || {};
             const eff = (due, done) => Math.max(0, (Number(due) || 0) - (Number(done) || 0));
+            const extraAssessed = Math.max(
+                Number(entry && entry.extra_admin_assessed) || 0,
+                Number(opts && opts.extraAdminAssessedCandidate) || 0
+            );
+            const adminDue = (Number(entry && entry.admin_fee) || 0) + extraAssessed;
             return {
                 initiation_fee: eff(entry.initiation_fee, paid.initiation),
-                admin_fee: eff(entry.admin_fee, paid.admin),
+                admin_fee: eff(adminDue, paid.admin),
                 interest_payment: eff(entry.interest_payment, paid.interest),
                 principal_payment: eff(entry.principal_payment, paid.principal)
             };
@@ -1462,6 +1640,11 @@ Click "OK" to process payment or "Cancel" to go back.
                 '<div class="info-row"><span>Remaining principal:</span><strong>' + esc(Calculations.formatCurrency(ctx.remainingPrincipal)) + '</strong></div>' +
                 '<div class="info-row"><span>Remaining interest:</span><strong>' + esc(Calculations.formatCurrency(ctx.remainingInterest)) + '</strong></div>' +
                 '<div class="info-row"><span>Remaining initiation fee:</span><strong>' + esc(Calculations.formatCurrency(ctx.remainingInitiationFee)) + '</strong></div>' +
+                (ctx.extraAdminDue > 0
+                    ? '<div class="info-row"><span>\u26A0\uFE0F Extra admin (post-grace, ' +
+                        esc(ctx.extraAdminMonths) + ' month' + (ctx.extraAdminMonths === 1 ? '' : 's') +
+                        '):</span><strong>' + esc(Calculations.formatCurrency(ctx.extraAdminDue)) + '</strong></div>'
+                    : '') +
                 (ctx.latePenalty > 0
                     ? '<div class="info-row"><span>\u26A0\uFE0F Late penalty (' + esc(ctx.daysLate) + ' days late, ' + esc(ctx.gracePeriodDays) + '-day grace):</span><strong>' + esc(Calculations.formatCurrency(ctx.latePenalty)) + '</strong></div>'
                     : '') +
@@ -1495,9 +1678,22 @@ Click "OK" to process payment or "Cancel" to go back.
                 preview.innerHTML = '<em>No pending installment on the schedule.</em>';
                 return;
             }
+            const dateVal = document.getElementById('pmDate').value;
+            let asOf = new Date();
+            if (dateVal) {
+                const parsed = new Date(dateVal + 'T12:00:00');
+                if (!isNaN(parsed.getTime())) asOf = parsed;
+            }
+            const due = entry.due_date
+                ? new Date(entry.due_date)
+                : paymentModalCtx.nextDueDate;
+            const fees = assessOpenInstallmentFees(
+                loan, entry, due, asOf, paymentModalCtx.gracePeriodDays || 3);
             const alloc = Calculations.allocateScheduledPayment(amount, {
-                entry: getEntryEffectiveDues(entry),
-                latePenaltyDue: paymentModalCtx.latePenalty,
+                entry: getEntryEffectiveDues(entry, {
+                    extraAdminAssessedCandidate: fees.extraAdminAssessedCandidate
+                }),
+                latePenaltyDue: fees.latePenalty,
                 interestCapRemaining: interestCapRemainingFor(loan),
                 remainingPrincipal: loan.remaining_principal
             });
@@ -1506,7 +1702,7 @@ Click "OK" to process payment or "Cancel" to go back.
                 : '';
             preview.innerHTML =
                 line('Initiation fee', alloc.initiationPaid) +
-                line('Admin fee', alloc.adminPaid) +
+                line('Admin fee (incl. post-grace)', alloc.adminPaid) +
                 line('Late penalty', alloc.penaltyPaid) +
                 line('Interest', alloc.interestPaid) +
                 line('Principal', alloc.principalPaid) +
@@ -1543,7 +1739,7 @@ Click "OK" to process payment or "Cancel" to go back.
             const loanId = ctx.loanId;
             let nextDueDate = ctx.nextDueDate;
             let latePenalty = ctx.latePenalty;
-            const daysLate = ctx.daysLate;
+            let daysLate = ctx.daysLate;
             const gracePeriodDays = ctx.gracePeriodDays;
             const expectedPayment = ctx.expectedPayment;
 
@@ -1604,18 +1800,37 @@ Click "OK" to process payment or "Cancel" to go back.
                 }
             }
 
-            // Persist late-penalty assessment only on confirmed payment.
-            const assessedCandidate = Number(ctx.latePenaltyAssessedCandidate) || 0;
-            if (nextPayment && assessedCandidate > 0) {
+            // Recompute late penalty + extra admin for the operator-selected
+            // payment date (not the modal-open "today"), so backdating into
+            // grace does not assess/collect post-grace charges.
+            const paymentAsOf = new Date(paymentDate);
+            const feeAssess = assessOpenInstallmentFees(
+                loan, nextPayment, nextDueDate, paymentAsOf, gracePeriodDays);
+            daysLate = feeAssess.daysLate;
+            if (nextPayment && feeAssess.latePenaltyAssessedCandidate > 0) {
                 nextPayment.late_penalty_assessed = Math.max(
                     Number(nextPayment.late_penalty_assessed) || 0,
-                    assessedCandidate
+                    feeAssess.latePenaltyAssessedCandidate
                 );
-                const alreadyPaidPenalty = Number(
-                    (nextPayment.paid_breakdown || {}).late_penalty
-                ) || 0;
-                latePenalty = Math.max(
-                    0, nextPayment.late_penalty_assessed - alreadyPaidPenalty);
+            }
+            const alreadyPaidPenalty = Number(
+                (nextPayment && nextPayment.paid_breakdown || {}).late_penalty
+            ) || 0;
+            latePenalty = Math.max(
+                0,
+                (Number(nextPayment && nextPayment.late_penalty_assessed) || 0) -
+                    alreadyPaidPenalty
+            );
+
+            if (nextPayment && feeAssess.extraAdminAssessedCandidate > 0) {
+                nextPayment.extra_admin_assessed = Math.max(
+                    Number(nextPayment.extra_admin_assessed) || 0,
+                    feeAssess.extraAdminAssessedCandidate
+                );
+            } else if (nextPayment && feeAssess.extraAdminMonths === 0) {
+                // Payment date is inside grace: do not keep a modal-open
+                // candidate that was never persisted on the entry.
+                // (Already-persisted assessments from prior confirms stay.)
             }
             
             // STEP 11: ALLOCATE VIA THE SHARED WATERFALL (F-02/F-16)
@@ -1623,7 +1838,9 @@ Click "OK" to process payment or "Cancel" to go back.
             // interest clamped to max_interest_allowed, all against the
             // entry's EFFECTIVE dues (net of prior partial payments).
             const alloc = Calculations.allocateScheduledPayment(remainingAmount, {
-                entry: getEntryEffectiveDues(nextPayment),
+                entry: getEntryEffectiveDues(nextPayment, {
+                    extraAdminAssessedCandidate: nextPayment.extra_admin_assessed
+                }),
                 latePenaltyDue: latePenalty,
                 interestCapRemaining: interestCapRemainingFor(loan),
                 remainingPrincipal: loan.remaining_principal
@@ -1995,6 +2212,10 @@ Click "OK" to process payment or "Cancel" to go back.
                 }
             });
             
+            // Refresh loan signals + client payment score before persist.
+            Calculations.updateLoanPaymentSignals(loan, gracePeriodDays, new Date(paymentDate));
+            refreshClientPaymentMetrics(loan);
+
             // STEP 25: SAVE STATE TO PERSISTENCE
             // Save all changes to localStorage for persistence
             // This also triggers cross-tab synchronization via AppStateManager
@@ -2109,22 +2330,56 @@ Click "OK" to process payment or "Cancel" to go back.
             return preserveThrough;
         }
 
-        /** Unpaid components still owed on an open partial installment. */
-        function unpaidOnPartialEntry(entry) {
-            if (!entry || entry.status !== 'partial') {
-                return { principal: 0, interest: 0, initiation: 0, admin: 0, latePenalty: 0 };
+        /**
+         * Unpaid components on an open installment.
+         * Partial rows include schedule leftovers; pending/partial both surface
+         * unpaid late penalty and post-grace extra admin (opts can pass a
+         * freshly calculated extraAdminAssessedCandidate).
+         */
+        function unpaidOnPartialEntry(entry, opts) {
+            const empty = {
+                principal: 0, interest: 0, initiation: 0,
+                admin: 0, latePenalty: 0, extraAdmin: 0
+            };
+            if (!entry || (entry.status !== 'partial' && entry.status !== 'pending')) {
+                return empty;
             }
             const paid = entry.paid_breakdown || {};
             const eff = (due, done) => Math.max(0, (Number(due) || 0) - (Number(done) || 0));
+            const baseAdmin = Number(entry.admin_fee) || 0;
+            const extraAssessed = Math.max(
+                Number(entry.extra_admin_assessed) || 0,
+                Number(opts && opts.extraAdminAssessedCandidate) || 0
+            );
+            const unpaidAdminTotal = Math.max(
+                0,
+                Calculations.round(baseAdmin + extraAssessed - (Number(paid.admin) || 0))
+            );
+            const unpaidBaseAdmin = eff(baseAdmin, paid.admin);
+            const unpaidExtraAdmin = Math.max(0, unpaidAdminTotal - unpaidBaseAdmin);
+            const latePenalty = Math.max(
+                0,
+                (Number(entry.late_penalty_assessed) || 0) - (Number(paid.late_penalty) || 0)
+            );
+
+            if (entry.status === 'pending') {
+                return {
+                    principal: 0,
+                    interest: 0,
+                    initiation: 0,
+                    admin: unpaidAdminTotal,
+                    latePenalty,
+                    extraAdmin: unpaidExtraAdmin
+                };
+            }
+
             return {
                 principal: eff(entry.principal_payment, paid.principal),
                 interest: eff(entry.interest_payment, paid.interest),
                 initiation: eff(entry.initiation_fee, paid.initiation),
-                admin: eff(entry.admin_fee, paid.admin),
-                latePenalty: Math.max(
-                    0,
-                    (Number(entry.late_penalty_assessed) || 0) - (Number(paid.late_penalty) || 0)
-                )
+                admin: unpaidAdminTotal,
+                latePenalty,
+                extraAdmin: unpaidExtraAdmin
             };
         }
 
@@ -3447,6 +3702,16 @@ TBFS - Transparent, Fair, Simple
                     return;
                 }
             }
+
+            // Pattern context: how this term compares to the client's history
+            if (Calculations.assessTermChangeAgainstPatterns) {
+                const patterns = getLendingPatternsForLoan(loan);
+                const termAssess = Calculations.assessTermChangeAgainstPatterns(
+                    patterns, loan, newTerm);
+                if (!confirmAdjustmentAgainstPatterns(loan, 'term_change', termAssess)) {
+                    return;
+                }
+            }
             
             // Months regenerated after preserved paid/partial prefix (must match buildAdjustedSchedule)
             const remainingMonthsNew = newTerm - preserveThrough;
@@ -3727,6 +3992,16 @@ TBFS - Transparent, Fair, Simple
                     `This is a very large loan. Are you sure?`
                 );
                 if (!confirm) {
+                    return;
+                }
+            }
+
+            // Pattern context: how this top-up compares to the client's history
+            if (Calculations.assessTopUpAgainstPatterns) {
+                const patterns = getLendingPatternsForLoan(loan);
+                const topUpAssess = Calculations.assessTopUpAgainstPatterns(
+                    patterns, loan, amount);
+                if (!confirmAdjustmentAgainstPatterns(loan, 'top_up', topUpAssess)) {
                     return;
                 }
             }
@@ -4266,7 +4541,7 @@ TBFS - Transparent, Fair, Simple
             <label for="pmAmount" style="display:block; font-weight:600; color:#2c3e50; margin-bottom:6px;">Payment amount (R)</label>
             <input type="number" id="pmAmount" min="0" step="0.01" inputmode="decimal" oninput="updatePaymentPreview()" style="width:100%; padding:12px; border:2px solid #e0e6ed; border-radius:10px; font-size:16px; margin-bottom:12px;">
             <label for="pmDate" style="display:block; font-weight:600; color:#2c3e50; margin-bottom:6px;">Payment date</label>
-            <input type="date" id="pmDate" style="width:100%; padding:12px; border:2px solid #e0e6ed; border-radius:10px; font-size:16px; margin-bottom:12px;">
+            <input type="date" id="pmDate" oninput="updatePaymentPreview()" style="width:100%; padding:12px; border:2px solid #e0e6ed; border-radius:10px; font-size:16px; margin-bottom:12px;">
             <div style="font-weight:600; color:#2c3e50; margin-bottom:6px;">Allocation preview</div>
             <div id="pmPreview" style="background:#f0f4ff; border-radius:10px; padding:12px 14px; font-size:14px; margin-bottom:10px;"></div>
             <p id="pmError" style="color:#e74c3c; font-size:14px; min-height:18px; margin:0 0 10px 0;"></p>
@@ -4278,6 +4553,6 @@ TBFS - Transparent, Fair, Simple
     </div>
 
     <!-- Service Worker Registration -->
-    <script src="shared/sw-register.js?v=44"></script>
+    <script src="shared/sw-register.js?v=48"></script>
 </body>
 </html>

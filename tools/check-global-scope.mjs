@@ -19,7 +19,7 @@ import { readFileSync } from 'node:fs';
 
 const PAGES = [
     'index.html', 'calculator.html', 'active-loans.html', 'stockvel.html',
-    'clients.html', 'reports.html', 'settings.html',
+    'clients.html', 'client-relationship.html', 'reports.html', 'settings.html',
     'loan-income-calculator.html'
 ];
 

@@ -985,11 +985,1170 @@ const Calculations = {
     /**
      * Check if a loan is subject to late penalties.
      * Only loans distributed after 31 January 2026 incur penalties.
+     * Extra post-grace admin accrual uses the same eligibility cutoff.
      */
     isLateFeesEligible(loan) {
         const cutoffDate = new Date(2026, 0, 31); // Jan 31 2026 (month is 0-indexed)
         const loanDate = new Date(loan.created_at || loan.loan_date || 0);
         return loanDate > cutoffDate;
+    },
+
+    /**
+     * Extra admin months on an open installment after grace.
+     * 0 while due..graceEnd (inclusive); 1 when grace lapses; +1 per full
+     * calendar month after grace-end still unpaid.
+     */
+    countExtraAdminMonths(dueDate, asOfDate, gracePeriodDays) {
+        if (typeof gracePeriodDays !== 'number') gracePeriodDays = 3;
+        const due = new Date(dueDate);
+        const asOf = new Date(asOfDate);
+        if (isNaN(due.getTime()) || isNaN(asOf.getTime())) return 0;
+
+        const graceEnd = new Date(due.getTime());
+        graceEnd.setDate(graceEnd.getDate() + gracePeriodDays);
+        if (asOf <= graceEnd) return 0;
+
+        let count = 1;
+        const cursor = new Date(graceEnd.getTime());
+        cursor.setMonth(cursor.getMonth() + 1);
+        while (cursor <= asOf) {
+            count += 1;
+            cursor.setMonth(cursor.getMonth() + 1);
+        }
+        return count;
+    },
+
+    /**
+     * Monthly admin rate for accrual (standard or stockvel contribution tier).
+     */
+    getMonthlyAdminFeeForLoan(loan) {
+        if (!loan) return RATES.ADMIN_FEE_STANDARD;
+        const isStockvel = loan.loan_type === 'stockvel' || loan.isStockvelLoan;
+        if (isStockvel) {
+            return this.getAdminFeeForContributions(
+                loan.total_contributions || loan.totalContributions || 0);
+        }
+        const fromSchedule = loan.schedule && loan.schedule[0] && Number(loan.schedule[0].admin_fee);
+        if (Number.isFinite(fromSchedule) && fromSchedule > 0) return fromSchedule;
+        return RATES.ADMIN_FEE_STANDARD;
+    },
+
+    /**
+     * Extra admin due for an open installment (assessment candidate).
+     * Amount = months × monthly admin. Does not mutate state.
+     * Requires an active loan and a pending/partial schedule row with due_date —
+     * never falls back to payments_made-derived dates (avoids accruing on
+     * completed loans).
+     */
+    calculateExtraAdminDue(loan, entry, asOfDate, gracePeriodDays) {
+        const empty = { months: 0, amount: 0, monthlyAdmin: 0 };
+        if (!loan || !this.isLateFeesEligible(loan)) return empty;
+        const loanStatus = String(loan.status || 'active').toLowerCase();
+        if (loanStatus && loanStatus !== 'active') return empty;
+        const open = entry &&
+            (entry.status === 'pending' || entry.status === 'partial') &&
+            entry.due_date
+            ? entry
+            : null;
+        if (!open) return empty;
+        const monthlyAdmin = this.getMonthlyAdminFeeForLoan(loan);
+        const months = this.countExtraAdminMonths(
+            open.due_date, asOfDate || new Date(), gracePeriodDays);
+        return {
+            months,
+            monthlyAdmin,
+            amount: this.round(months * monthlyAdmin)
+        };
+    },
+
+    /**
+     * Admin still owed on a schedule entry including extra_admin_assessed.
+     */
+    getEntryEffectiveAdminDue(entry) {
+        if (!entry) return 0;
+        const paid = (entry.paid_breakdown && Number(entry.paid_breakdown.admin)) || 0;
+        const base = Number(entry.admin_fee) || 0;
+        const extra = Number(entry.extra_admin_assessed) || 0;
+        return Math.max(0, this.round(base + extra - paid));
+    },
+
+    /**
+     * Refresh loan-level payment behavior signals (for metrics / UI).
+     */
+    updateLoanPaymentSignals(loan, gracePeriodDays, asOfDate) {
+        if (!loan) return loan;
+        if (typeof gracePeriodDays !== 'number') gracePeriodDays = 3;
+        const asOf = asOfDate ? new Date(asOfDate) : new Date();
+        const open = Array.isArray(loan.schedule)
+            ? loan.schedule.find(p => p && (p.status === 'pending' || p.status === 'partial'))
+            : null;
+        // Only measure past-grace against a real open installment — never a
+        // payments_made fallback (completed loans must not keep accruing).
+        const due = open && open.due_date ? new Date(open.due_date) : null;
+        let daysPastGrace = 0;
+        if (due && !isNaN(due.getTime())) {
+            const graceEnd = new Date(due.getTime());
+            graceEnd.setDate(graceEnd.getDate() + gracePeriodDays);
+            if (asOf > graceEnd) {
+                daysPastGrace = Math.floor((asOf - graceEnd) / 86400000);
+            }
+        }
+        const extra = this.calculateExtraAdminDue(loan, open, asOf, gracePeriodDays);
+        const history = Array.isArray(loan.payment_history) ? loan.payment_history : [];
+        const partialPaymentCount = history.filter(h => h && h.payment_status === 'partial').length
+            + (Array.isArray(loan.schedule)
+                ? loan.schedule.filter(p => p && p.status === 'partial').length
+                : 0);
+        const consecutiveMissed = this.countConsecutiveMissedPayments(loan);
+        const last = history.length ? history[history.length - 1] : null;
+
+        loan.payment_signals = {
+            extra_admin_months: Math.max(
+                Number(open && open.extra_admin_assessed
+                    ? Math.round((Number(open.extra_admin_assessed) || 0) /
+                        Math.max(1, extra.monthlyAdmin || this.getMonthlyAdminFeeForLoan(loan)))
+                    : 0),
+                extra.months
+            ),
+            extra_admin_assessed: Number(open && open.extra_admin_assessed) || extra.amount,
+            days_past_grace: daysPastGrace,
+            partial_payment_count: partialPaymentCount,
+            consecutive_missed: consecutiveMissed,
+            last_payment_status: last ? (last.payment_status || null) : null,
+            escalation_level: this.getEscalationLevel(consecutiveMissed)
+        };
+        return loan;
+    },
+
+    /** Reliability band labels for UI. */
+    getReliabilityBand(score) {
+        if (score == null || !Number.isFinite(score)) {
+            return { id: 'building', label: 'Building', min: null, max: null };
+        }
+        if (score >= 90) return { id: 'excellent', label: 'Excellent', min: 90, max: 100 };
+        if (score >= 75) return { id: 'good', label: 'Good', min: 75, max: 89 };
+        if (score >= 50) return { id: 'watch', label: 'Watch', min: 50, max: 74 };
+        if (score >= 25) return { id: 'poor', label: 'Poor', min: 25, max: 49 };
+        return { id: 'critical', label: 'Critical', min: 0, max: 24 };
+    },
+
+    _parseEventDate(value) {
+        if (!value) return null;
+        const d = new Date(value);
+        return isNaN(d.getTime()) ? null : d;
+    },
+
+    _inRollingWindow(date, asOf, windowMonths) {
+        const d = this._parseEventDate(date);
+        if (!d) return false;
+        const end = asOf ? new Date(asOf) : new Date();
+        const start = new Date(end.getTime());
+        start.setMonth(start.getMonth() - (windowMonths || 12));
+        return d >= start && d <= end;
+    },
+
+    /**
+     * Loans linked to a client by account number, memberNumber, or name.
+     */
+    getClientLoans(client, loans) {
+        const list = Array.isArray(loans) ? loans : [];
+        const acct = client && (client.account_number || client.accountNumber);
+        const memberNumber = client && client.memberNumber;
+        const name = client && (client.name || [
+            client.first_name || client.firstName || '',
+            client.last_name || client.lastName || ''
+        ].join(' ').trim());
+        return list.filter(l => {
+            if (!l) return false;
+            if (acct && (l.account_number === acct || l.client_account === acct)) return true;
+            if (memberNumber != null && l.memberNumber === memberNumber) return true;
+            if (name && l.client_name &&
+                String(l.client_name).toLowerCase() === String(name).toLowerCase()) {
+                return true;
+            }
+            return false;
+        });
+    },
+
+    /**
+     * Count missed contribution months in the rolling window for a stockvel member.
+     * Expected months = membership months overlapping the window; a month is
+     * covered if any contribution/loan_payment receipt falls in that month.
+     */
+    countMissedContributionMonths(member, receipts, asOf, windowMonths, gracePeriodDays) {
+        if (!member || !member.membershipStartDate) return 0;
+        if (typeof gracePeriodDays !== 'number') gracePeriodDays = 3;
+        const end = asOf ? new Date(asOf) : new Date();
+        const windowStart = new Date(end.getTime());
+        windowStart.setMonth(windowStart.getMonth() - (windowMonths || 12));
+        const memStart = new Date(member.membershipStartDate);
+        const memEnd = member.membershipEndDate
+            ? new Date(member.membershipEndDate)
+            : end;
+        if (isNaN(memStart.getTime())) return 0;
+
+        const rangeStart = memStart > windowStart ? memStart : windowStart;
+        const rangeEnd = memEnd < end ? memEnd : end;
+        if (rangeStart > rangeEnd) return 0;
+
+        const covered = new Set();
+        (Array.isArray(receipts) ? receipts : []).forEach(r => {
+            if (!r || r.memberNumber !== member.memberNumber) return;
+            if (r.type && r.type !== 'contribution' && r.type !== 'loan_payment') return;
+            const d = this._parseEventDate(r.date);
+            if (!d || d < rangeStart || d > rangeEnd) return;
+            covered.add(`${d.getFullYear()}-${d.getMonth()}`);
+        });
+
+        let missed = 0;
+        const cursor = new Date(rangeStart.getFullYear(), rangeStart.getMonth(), 1);
+        const last = new Date(rangeEnd.getFullYear(), rangeEnd.getMonth(), 1);
+        while (cursor <= last) {
+            // Current unfinished month is not counted as missed yet.
+            const isCurrentMonth = cursor.getFullYear() === end.getFullYear() &&
+                cursor.getMonth() === end.getMonth();
+            if (!isCurrentMonth) {
+                const key = `${cursor.getFullYear()}-${cursor.getMonth()}`;
+                if (!covered.has(key)) missed += 1;
+            }
+            cursor.setMonth(cursor.getMonth() + 1);
+        }
+        return missed;
+    },
+
+    /**
+     * Loan-track score components for the rolling window (no standing ceilings).
+     */
+    _scoreLoanTrack(clientLoans, asOf, windowMonths, gracePeriodDays) {
+        const events = [];
+        let lateCount = 0;
+        let partialCount = 0;
+        let onTimeCount = 0;
+        let missedMonths = 0;
+        let extraAdminMonths = 0;
+        let maxConsecutiveMissed = 0;
+        let defaultedLoans = 0;
+
+        clientLoans.forEach(loan => {
+            this.updateLoanPaymentSignals(loan, gracePeriodDays, asOf);
+            const signals = loan.payment_signals || {};
+            maxConsecutiveMissed = Math.max(maxConsecutiveMissed, signals.consecutive_missed || 0);
+            if (loan.status === 'defaulted') defaultedLoans += 1;
+
+            (loan.payment_history || []).forEach(h => {
+                if (!h) return;
+                const when = h.date || h.payment_date;
+                if (!this._inRollingWindow(when, asOf, windowMonths)) return;
+                const st = h.payment_status;
+                const clean = st === 'on-time' && !(Number(h.late_penalty) > 0);
+                if (st === 'late') lateCount += 1;
+                else if (st === 'partial') partialCount += 1;
+                else if (st === 'on-time') onTimeCount += 1;
+                events.push({
+                    date: this._parseEventDate(when),
+                    kind: 'loan',
+                    status: st,
+                    clean: clean && st === 'on-time'
+                });
+            });
+
+            // Missed installment months: overdue open schedule rows in window.
+            const today = asOf ? new Date(asOf) : new Date();
+            (loan.schedule || []).forEach(entry => {
+                if (!entry || (entry.status !== 'pending' && entry.status !== 'partial')) return;
+                if (!entry.due_date) return;
+                const due = new Date(entry.due_date);
+                if (isNaN(due.getTime()) || due > today) return;
+                if (!this._inRollingWindow(entry.due_date, asOf, windowMonths)) return;
+                const graceEnd = new Date(due.getTime());
+                graceEnd.setDate(graceEnd.getDate() + gracePeriodDays);
+                if (today > graceEnd) missedMonths += 1;
+            });
+
+            // Extra admin months: active open installments only (signals already
+            // zero out completed / no-open loans).
+            if (String(loan.status || '').toLowerCase() === 'active') {
+                extraAdminMonths += Number(signals.extra_admin_months) || 0;
+            }
+        });
+
+        events.sort((a, b) => (a.date || 0) - (b.date || 0));
+        let cleanStreak = 0;
+        for (let i = events.length - 1; i >= 0; i--) {
+            if (events[i].clean) cleanStreak += 1;
+            else break;
+        }
+
+        const penLate = Math.min(5, lateCount) * 6;
+        const penPartial = Math.min(6, partialCount) * 4;
+        const penMissed = Math.min(3, missedMonths) * 10;
+        const penExtra = Math.min(6, extraAdminMonths) * 5;
+        const credits = cleanStreak * 5;
+        let raw = 100 - penLate - penPartial - penMissed - penExtra + credits;
+        raw = Math.max(0, Math.min(100, Math.round(raw)));
+
+        const totalEvents = lateCount + partialCount + onTimeCount;
+        return {
+            score: raw,
+            late_count: lateCount,
+            partial_count: partialCount,
+            on_time_count: onTimeCount,
+            on_time_rate: totalEvents ? Math.round((onTimeCount / totalEvents) * 100) : null,
+            missed_installment_months: missedMonths,
+            extra_admin_months: extraAdminMonths,
+            max_consecutive_missed: maxConsecutiveMissed,
+            defaulted_loans: defaultedLoans,
+            clean_streak: cleanStreak,
+            scored_events: totalEvents,
+            penalties: {
+                late: penLate,
+                partial: penPartial,
+                missed: penMissed,
+                extra_admin: penExtra,
+                total: penLate + penPartial + penMissed + penExtra
+            },
+            credits: { clean_streak: credits }
+        };
+    },
+
+    /**
+     * Membership-track score for stockvel (rolling window).
+     */
+    _scoreMembershipTrack(member, receipts, asOf, windowMonths, gracePeriodDays) {
+        if (!member) {
+            return {
+                score: null,
+                missed_contribution_months: 0,
+                contribution_events: 0,
+                on_time_contributions: 0,
+                early_exit: false,
+                clean_streak: 0,
+                scored_events: 0,
+                penalties: { missed: 0, early_exit: 0, total: 0 },
+                credits: { clean_streak: 0 }
+            };
+        }
+        const missed = this.countMissedContributionMonths(
+            member, receipts, asOf, windowMonths, gracePeriodDays);
+        const windowReceipts = (Array.isArray(receipts) ? receipts : []).filter(r =>
+            r && r.memberNumber === member.memberNumber &&
+            (r.type === 'contribution' || r.type === 'loan_payment') &&
+            this._inRollingWindow(r.date, asOf, windowMonths)
+        );
+        windowReceipts.sort((a, b) =>
+            (this._parseEventDate(a.date) || 0) - (this._parseEventDate(b.date) || 0));
+
+        // Consecutive contribution receipts from most recent, with ≤45-day gaps.
+        // An open missed-month gap at the tip zeros the streak.
+        let cleanStreak = 0;
+        const end = asOf ? new Date(asOf) : new Date();
+        let cursor = end;
+        for (let i = windowReceipts.length - 1; i >= 0; i--) {
+            const d = this._parseEventDate(windowReceipts[i].date);
+            if (!d) break;
+            const gapDays = (cursor.getTime() - d.getTime()) / 86400000;
+            if (gapDays > 45) break;
+            cleanStreak += 1;
+            cursor = d;
+        }
+        if (missed > 0) {
+            const last = windowReceipts.length
+                ? this._parseEventDate(windowReceipts[windowReceipts.length - 1].date)
+                : null;
+            if (!last || (end - last) / 86400000 > 40) cleanStreak = 0;
+        }
+
+        const earlyExit = member.status === 'exited_early';
+        const penMissed = Math.min(6, missed) * 5;
+        const penExit = earlyExit ? 8 : 0;
+        const credits = cleanStreak * 5;
+        let raw = 100 - penMissed - penExit + credits;
+        raw = Math.max(0, Math.min(100, Math.round(raw)));
+
+        return {
+            score: raw,
+            missed_contribution_months: missed,
+            contribution_events: windowReceipts.length,
+            on_time_contributions: windowReceipts.length,
+            early_exit: earlyExit,
+            clean_streak: cleanStreak,
+            scored_events: windowReceipts.length + missed,
+            penalties: { missed: penMissed, early_exit: penExit, total: penMissed + penExit },
+            credits: { clean_streak: credits }
+        };
+    },
+
+    /**
+     * Derive client payment metrics + redeemable reliability score (0–100).
+     *
+     * Rolling 12-month window + rehab credits (+5 per consecutive clean event).
+     * Standing flags apply ceilings until cleared + 6 clean events.
+     * Stockvel: 60% loan track + 40% membership track.
+     *
+     * @param {object} client
+     * @param {array} loans
+     * @param {object} [opts]
+     * @param {array} [opts.stockvelMembers]
+     * @param {array} [opts.stockvelReceipts]
+     * @param {Date|string} [opts.asOf]
+     * @param {number} [opts.windowMonths=12]
+     * @param {number} [opts.gracePeriodDays=3]
+     */
+    computeClientPaymentMetrics(client, loans, opts) {
+        const options = opts || {};
+        const windowMonths = options.windowMonths || 12;
+        const gracePeriodDays = typeof options.gracePeriodDays === 'number'
+            ? options.gracePeriodDays : 3;
+        const asOf = options.asOf ? new Date(options.asOf) : new Date();
+        const clientLoans = this.getClientLoans(client, loans);
+        const loanTrack = this._scoreLoanTrack(
+            clientLoans, asOf, windowMonths, gracePeriodDays);
+
+        const isStockvel = client &&
+            ((client.client_type || client.clientType) === 'stockvel' || client.memberNumber != null);
+        let member = null;
+        if (isStockvel && options.stockvelMembers) {
+            member = this.findStockvelMember(
+                { memberNumber: client.memberNumber, accountNumber: client.account_number },
+                options.stockvelMembers
+            );
+        }
+        const memberTrack = this._scoreMembershipTrack(
+            member, options.stockvelReceipts || [], asOf, windowMonths, gracePeriodDays);
+
+        const blendWeights = isStockvel && memberTrack.score != null
+            ? { loan: 0.6, membership: 0.4 }
+            : { loan: 1, membership: 0 };
+
+        let blended = loanTrack.score;
+        if (blendWeights.membership > 0 && memberTrack.score != null) {
+            blended = Math.round(
+                loanTrack.score * blendWeights.loan +
+                memberTrack.score * blendWeights.membership
+            );
+        }
+
+        const status = (client && client.status) || 'active';
+        const blacklisted = status === 'blacklisted';
+        const defaulted = status === 'defaulted' || loanTrack.defaulted_loans > 0;
+        const cleanStreak = Math.max(loanTrack.clean_streak, memberTrack.clean_streak || 0);
+        const cleanNeeded = 6;
+        let ceiling = null;
+        let ceilingReason = null;
+        if (blacklisted) {
+            ceiling = 40;
+            ceilingReason = 'blacklisted';
+        } else if (defaulted) {
+            ceiling = 60;
+            ceilingReason = 'defaulted';
+        }
+        // Ceiling lifts only after flags clear AND rehab streak.
+        let score = blended;
+        if (ceiling != null) {
+            if (cleanStreak < cleanNeeded || blacklisted || defaulted) {
+                score = Math.min(score, ceiling);
+            }
+        }
+        score = Math.max(0, Math.min(100, Math.round(score)));
+
+        const scoredEvents = loanTrack.scored_events + (memberTrack.scored_events || 0);
+        const provisional = scoredEvents < 2;
+        const band = this.getReliabilityBand(provisional ? null : score);
+
+        const prev = client && Number.isFinite(Number(client.payment_score))
+            ? Number(client.payment_score) : null;
+        let direction = 'stable';
+        if (!provisional && prev != null) {
+            if (score > prev) direction = 'improving';
+            else if (score < prev) direction = 'worsening';
+        }
+
+        return {
+            score: provisional ? null : score,
+            band,
+            provisional,
+            direction,
+            previous_score: prev,
+            loan_score: loanTrack.score,
+            membership_score: memberTrack.score,
+            blend_weights: blendWeights,
+            penalties: {
+                loan: loanTrack.penalties,
+                membership: memberTrack.penalties,
+                total: (loanTrack.penalties.total || 0) + (memberTrack.penalties.total || 0)
+            },
+            credits: {
+                loan: loanTrack.credits,
+                membership: memberTrack.credits,
+                total: (loanTrack.credits.clean_streak || 0) +
+                    (memberTrack.credits.clean_streak || 0)
+            },
+            ceiling,
+            ceiling_reason: ceilingReason,
+            redemption: {
+                clean_streak: cleanStreak,
+                clean_needed: cleanNeeded,
+                window_months: windowMonths,
+                ceiling_cleared: ceiling == null || (!blacklisted && !defaulted && cleanStreak >= cleanNeeded)
+            },
+            loans_considered: clientLoans.length,
+            on_time_count: loanTrack.on_time_count,
+            late_count: loanTrack.late_count,
+            partial_count: loanTrack.partial_count,
+            on_time_rate: loanTrack.on_time_rate,
+            max_consecutive_missed: loanTrack.max_consecutive_missed,
+            extra_admin_months: loanTrack.extra_admin_months,
+            missed_installment_months: loanTrack.missed_installment_months,
+            missed_contribution_months: memberTrack.missed_contribution_months || 0,
+            defaulted_loans: loanTrack.defaulted_loans,
+            blacklisted,
+            defaulted,
+            is_stockvel: !!isStockvel
+        };
+    },
+
+    /**
+     * One-line posture for relationship header.
+     */
+    getClientPosture(client, loans, metrics, gracePeriodDays) {
+        if (client && client.status === 'blacklisted') return 'Blacklisted';
+        if (client && client.status === 'defaulted') return 'Defaulted — rehab required';
+        const clientLoans = this.getClientLoans(client, loans)
+            .filter(l => l.status === 'active');
+        if (!clientLoans.length) {
+            if (metrics && metrics.is_stockvel) return 'No active loan — membership only';
+            return 'No active loans';
+        }
+        let worstMissed = 0;
+        let postGrace = false;
+        let inGrace = false;
+        const today = new Date();
+        const grace = typeof gracePeriodDays === 'number' ? gracePeriodDays : 3;
+        clientLoans.forEach(loan => {
+            this.updateLoanPaymentSignals(loan, grace, today);
+            const s = loan.payment_signals || {};
+            worstMissed = Math.max(worstMissed, s.consecutive_missed || 0);
+            if ((s.extra_admin_months || 0) > 0 || (s.days_past_grace || 0) > 0) postGrace = true;
+            const due = this.getOpenInstallmentDueDate(loan);
+            if (due) {
+                const graceEnd = new Date(due.getTime());
+                graceEnd.setDate(graceEnd.getDate() + grace);
+                if (today > due && today <= graceEnd) inGrace = true;
+            }
+        });
+        if (worstMissed >= 2) return `At risk (${worstMissed} missed)`;
+        if (postGrace) return 'Post-grace admin accruing';
+        if (inGrace) return 'In grace';
+        if (worstMissed === 1) return 'Warning — 1 missed installment';
+        return 'On track';
+    },
+
+    /**
+     * Build chronological behavior timeline (newest first) for the relationship page.
+     */
+    buildClientRelationshipTimeline(client, state, opts) {
+        const options = opts || {};
+        const months = options.months || 24;
+        const asOf = options.asOf ? new Date(options.asOf) : new Date();
+        const items = [];
+        const loans = this.getClientLoans(client, state && state.loans);
+        loans.forEach(loan => {
+            (loan.payment_history || []).forEach(h => {
+                if (!h || !this._inRollingWindow(h.date || h.payment_date, asOf, months)) return;
+                items.push({
+                    date: h.date || h.payment_date,
+                    type: 'loan_payment',
+                    title: `Loan #${loan.loan_id} payment`,
+                    detail: `${this.formatCurrency(h.amount || 0)} · ${h.payment_status || 'recorded'}`,
+                    meta: h
+                });
+            });
+            if (loan.status === 'completed' && loan.completion_date &&
+                this._inRollingWindow(loan.completion_date, asOf, months)) {
+                items.push({
+                    date: loan.completion_date,
+                    type: 'loan_completed',
+                    title: `Loan #${loan.loan_id} completed`,
+                    detail: 'Fully paid',
+                    meta: { loan_id: loan.loan_id }
+                });
+            }
+            if (loan.status === 'defaulted' &&
+                this._inRollingWindow(loan.updated_at || loan.created_at, asOf, months)) {
+                items.push({
+                    date: loan.updated_at || loan.created_at,
+                    type: 'loan_defaulted',
+                    title: `Loan #${loan.loan_id} defaulted`,
+                    detail: 'Marked defaulted',
+                    meta: { loan_id: loan.loan_id }
+                });
+            }
+            (loan.schedule || []).forEach(entry => {
+                if (!entry) return;
+                if (Number(entry.extra_admin_assessed) > 0 && entry.due_date &&
+                    this._inRollingWindow(entry.due_date, asOf, months)) {
+                    items.push({
+                        date: entry.due_date,
+                        type: 'extra_admin',
+                        title: `Loan #${loan.loan_id} extra admin`,
+                        detail: this.formatCurrency(entry.extra_admin_assessed),
+                        meta: entry
+                    });
+                }
+                if (Number(entry.late_penalty_assessed) > 0 && entry.due_date &&
+                    this._inRollingWindow(entry.due_date, asOf, months)) {
+                    items.push({
+                        date: entry.due_date,
+                        type: 'late_penalty',
+                        title: `Loan #${loan.loan_id} late penalty`,
+                        detail: this.formatCurrency(entry.late_penalty_assessed),
+                        meta: entry
+                    });
+                }
+            });
+        });
+
+        const memberNumber = client && client.memberNumber;
+        if (memberNumber != null && state && Array.isArray(state.stockvelReceipts)) {
+            state.stockvelReceipts.forEach(r => {
+                if (!r || r.memberNumber !== memberNumber) return;
+                if (!this._inRollingWindow(r.date, asOf, months)) return;
+                items.push({
+                    date: r.date,
+                    type: 'stockvel_receipt',
+                    title: `Stockvel ${r.type || 'receipt'}`,
+                    detail: `${this.formatCurrency(r.amount || 0)}${r.notes ? ' · ' + r.notes : ''}`,
+                    meta: r
+                });
+            });
+        }
+
+        items.sort((a, b) =>
+            (this._parseEventDate(b.date) || 0) - (this._parseEventDate(a.date) || 0));
+        return items;
+    },
+
+    /**
+     * Lifetime economics snapshot for the relationship page.
+     */
+    buildClientRelationshipEconomics(client, state) {
+        const loans = this.getClientLoans(client, state && state.loans);
+        let disbursed = 0;
+        let repaidPrincipal = 0;
+        let interestEarned = 0;
+        let feesEarned = 0;
+        let penaltiesEarned = 0;
+        let exposure = 0;
+        loans.forEach(loan => {
+            const principal = Number(loan.principal_amount || loan.principal || 0);
+            disbursed += principal;
+            repaidPrincipal += Number(loan.total_principal_received) ||
+                Math.max(0, principal - (Number(loan.remaining_principal) || 0));
+            interestEarned += Number(loan.interest_paid) || 0;
+            feesEarned += (Number(loan.initiation_fee_paid) || 0);
+            (loan.payment_history || []).forEach(h => {
+                feesEarned += Number(h.admin_fee) || 0;
+                penaltiesEarned += Number(h.late_penalty) || 0;
+            });
+            if (loan.status === 'active') {
+                exposure += Number(loan.remaining_principal) || 0;
+            }
+        });
+
+        let memberFunds = 0;
+        let contributions = 0;
+        let bonusUnpaid = 0;
+        let contributionConsistency = null;
+        const memberNumber = client && client.memberNumber;
+        let member = null;
+        if (memberNumber != null && state && state.stockvelMembers) {
+            member = this.findStockvelMember(
+                { memberNumber, accountNumber: client.account_number },
+                state.stockvelMembers
+            );
+            if (member) {
+                contributions = Number(member.totalContributions) || 0;
+                bonusUnpaid = Number(member.accumulatedBonus) || 0;
+                memberFunds = contributions + bonusUnpaid;
+                exposure += memberFunds;
+                const missed = this.countMissedContributionMonths(
+                    member, state.stockvelReceipts || [], new Date(), 12, 3);
+                const expected = missed + (Array.isArray(state.stockvelReceipts)
+                    ? state.stockvelReceipts.filter(r =>
+                        r && r.memberNumber === memberNumber &&
+                        (r.type === 'contribution' || r.type === 'loan_payment') &&
+                        this._inRollingWindow(r.date, new Date(), 12)).length
+                    : 0);
+                contributionConsistency = expected > 0
+                    ? Math.round(((expected - missed) / expected) * 100)
+                    : null;
+            }
+        }
+
+        const revenue = interestEarned + feesEarned + penaltiesEarned;
+        return {
+            disbursed: this.round(disbursed),
+            repaid_principal: this.round(repaidPrincipal),
+            interest_earned: this.round(interestEarned),
+            fees_earned: this.round(feesEarned),
+            penalties_earned: this.round(penaltiesEarned),
+            revenue: this.round(revenue),
+            exposure: this.round(exposure),
+            member_funds_held: this.round(memberFunds),
+            contributions: this.round(contributions),
+            bonus_unpaid: this.round(bonusUnpaid),
+            contribution_consistency: contributionConsistency,
+            capital_at_risk: this.round(
+                loans.filter(l => l.status === 'active')
+                    .reduce((s, l) => s + (Number(l.remaining_principal) || 0), 0)
+            )
+        };
+    },
+
+    /** Fixed ZAR principal bands for lending-pattern views. */
+    LENDING_AMOUNT_BANDS: [
+        { id: 'lt5k', label: 'Under R5,000', min: 0, max: 4999.995 },
+        { id: '5_10k', label: 'R5,000 – R10,000', min: 5000, max: 9999.995 },
+        { id: '10_20k', label: 'R10,000 – R20,000', min: 10000, max: 19999.995 },
+        { id: '20_50k', label: 'R20,000 – R50,000', min: 20000, max: 49999.995 },
+        { id: '50k_plus', label: 'R50,000+', min: 50000, max: Number.POSITIVE_INFINITY }
+    ],
+
+    loanPrincipalAmount(loan) {
+        if (!loan) return 0;
+        return Number(loan.original_principal || loan.principal_amount || loan.principal) || 0;
+    },
+
+    loanTermMonths(loan) {
+        if (!loan) return 0;
+        return Number(loan.term_months || loan.term) || 0;
+    },
+
+    amountBandForPrincipal(principal) {
+        const p = Number(principal) || 0;
+        const bands = this.LENDING_AMOUNT_BANDS || [];
+        for (let i = 0; i < bands.length; i++) {
+            const b = bands[i];
+            if (p >= b.min && p <= b.max) return b;
+        }
+        return bands[bands.length - 1] || { id: 'unknown', label: 'Unknown', min: 0, max: 0 };
+    },
+
+    _medianSorted(sorted) {
+        if (!sorted || !sorted.length) return null;
+        const mid = Math.floor(sorted.length / 2);
+        if (sorted.length % 2) return sorted[mid];
+        return (sorted[mid - 1] + sorted[mid]) / 2;
+    },
+
+    /**
+     * Historical lending patterns for a client by amount band and loan term.
+     * Decision support only — does not set hard limits.
+     */
+    buildClientLendingPatterns(client, state) {
+        const all = this.getClientLoans(client, state && state.loans);
+        const loans = all.filter(l => {
+            if (!l) return false;
+            const st = String(l.status || '').toLowerCase();
+            if (st === 'cancelled' || st === 'canceled' || st === 'draft' || st === 'void') {
+                return false;
+            }
+            return this.loanPrincipalAmount(l) > 0 && this.loanTermMonths(l) > 0;
+        });
+
+        const principals = loans.map(l => this.loanPrincipalAmount(l)).sort((a, b) => a - b);
+        const terms = loans.map(l => this.loanTermMonths(l)).sort((a, b) => a - b);
+
+        const byTermMap = new Map();
+        const byBandMap = new Map();
+        const comboMap = new Map();
+
+        (this.LENDING_AMOUNT_BANDS || []).forEach(b => {
+            byBandMap.set(b.id, {
+                id: b.id,
+                label: b.label,
+                min: b.min,
+                max: b.max,
+                count: 0,
+                total_principal: 0,
+                terms: [],
+                active_count: 0,
+                completed_count: 0
+            });
+        });
+
+        loans.forEach(loan => {
+            const principal = this.loanPrincipalAmount(loan);
+            const term = this.loanTermMonths(loan);
+            const st = String(loan.status || '').toLowerCase();
+            const isActive = st === 'active';
+            const isCompleted = st === 'completed' || st === 'paid' || st === 'closed';
+
+            if (!byTermMap.has(term)) {
+                byTermMap.set(term, {
+                    term_months: term,
+                    count: 0,
+                    total_principal: 0,
+                    principals: [],
+                    active_count: 0,
+                    completed_count: 0
+                });
+            }
+            const tRow = byTermMap.get(term);
+            tRow.count += 1;
+            tRow.total_principal += principal;
+            tRow.principals.push(principal);
+            if (isActive) tRow.active_count += 1;
+            if (isCompleted) tRow.completed_count += 1;
+
+            const band = this.amountBandForPrincipal(principal);
+            const bRow = byBandMap.get(band.id);
+            if (bRow) {
+                bRow.count += 1;
+                bRow.total_principal += principal;
+                bRow.terms.push(term);
+                if (isActive) bRow.active_count += 1;
+                if (isCompleted) bRow.completed_count += 1;
+            }
+
+            const comboKey = band.id + '|' + term;
+            if (!comboMap.has(comboKey)) {
+                comboMap.set(comboKey, {
+                    band_id: band.id,
+                    band_label: band.label,
+                    term_months: term,
+                    count: 0,
+                    total_principal: 0
+                });
+            }
+            const cRow = comboMap.get(comboKey);
+            cRow.count += 1;
+            cRow.total_principal += principal;
+        });
+
+        const by_term = Array.from(byTermMap.values())
+            .map(row => ({
+                term_months: row.term_months,
+                count: row.count,
+                total_principal: this.round(row.total_principal),
+                avg_principal: this.round(row.total_principal / row.count),
+                min_principal: this.round(Math.min.apply(null, row.principals)),
+                max_principal: this.round(Math.max.apply(null, row.principals)),
+                active_count: row.active_count,
+                completed_count: row.completed_count
+            }))
+            .sort((a, b) => b.count - a.count || a.term_months - b.term_months);
+
+        const by_amount_band = Array.from(byBandMap.values())
+            .filter(row => row.count > 0)
+            .map(row => {
+                const termSum = row.terms.reduce((s, t) => s + t, 0);
+                return {
+                    id: row.id,
+                    label: row.label,
+                    min: row.min,
+                    max: row.max,
+                    count: row.count,
+                    total_principal: this.round(row.total_principal),
+                    avg_principal: this.round(row.total_principal / row.count),
+                    avg_term: this.round(termSum / row.terms.length),
+                    active_count: row.active_count,
+                    completed_count: row.completed_count
+                };
+            })
+            .sort((a, b) => b.count - a.count || a.min - b.min);
+
+        const combinations = Array.from(comboMap.values())
+            .map(row => ({
+                band_id: row.band_id,
+                band_label: row.band_label,
+                term_months: row.term_months,
+                count: row.count,
+                avg_principal: this.round(row.total_principal / row.count)
+            }))
+            .sort((a, b) => b.count - a.count || a.term_months - b.term_months);
+
+        const mostCommonTerm = by_term.length ? by_term[0].term_months : null;
+        const mostCommonBand = by_amount_band.length ? by_amount_band[0] : null;
+        const topCombo = combinations.length ? combinations[0] : null;
+
+        const activeLoans = loans.filter(l => String(l.status || '').toLowerCase() === 'active');
+        const current_active = activeLoans.map(l => ({
+            loan_id: l.loan_id || l.id || null,
+            principal: this.round(this.loanPrincipalAmount(l)),
+            remaining_principal: this.round(Number(l.remaining_principal) || 0),
+            term_months: this.loanTermMonths(l),
+            loan_type: l.loan_type || (l.isStockvelLoan ? 'stockvel' : 'standard')
+        }));
+
+        return {
+            loans_considered: loans.length,
+            by_term,
+            by_amount_band,
+            combinations,
+            typical: {
+                most_common_term: mostCommonTerm,
+                most_common_band: mostCommonBand,
+                top_combination: topCombo,
+                median_principal: principals.length
+                    ? this.round(this._medianSorted(principals)) : null,
+                avg_principal: principals.length
+                    ? this.round(principals.reduce((s, p) => s + p, 0) / principals.length)
+                    : null,
+                min_principal: principals.length ? this.round(principals[0]) : null,
+                max_principal: principals.length
+                    ? this.round(principals[principals.length - 1]) : null,
+                median_term: terms.length ? this.round(this._medianSorted(terms)) : null,
+                min_term: terms.length ? terms[0] : null,
+                max_term: terms.length ? terms[terms.length - 1] : null
+            },
+            current_active
+        };
+    },
+
+    /**
+     * Plain-text summary of lending patterns for prompts / confirmations.
+     */
+    formatLendingPatternBrief(patterns) {
+        if (!patterns || !patterns.loans_considered) {
+            return 'No prior loan history for amount/term patterns.';
+        }
+        const t = patterns.typical || {};
+        const lines = [];
+        lines.push('Loans in pattern: ' + patterns.loans_considered);
+        if (t.median_principal != null) {
+            lines.push(
+                'Typical amount: median ' + this.formatCurrency(t.median_principal) +
+                ' (avg ' + this.formatCurrency(t.avg_principal) +
+                '; range ' + this.formatCurrency(t.min_principal) +
+                ' – ' + this.formatCurrency(t.max_principal) + ')'
+            );
+        }
+        if (t.most_common_term != null) {
+            lines.push(
+                'Most common term: ' + t.most_common_term + ' months' +
+                (t.median_term != null ? ' (median ' + t.median_term + ')' : '') +
+                (t.max_term != null ? '; longest ' + t.max_term : '')
+            );
+        }
+        if (t.most_common_band) {
+            lines.push(
+                'Most common amount band: ' + t.most_common_band.label +
+                ' (' + t.most_common_band.count + ' loan' +
+                (t.most_common_band.count === 1 ? '' : 's') + ')'
+            );
+        }
+        if (t.top_combination) {
+            lines.push(
+                'Most common pattern: ' + t.top_combination.band_label +
+                ' over ' + t.top_combination.term_months + ' months' +
+                ' (' + t.top_combination.count + '×)'
+            );
+        }
+        const topTerms = (patterns.by_term || []).slice(0, 3);
+        if (topTerms.length) {
+            lines.push(
+                'By term: ' + topTerms.map(r =>
+                    r.term_months + 'm×' + r.count +
+                    ' (avg ' + this.formatCurrency(r.avg_principal) + ')'
+                ).join('; ')
+            );
+        }
+        const actives = patterns.current_active || [];
+        if (actives.length) {
+            lines.push(
+                'Active now: ' + actives.map(a =>
+                    this.formatCurrency(a.principal) + ' / ' + a.term_months + 'm' +
+                    ' (owed ' + this.formatCurrency(a.remaining_principal) + ')'
+                ).join('; ')
+            );
+        }
+        return lines.join('\n');
+    },
+
+    /**
+     * Decision-support notes when adding capital (top-up).
+     * Does not block — operators decide.
+     */
+    assessTopUpAgainstPatterns(patterns, currentLoan, addAmount) {
+        const add = Number(addAmount) || 0;
+        const currentPrincipal = this.loanPrincipalAmount(currentLoan);
+        const newPrincipal = currentPrincipal + add;
+        const term = this.loanTermMonths(currentLoan);
+        const notes = [];
+        let severity = 'info'; // info | watch | caution
+
+        if (!patterns || !patterns.loans_considered) {
+            notes.push('No historical amount/term pattern — treat as a new-file decision.');
+            return {
+                severity,
+                new_principal: this.round(newPrincipal),
+                new_band: this.amountBandForPrincipal(newPrincipal),
+                notes,
+                summary: notes[0]
+            };
+        }
+
+        const t = patterns.typical || {};
+        const newBand = this.amountBandForPrincipal(newPrincipal);
+        notes.push(
+            'After top-up: principal ' + this.formatCurrency(newPrincipal) +
+            ' (' + newBand.label + ') on ' + term + '-month term.'
+        );
+
+        if (t.max_principal != null && newPrincipal > t.max_principal + 0.005) {
+            severity = 'caution';
+            notes.push(
+                'Above this client\'s largest historical loan (' +
+                this.formatCurrency(t.max_principal) + ').'
+            );
+        } else if (t.median_principal != null && newPrincipal > t.median_principal * 1.5) {
+            severity = severity === 'caution' ? severity : 'watch';
+            notes.push(
+                'Materially above median historical amount (' +
+                this.formatCurrency(t.median_principal) + ').'
+            );
+        } else if (t.most_common_band && newBand.id === t.most_common_band.id) {
+            notes.push('Stays inside their most common amount band.');
+        }
+
+        if (t.median_principal != null && add > t.median_principal) {
+            severity = severity === 'caution' ? severity : 'watch';
+            notes.push(
+                'Top-up alone (' + this.formatCurrency(add) +
+                ') exceeds their median loan size.'
+            );
+        }
+
+        const termHistory = (patterns.by_term || []).find(r => r.term_months === term);
+        if (termHistory) {
+            notes.push(
+                'On ' + term + '-month loans they usually take about ' +
+                this.formatCurrency(termHistory.avg_principal) +
+                ' (n=' + termHistory.count + ').'
+            );
+            if (newPrincipal > termHistory.max_principal + 0.005) {
+                severity = 'caution';
+                notes.push(
+                    'Would set a new high for their ' + term + '-month loans.'
+                );
+            }
+        } else if (patterns.loans_considered > 0) {
+            severity = severity === 'caution' ? severity : 'watch';
+            notes.push('They have not previously used a ' + term + '-month term.');
+        }
+
+        const combo = (patterns.combinations || []).find(c =>
+            c.band_id === newBand.id && c.term_months === term);
+        if (combo) {
+            notes.push(
+                'Matches known pattern ' + combo.band_label + ' / ' +
+                combo.term_months + 'm (' + combo.count + '×).'
+            );
+        }
+
+        return {
+            severity,
+            new_principal: this.round(newPrincipal),
+            new_band: newBand,
+            notes,
+            summary: notes.slice(0, 2).join(' ')
+        };
+    },
+
+    /**
+     * Decision-support notes when extending / shortening term.
+     */
+    assessTermChangeAgainstPatterns(patterns, currentLoan, newTerm) {
+        const nextTerm = Number(newTerm) || 0;
+        const oldTerm = this.loanTermMonths(currentLoan);
+        const principal = this.loanPrincipalAmount(currentLoan);
+        const band = this.amountBandForPrincipal(principal);
+        const notes = [];
+        let severity = 'info';
+        const extensionMonths = nextTerm - oldTerm;
+
+        if (!patterns || !patterns.loans_considered) {
+            notes.push('No historical term pattern — treat as a new-file decision.');
+            return {
+                severity,
+                old_term: oldTerm,
+                new_term: nextTerm,
+                extension_months: extensionMonths,
+                notes,
+                summary: notes[0]
+            };
+        }
+
+        const t = patterns.typical || {};
+        notes.push(
+            'Requested term: ' + nextTerm + ' months' +
+            (extensionMonths > 0
+                ? ' (extend +' + extensionMonths + ' from ' + oldTerm + ')'
+                : extensionMonths < 0
+                    ? ' (shorten ' + extensionMonths + ' from ' + oldTerm + ')'
+                    : ' (unchanged from ' + oldTerm + ')') + '.'
+        );
+
+        if (t.most_common_term != null && nextTerm === t.most_common_term) {
+            notes.push('Matches their most common term.');
+        } else if (t.max_term != null && nextTerm > t.max_term) {
+            severity = 'caution';
+            notes.push(
+                'Longer than any term this client has used before (max ' +
+                t.max_term + ' months).'
+            );
+        } else if (t.median_term != null && nextTerm > t.median_term * 1.5) {
+            severity = 'watch';
+            notes.push(
+                'Well above their median term (' + t.median_term + ' months).'
+            );
+        }
+
+        const termHistory = (patterns.by_term || []).find(r => r.term_months === nextTerm);
+        if (termHistory) {
+            notes.push(
+                'They have taken ' + termHistory.count + ' loan(s) at ' +
+                nextTerm + ' months (avg ' +
+                this.formatCurrency(termHistory.avg_principal) + ').'
+            );
+            if (principal > termHistory.max_principal + 0.005) {
+                severity = severity === 'caution' ? severity : 'watch';
+                notes.push(
+                    'Current principal is above what they usually borrow at this term.'
+                );
+            }
+        } else {
+            severity = severity === 'caution' ? severity : 'watch';
+            notes.push('No prior loans at ' + nextTerm + ' months.');
+        }
+
+        const combo = (patterns.combinations || []).find(c =>
+            c.band_id === band.id && c.term_months === nextTerm);
+        if (combo) {
+            notes.push(
+                'Amount band ' + band.label + ' at ' + nextTerm +
+                'm has appeared ' + combo.count + '× before.'
+            );
+        } else if (patterns.loans_considered > 0) {
+            notes.push(
+                'No prior ' + band.label + ' / ' + nextTerm + 'm combination.'
+            );
+        }
+
+        if (extensionMonths >= 3) {
+            severity = severity === 'info' ? 'watch' : severity;
+            notes.push('Extension of ' + extensionMonths + ' months is material — check payment reliability.');
+        }
+
+        return {
+            severity,
+            old_term: oldTerm,
+            new_term: nextTerm,
+            extension_months: extensionMonths,
+            notes,
+            summary: notes.slice(0, 2).join(' ')
+        };
     },
 
     /**

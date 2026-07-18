@@ -263,12 +263,24 @@
                     <option value="standard">Standard Only</option>
                     <option value="stockvel">Stockvel Only</option>
                 </select>
+
+                <label><strong>Score band:</strong></label>
+                <select id="bandFilter" onchange="filterClients()">
+                    <option value="all">All bands</option>
+                    <option value="building">Building</option>
+                    <option value="excellent">Excellent</option>
+                    <option value="good">Good</option>
+                    <option value="watch">Watch</option>
+                    <option value="poor">Poor</option>
+                    <option value="critical">Critical</option>
+                </select>
                 
                 <label><strong>Sort by:</strong></label>
                 <select id="sortBy" onchange="filterClients()">
                     <option value="name">Name (A-Z)</option>
                     <option value="account">Account Number</option>
                     <option value="loans">Total Loans (high first)</option>
+                    <option value="score">Payment score (high first)</option>
                 </select>
                 
                 <button class="btn btn-primary" onclick="location.href='calculator.html'" style="margin-left: auto;">
@@ -289,6 +301,7 @@
                         <tr>
                             <th>Account Number</th>
                             <th>Client Name</th>
+                            <th>Payment Score</th>
                             <th>Total Loans</th>
                             <th>Total Repayment</th>
                             <th>Status</th>
@@ -303,10 +316,10 @@
     </main>
     
     <!-- Shared Modules -->
-    <script src="shared/app-state.js?v=44"></script>
-    <script src="shared/calculations.js?v=44"></script>
-    <script src="shared/cloud-backup.js?v=44"></script>
-    <script src="shared/navigation.js?v=44"></script>
+    <script src="shared/app-state.js?v=48"></script>
+    <script src="shared/calculations.js?v=48"></script>
+    <script src="shared/cloud-backup.js?v=48"></script>
+    <script src="shared/navigation.js?v=48"></script>
     
     <!-- Page Logic -->
     <script>
@@ -346,6 +359,7 @@
          */
         function loadClients() {
             allClients = AppState.clients || [];
+            refreshAllClientPaymentScores();
             updateStats();
             filterClients();
         }
@@ -374,6 +388,7 @@
         function filterClients() {
             currentFilter = document.getElementById('statusFilter').value;
             const typeFilter = document.getElementById('typeFilter').value;
+            const bandFilter = document.getElementById('bandFilter').value;
             currentSort = document.getElementById('sortBy').value;
             
             let filtered = [...allClients];
@@ -387,6 +402,16 @@
             if (typeFilter !== 'all') {
                 filtered = filtered.filter(c => (c.client_type || 'standard') === typeFilter);
             }
+
+            if (bandFilter !== 'all') {
+                filtered = filtered.filter(c => {
+                    const m = c.payment_metrics || {};
+                    const bandId = m.provisional || c.payment_score == null
+                        ? 'building'
+                        : ((m.band && m.band.id) || Calculations.getReliabilityBand(c.payment_score).id);
+                    return bandId === bandFilter;
+                });
+            }
             
             filtered.sort((a, b) => {
                 switch (currentSort) {
@@ -398,12 +423,61 @@
                         return (a.account_number || '').localeCompare(b.account_number || '');
                     case 'loans':
                         return (b.total_loans || 0) - (a.total_loans || 0);
+                    case 'score': {
+                        const sa = a.payment_score == null ? -1 : Number(a.payment_score);
+                        const sb = b.payment_score == null ? -1 : Number(b.payment_score);
+                        return sb - sa;
+                    }
                     default:
                         return 0;
                 }
             });
             
             displayClients(filtered);
+        }
+
+        function refreshAllClientPaymentScores() {
+            const loans = AppState.loans || [];
+            const scoreOpts = {
+                stockvelMembers: AppState.stockvelMembers,
+                stockvelReceipts: AppState.stockvelReceipts,
+                gracePeriodDays: AppState.gracePeriodDays || 3
+            };
+            (AppState.clients || []).forEach(client => {
+                const metrics = Calculations.computeClientPaymentMetrics(client, loans, scoreOpts);
+                client.payment_score = metrics.score;
+                client.payment_metrics = metrics;
+            });
+        }
+
+        function scoreBadge(score, metrics) {
+            const m = metrics || {};
+            if (m.provisional || score == null) {
+                return '<span title="Fewer than 2 scored events in the rolling window" ' +
+                    'style="display:inline-block;padding:3px 8px;border-radius:8px;font-weight:700;background:#dfe6e9;color:#2d3436;">Building</span>';
+            }
+            const s = Number(score);
+            const n = Number.isFinite(s) ? s : null;
+            if (n === null) {
+                return '<span style="color:#636e72;">—</span>';
+            }
+            const band = (m.band && m.band.id) || Calculations.getReliabilityBand(n).id;
+            let color = '#27ae60';
+            if (band === 'critical' || band === 'poor') color = '#e74c3c';
+            else if (band === 'watch') color = '#f39c12';
+            else if (band === 'good') color = '#2980b9';
+            const tip = [
+                'Band: ' + ((m.band && m.band.label) || ''),
+                'On-time: ' + (m.on_time_count || 0),
+                'Late: ' + (m.late_count || 0),
+                'Partial: ' + (m.partial_count || 0),
+                'Extra admin months: ' + (m.extra_admin_months || 0),
+                'Redemption: ' + ((m.redemption && m.redemption.clean_streak) || 0) +
+                    '/' + ((m.redemption && m.redemption.clean_needed) || 6)
+            ].join(' | ');
+            return '<span title="' + tip.replace(/"/g, '&quot;') +
+                '" style="display:inline-block;min-width:42px;text-align:center;padding:3px 8px;border-radius:8px;font-weight:700;color:#fff;background:' +
+                color + ';">' + n + '</span>';
         }
         
         /**
@@ -413,7 +487,7 @@
             const tbody = document.getElementById('clientsTableBody');
             
             if (clients.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="6" style="text-align: center; color: #636e72; padding: 40px;">No clients found. Add a client above or accept a loan from the Calculator.</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="7" style="text-align: center; color: #636e72; padding: 40px;">No clients found. Add a client above or accept a loan from the Calculator.</td></tr>';
                 return;
             }
             
@@ -428,6 +502,15 @@
                 const accountDisplay = (client.account_number || '').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
                 const status = (client.status || 'active').replace(/</g, '&lt;').replace(/>/g, '&gt;');
                 const accountForAttr = (client.account_number || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/"/g, '&quot;');
+                if (!client.payment_metrics) {
+                    const metrics = Calculations.computeClientPaymentMetrics(client, loans, {
+                        stockvelMembers: AppState.stockvelMembers,
+                        stockvelReceipts: AppState.stockvelReceipts,
+                        gracePeriodDays: AppState.gracePeriodDays || 3
+                    });
+                    client.payment_score = metrics.score;
+                    client.payment_metrics = metrics;
+                }
                 
                 // Unified Model: Show client type badge
                 const clientType = client.client_type || 'standard';
@@ -449,6 +532,7 @@
                 const firstNameForUrl = encodeURIComponent(client.first_name || '');
                 const lastNameForUrl = encodeURIComponent(client.last_name || '');
                 const accountForUrl = encodeURIComponent(client.account_number || '');
+                actionsHtml += `<a class="btn" style="padding: 5px 10px; font-size: 12px; background:#0984e3;color:white;text-decoration:none;" href="client-relationship.html?account=${accountForUrl}">Relationship</a> `;
                 actionsHtml += `<button class="btn btn-primary" style="padding: 5px 10px; font-size: 12px;" onclick="addNewLoan('${firstNameForUrl}', '${lastNameForUrl}', '${accountForUrl}')">💳 New Loan</button> `;
                 
                 // Link to Stockvel page if stockvel member
@@ -469,6 +553,7 @@
                     <tr>
                         <td><strong>${accountDisplay}</strong></td>
                         <td>${firstName} ${lastName}${typeBadge}${memberInfo}</td>
+                        <td>${scoreBadge(client.payment_score, client.payment_metrics)}</td>
                         <td>R ${totalLoanAmount.toFixed(2)}</td>
                         <td>R ${totalRepayment.toFixed(2)}</td>
                         <td><span class="status-badge status-${status}">${status}</span></td>
@@ -517,6 +602,13 @@
             
             // Recalculate deployed capital (in case of rounding)
             AppStateManager.recalculateDeployedCapital(AppState);
+            const metrics = Calculations.computeClientPaymentMetrics(client, AppState.loans || [], {
+                stockvelMembers: AppState.stockvelMembers,
+                stockvelReceipts: AppState.stockvelReceipts,
+                gracePeriodDays: AppState.gracePeriodDays || 3
+            });
+            client.payment_score = metrics.score;
+            client.payment_metrics = metrics;
             
             AppStateManager.save(AppState);
             loadClients();
@@ -966,6 +1058,6 @@
         document.addEventListener('DOMContentLoaded', init);
     </script>
     <!-- Service Worker Registration -->
-    <script src="shared/sw-register.js?v=44"></script>
+    <script src="shared/sw-register.js?v=48"></script>
 </body>
 </html>

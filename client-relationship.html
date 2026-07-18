@@ -1,0 +1,476 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self' https://ndelo-n.github.io https://api.github.com; font-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none';">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#667eea">
+    <meta name="description" content="TBFS Client Relationship Dashboard">
+    <title>Client Relationship - TBFS</title>
+    <meta name="application-name" content="TBFS Loan Manager">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <link rel="manifest" href="manifest.json">
+    <link rel="apple-touch-icon" href="icons/icon-192x192.png">
+    <link rel="icon" type="image/png" sizes="32x32" href="icons/icon-32x32.png">
+    <link rel="stylesheet" href="shared/styles.css">
+    <style>
+        .rel-grid { display: grid; gap: 20px; }
+        .rel-card {
+            background: #fff;
+            border-radius: 12px;
+            padding: 20px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+        }
+        .rel-card h2 { margin: 0 0 12px; font-size: 1.15rem; color: #2c3e50; }
+        .rel-header {
+            display: flex; flex-wrap: wrap; gap: 20px; align-items: flex-start;
+            justify-content: space-between;
+        }
+        .score-block { text-align: center; min-width: 140px; }
+        .score-value {
+            font-size: 3rem; font-weight: 800; line-height: 1;
+            color: #2c3e50;
+        }
+        .score-band {
+            display: inline-block; margin-top: 8px; padding: 4px 12px;
+            border-radius: 999px; font-size: 12px; font-weight: 700; color: #fff;
+        }
+        .band-excellent { background: #27ae60; }
+        .band-good { background: #2980b9; }
+        .band-watch { background: #f39c12; }
+        .band-poor, .band-critical { background: #e74c3c; }
+        .band-building { background: #636e72; }
+        .chip-row { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+        .chip {
+            background: #f1f2f6; color: #2d3436; border-radius: 999px;
+            padding: 4px 10px; font-size: 12px; font-weight: 600;
+        }
+        .info-row {
+            display: flex; justify-content: space-between; gap: 12px;
+            padding: 8px 0; border-bottom: 1px solid #f0f0f0; font-size: 14px;
+        }
+        .info-row:last-child { border-bottom: none; }
+        .muted { color: #636e72; }
+        .loan-row, .timeline-item {
+            padding: 12px 0; border-bottom: 1px solid #eee;
+        }
+        .loan-row:last-child, .timeline-item:last-child { border-bottom: none; }
+        .checklist li { margin: 6px 0; }
+        .actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+        .status-badge {
+            display: inline-block; padding: 3px 10px; border-radius: 999px;
+            font-size: 11px; font-weight: 700; text-transform: uppercase;
+        }
+        .status-active { background: #d4edda; color: #155724; }
+        .status-defaulted { background: #f8d7da; color: #721c24; }
+        .status-blacklisted { background: #212529; color: #fff; }
+        .posture { font-weight: 700; margin-top: 6px; }
+        .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+        @media (max-width: 800px) { .two-col { grid-template-columns: 1fr; } }
+    </style>
+</head>
+<body>
+    <div id="navigation-container"></div>
+    <main class="container fade-in" role="main">
+        <div class="page-content rel-grid">
+            <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;">
+                <h1 class="mb-0" style="margin:0;">Client Relationship</h1>
+                <a class="btn btn-secondary" href="clients.html">← Back to Clients</a>
+            </div>
+            <p id="relError" class="muted" style="display:none;"></p>
+
+            <section class="rel-card" id="relHeader"></section>
+            <section class="rel-card" id="relReliability"></section>
+            <div class="two-col">
+                <section class="rel-card" id="relObligations"></section>
+                <section class="rel-card" id="relRedemption"></section>
+            </div>
+            <div class="two-col">
+                <section class="rel-card" id="relEconomics"></section>
+                <section class="rel-card" id="relActions"></section>
+            </div>
+            <section class="rel-card" id="relPatterns"></section>
+            <section class="rel-card" id="relTimeline"></section>
+        </div>
+    </main>
+
+    <script src="shared/sanitize.js?v=48"></script>
+    <script src="shared/app-state.js?v=48"></script>
+    <script src="shared/calculations.js?v=48"></script>
+    <script src="shared/cloud-backup.js?v=48"></script>
+    <script src="shared/navigation.js?v=48"></script>
+    <script>
+        function dbg(...args) { if (globalThis.TBFS_DEBUG) console.log(...args); }
+        const esc = (typeof Sanitize !== 'undefined' && Sanitize.esc)
+            ? (v) => Sanitize.esc(v)
+            : (v) => String(v == null ? '' : v);
+
+        let AppState = {};
+        let client = null;
+        let metrics = null;
+
+        function params() {
+            const q = new URLSearchParams(location.search);
+            return { account: q.get('account'), member: q.get('member') };
+        }
+
+        function resolveClient() {
+            const { account, member } = params();
+            const clients = AppState.clients || [];
+            if (account) {
+                const c = clients.find(x =>
+                    x && (x.account_number === account || x.accountNumber === account));
+                if (c) return c;
+            }
+            if (member) {
+                const n = parseInt(member, 10);
+                const c = clients.find(x => x && Number(x.memberNumber) === n);
+                if (c) return c;
+                const m = Calculations.findStockvelMember(
+                    { memberNumber: n }, AppState.stockvelMembers || []);
+                if (m) {
+                    return {
+                        account_number: m.account_number || m.accountNumber || ('MEM-' + n),
+                        first_name: (m.name || '').split(' ')[0] || m.name || 'Member',
+                        last_name: (m.name || '').split(' ').slice(1).join(' '),
+                        name: m.name,
+                        client_type: 'stockvel',
+                        memberNumber: m.memberNumber,
+                        status: m.status || 'active'
+                    };
+                }
+            }
+            return null;
+        }
+
+        function money(n) { return Calculations.formatCurrency(n || 0); }
+
+        function renderHeader() {
+            const name = client.name ||
+                [client.first_name || '', client.last_name || ''].join(' ').trim() || 'Client';
+            const status = client.status || 'active';
+            const type = (client.client_type || 'standard') === 'stockvel' ? 'Stockvel' : 'Standard';
+            const band = metrics.band || Calculations.getReliabilityBand(metrics.score);
+            const scoreHtml = metrics.provisional
+                ? '<div class="score-value" style="font-size:2rem;">—</div>' +
+                  '<div class="score-band band-building">Building</div>'
+                : '<div class="score-value">' + esc(metrics.score) + '</div>' +
+                  '<div class="score-band band-' + esc(band.id) + '">' + esc(band.label) + '</div>';
+            const posture = Calculations.getClientPosture(
+                client, AppState.loans || [], metrics, AppState.gracePeriodDays || 3);
+            let stockvelLine = '';
+            if (client.memberNumber != null) {
+                const member = Calculations.findStockvelMember(
+                    { memberNumber: client.memberNumber }, AppState.stockvelMembers || []);
+                if (member) {
+                    const end = member.membershipEndDate
+                        ? new Date(member.membershipEndDate) : null;
+                    const days = end && !isNaN(end.getTime())
+                        ? Math.ceil((end - new Date()) / 86400000) : null;
+                    stockvelLine = '<div class="muted" style="margin-top:8px;">Member #' +
+                        esc(member.memberNumber) +
+                        (member.membershipStartDate ? ' · ' + esc(member.membershipStartDate) +
+                            ' → ' + esc(member.membershipEndDate || '—') : '') +
+                        (days != null ? ' · ' + esc(days) + ' days to renewal' : '') + '</div>';
+                }
+            }
+            document.getElementById('relHeader').innerHTML =
+                '<div class="rel-header">' +
+                '<div><h2 style="margin:0 0 6px;">' + esc(name) + '</h2>' +
+                '<div><strong>' + esc(client.account_number || '') + '</strong> · ' +
+                esc(type) + ' · <span class="status-badge status-' + esc(status) + '">' +
+                esc(status) + '</span></div>' +
+                '<div class="posture">' + esc(posture) + '</div>' + stockvelLine +
+                '</div><div class="score-block">' + scoreHtml +
+                (metrics.direction && !metrics.provisional
+                    ? '<div class="muted" style="margin-top:8px;">' + esc(metrics.direction) +
+                      (metrics.previous_score != null
+                          ? ' (was ' + esc(metrics.previous_score) + ')' : '') + '</div>'
+                    : '') +
+                '</div></div>';
+        }
+
+        function renderReliability() {
+            const p = metrics.penalties || {};
+            const c = metrics.credits || {};
+            const chips = [
+                'Loan score: ' + (metrics.loan_score != null ? metrics.loan_score : '—'),
+                metrics.is_stockvel
+                    ? ('Membership score: ' + (metrics.membership_score != null ? metrics.membership_score : '—'))
+                    : null,
+                'Late: ' + (metrics.late_count || 0),
+                'Partial: ' + (metrics.partial_count || 0),
+                'Missed months: ' + (metrics.missed_installment_months || 0),
+                'Extra admin months: ' + (metrics.extra_admin_months || 0),
+                metrics.is_stockvel
+                    ? ('Missed contributions: ' + (metrics.missed_contribution_months || 0))
+                    : null,
+                metrics.ceiling != null
+                    ? ('Ceiling: ' + metrics.ceiling + ' (' + metrics.ceiling_reason + ')')
+                    : null
+            ].filter(Boolean);
+            document.getElementById('relReliability').innerHTML =
+                '<h2>Reliability breakdown</h2>' +
+                (metrics.provisional
+                    ? '<p class="muted">Fewer than 2 scored events in the last 12 months — score is provisional (Building).</p>'
+                    : '<p class="muted">Rolling 12-month window with rehab credits. Penalties −' +
+                      esc((p.total != null ? p.total : 0)) + ' · Credits +' +
+                      esc((c.total != null ? c.total : 0)) + '</p>') +
+                '<div class="chip-row">' + chips.map(t =>
+                    '<span class="chip">' + esc(t) + '</span>').join('') + '</div>';
+        }
+
+        function renderObligations() {
+            const loans = Calculations.getClientLoans(client, AppState.loans || [])
+                .slice()
+                .sort((a, b) => {
+                    const rank = s => s === 'active' ? 0 : s === 'defaulted' ? 1 : 2;
+                    return rank(a.status) - rank(b.status);
+                });
+            let html = '<h2>Active obligations</h2>';
+            if (!loans.length) {
+                html += '<p class="muted">No loans on file.</p>';
+            } else {
+                html += loans.map(loan => {
+                    Calculations.updateLoanPaymentSignals(
+                        loan, AppState.gracePeriodDays || 3);
+                    const s = loan.payment_signals || {};
+                    const due = Calculations.getOpenInstallmentDueDate(loan);
+                    const open = (loan.schedule || []).find(p =>
+                        p && (p.status === 'pending' || p.status === 'partial'));
+                    const extra = Calculations.calculateExtraAdminDue(
+                        loan, open, new Date(), AppState.gracePeriodDays || 3);
+                    return '<div class="loan-row">' +
+                        '<div><strong>Loan #' + esc(loan.loan_id) + '</strong> · ' +
+                        esc(loan.loan_type || 'standard') + ' · ' +
+                        esc(loan.status) +
+                        (s.escalation_level && s.escalation_level !== 'none'
+                            ? ' · <strong>' + esc(s.escalation_level) + '</strong>' : '') +
+                        '</div>' +
+                        '<div class="muted">Remaining ' +
+                        money(loan.remaining_principal) +
+                        (due ? ' · Next due ' + esc(due.toLocaleDateString('en-ZA')) : '') +
+                        (s.days_past_grace ? ' · ' + esc(s.days_past_grace) + 'd past grace' : '') +
+                        (extra.amount > 0 ? ' · Extra admin ' + money(extra.amount) : '') +
+                        '</div></div>';
+                }).join('');
+            }
+
+            if (client.memberNumber != null) {
+                const member = Calculations.findStockvelMember(
+                    { memberNumber: client.memberNumber }, AppState.stockvelMembers || []);
+                if (member) {
+                    const receipts = (AppState.stockvelReceipts || [])
+                        .filter(r => r && r.memberNumber === member.memberNumber)
+                        .sort((a, b) => new Date(b.date) - new Date(a.date));
+                    const last = receipts[0];
+                    const exit = Calculations.calculateEarlyExitSettlement
+                        ? Calculations.calculateEarlyExitSettlement(
+                            member, AppState.loans || [], AppState.stockvelReceipts || [],
+                            new Date().toISOString().slice(0, 10),
+                            { availableCapital: AppState.capital || 0 })
+                        : null;
+                    html += '<h2 style="margin-top:18px;">Stockvel membership</h2>' +
+                        '<div class="info-row"><span>Monthly contribution</span><strong>' +
+                        money(member.monthlyContribution || member.monthly_contribution) +
+                        '</strong></div>' +
+                        '<div class="info-row"><span>Total contributions</span><strong>' +
+                        money(member.totalContributions) + '</strong></div>' +
+                        '<div class="info-row"><span>Unpaid bonus</span><strong>' +
+                        money(member.accumulatedBonus) + '</strong></div>' +
+                        '<div class="info-row"><span>Last receipt</span><strong>' +
+                        (last ? esc(last.date) + ' · ' + esc(last.type) + ' · ' + money(last.amount)
+                            : 'None') + '</strong></div>' +
+                        (exit ? '<div class="info-row"><span>Early exit</span><strong>' +
+                            (exit.canExit ? 'Eligible · net ' + money(exit.netPayout)
+                                : 'Blocked · ' + esc((exit.blockers || []).join('; ') || 'see Stockvel')) +
+                            '</strong></div>' : '');
+                }
+            }
+            document.getElementById('relObligations').innerHTML = html;
+        }
+
+        function renderRedemption() {
+            const r = metrics.redemption || {};
+            const streak = r.clean_streak || 0;
+            const need = r.clean_needed || 6;
+            const checks = [
+                { ok: !(metrics.blacklisted), label: 'Not blacklisted' },
+                { ok: !(metrics.defaulted), label: 'No active default status / defaulted loans' },
+                { ok: streak >= need, label: streak + ' / ' + need + ' consecutive clean events' },
+                { ok: !metrics.provisional, label: 'Enough history to score (not Building)' }
+            ];
+            document.getElementById('relRedemption').innerHTML =
+                '<h2>Redemption path</h2>' +
+                '<p class="muted">Clear standing flags, then complete ' + esc(need) +
+                ' consecutive clean on-time events (loan installments and/or contributions). ' +
+                'Older issues also age out of the 12-month window.</p>' +
+                '<ul class="checklist">' +
+                checks.map(c => '<li>' + (c.ok ? '✅' : '⬜') + ' ' + esc(c.label) + '</li>').join('') +
+                '</ul>' +
+                (metrics.ceiling != null
+                    ? '<p><strong>Current ceiling:</strong> ' + esc(metrics.ceiling) +
+                      ' (' + esc(metrics.ceiling_reason) + ')</p>'
+                    : '<p class="muted">No standing ceiling.</p>');
+        }
+
+        function renderEconomics() {
+            const e = Calculations.buildClientRelationshipEconomics(client, AppState);
+            document.getElementById('relEconomics').innerHTML =
+                '<h2>Relationship economics</h2>' +
+                '<div class="info-row"><span>Disbursed</span><strong>' + money(e.disbursed) + '</strong></div>' +
+                '<div class="info-row"><span>Principal repaid</span><strong>' + money(e.repaid_principal) + '</strong></div>' +
+                '<div class="info-row"><span>Revenue (interest + fees + penalties)</span><strong>' +
+                money(e.revenue) + '</strong></div>' +
+                '<div class="info-row"><span>Capital at risk (active loans)</span><strong>' +
+                money(e.capital_at_risk) + '</strong></div>' +
+                '<div class="info-row"><span>Total exposure</span><strong>' + money(e.exposure) + '</strong></div>' +
+                (metrics.is_stockvel
+                    ? '<div class="info-row"><span>Member funds held</span><strong>' +
+                      money(e.member_funds_held) + '</strong></div>' +
+                      '<div class="info-row"><span>Contribution consistency (12m)</span><strong>' +
+                      (e.contribution_consistency != null
+                          ? esc(e.contribution_consistency) + '%' : '—') +
+                      '</strong></div>'
+                    : '');
+        }
+
+        function renderPatterns() {
+            const p = Calculations.buildClientLendingPatterns(client, AppState);
+            const t = p.typical || {};
+            if (!p.loans_considered) {
+                document.getElementById('relPatterns').innerHTML =
+                    '<h2>Lending patterns</h2>' +
+                    '<p class="muted">No prior loans to show amount/term patterns. ' +
+                    'Top-ups and term extensions will treat this as a new-file decision.</p>';
+                return;
+            }
+
+            const termRows = (p.by_term || []).map(r =>
+                '<div class="info-row"><span>' + esc(r.term_months) + ' months · ' +
+                esc(r.count) + ' loan' + (r.count === 1 ? '' : 's') +
+                (r.active_count ? ' (' + esc(r.active_count) + ' active)' : '') +
+                '</span><strong>avg ' + money(r.avg_principal) +
+                ' · ' + money(r.min_principal) + '–' + money(r.max_principal) +
+                '</strong></div>'
+            ).join('');
+
+            const bandRows = (p.by_amount_band || []).map(r =>
+                '<div class="info-row"><span>' + esc(r.label) + ' · ' +
+                esc(r.count) + ' loan' + (r.count === 1 ? '' : 's') +
+                '</span><strong>avg term ' + esc(r.avg_term) + 'm</strong></div>'
+            ).join('');
+
+            const comboRows = (p.combinations || []).slice(0, 6).map(c =>
+                '<div class="info-row"><span>' + esc(c.band_label) + ' × ' +
+                esc(c.term_months) + ' months</span><strong>' +
+                esc(c.count) + '× · avg ' + money(c.avg_principal) +
+                '</strong></div>'
+            ).join('');
+
+            document.getElementById('relPatterns').innerHTML =
+                '<h2>Lending patterns</h2>' +
+                '<p class="muted">Historical amount and term habits for this client. ' +
+                'Used as context on top-ups and term extensions — not hard limits.</p>' +
+                '<div class="chip-row">' +
+                '<span class="chip">' + esc(p.loans_considered) + ' loans</span>' +
+                (t.median_principal != null
+                    ? '<span class="chip">Median ' + money(t.median_principal) + '</span>' : '') +
+                (t.most_common_term != null
+                    ? '<span class="chip">Usual term ' + esc(t.most_common_term) + 'm</span>' : '') +
+                (t.most_common_band
+                    ? '<span class="chip">' + esc(t.most_common_band.label) + '</span>' : '') +
+                (t.top_combination
+                    ? '<span class="chip">Top pattern: ' + esc(t.top_combination.band_label) +
+                      ' / ' + esc(t.top_combination.term_months) + 'm</span>'
+                    : '') +
+                '</div>' +
+                '<div class="two-col" style="margin-top:16px;">' +
+                '<div><h3 style="margin:0 0 8px;font-size:0.95rem;">By loan term</h3>' +
+                termRows + '</div>' +
+                '<div><h3 style="margin:0 0 8px;font-size:0.95rem;">By amount band</h3>' +
+                bandRows + '</div>' +
+                '</div>' +
+                '<h3 style="margin:18px 0 8px;font-size:0.95rem;">Amount × term combinations</h3>' +
+                (comboRows || '<p class="muted">None</p>');
+        }
+
+        function renderActions() {
+            const acct = encodeURIComponent(client.account_number || '');
+            const first = encodeURIComponent(client.first_name || '');
+            const last = encodeURIComponent(client.last_name || '');
+            const active = Calculations.getClientLoans(client, AppState.loans || [])
+                .some(l => l.status === 'active');
+            let next = 'Review relationship';
+            if (metrics.blacklisted || metrics.defaulted) next = 'Review default / blacklist status';
+            else if (active) next = 'Record a payment on Active Loans';
+            else if (metrics.is_stockvel) next = 'Collect contribution on Stockvel';
+            else next = 'Offer a new loan from Calculator';
+
+            let buttons =
+                '<a class="btn btn-primary" href="active-loans.html">Active Loans</a>' +
+                '<a class="btn btn-success" href="calculator.html?firstName=' + first +
+                '&lastName=' + last + '&accountNumber=' + acct + '">New Loan</a>' +
+                '<a class="btn btn-secondary" href="clients.html">Clients list</a>';
+            if (client.memberNumber != null) {
+                buttons += '<a class="btn btn-warning" href="stockvel.html#member-' +
+                    esc(client.memberNumber) + '">Stockvel member</a>';
+            }
+            document.getElementById('relActions').innerHTML =
+                '<h2>Risk & actions</h2>' +
+                '<p><strong>Recommended:</strong> ' + esc(next) + '</p>' +
+                '<div class="actions">' + buttons + '</div>';
+        }
+
+        function renderTimeline() {
+            const items = Calculations.buildClientRelationshipTimeline(client, AppState, { months: 24 });
+            document.getElementById('relTimeline').innerHTML =
+                '<h2>Behavior timeline (24 months)</h2>' +
+                (items.length ? items.slice(0, 40).map(item => {
+                    const d = item.date ? new Date(item.date) : null;
+                    const when = d && !isNaN(d.getTime())
+                        ? d.toLocaleDateString('en-ZA') : '—';
+                    return '<div class="timeline-item">' +
+                        '<div><strong>' + esc(when) + '</strong> · ' + esc(item.title) + '</div>' +
+                        '<div class="muted">' + esc(item.detail) + '</div></div>';
+                }).join('') : '<p class="muted">No timeline events in this window.</p>');
+        }
+
+        function init() {
+            AppState = AppStateManager.load();
+            Navigation.init('clients');
+            client = resolveClient();
+            if (!client) {
+                document.getElementById('relError').style.display = 'block';
+                document.getElementById('relError').textContent =
+                    'Client not found. Open this page from Clients with ?account= or ?member=.';
+                return;
+            }
+            metrics = Calculations.computeClientPaymentMetrics(client, AppState.loans || [], {
+                stockvelMembers: AppState.stockvelMembers,
+                stockvelReceipts: AppState.stockvelReceipts,
+                gracePeriodDays: AppState.gracePeriodDays || 3
+            });
+            // Persist refreshed metrics onto the real client record when present.
+            const live = (AppState.clients || []).find(c =>
+                c && c.account_number === client.account_number);
+            if (live) {
+                live.payment_score = metrics.score;
+                live.payment_metrics = metrics;
+                AppStateManager.save(AppState);
+            }
+            renderHeader();
+            renderReliability();
+            renderObligations();
+            renderRedemption();
+            renderEconomics();
+            renderPatterns();
+            renderActions();
+            renderTimeline();
+        }
+
+        document.addEventListener('DOMContentLoaded', init);
+    </script>
+    <script src="shared/sw-register.js?v=48"></script>
+</body>
+</html>
