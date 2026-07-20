@@ -312,6 +312,18 @@
         
         <!-- Cloud Backup Settings -->
         <div class="form-section">
+            <h3 style="color: #2c3e50; margin-bottom: 15px;">Client loan portal</h3>
+            <p style="color: #636e72; margin-bottom: 0;">
+                Clients check status at <code>client-portal.html</code>.
+                Workflow: Clients → set PIN (publishes in the same step) → share the portal link and PIN.
+                Unlock Cloud Backup for remote packs. After you publish once in this browser session,
+                the PIN is remembered until you close the browser — payments and loan adjustments
+                auto-refresh that client’s pack. Use <strong>Refresh all portals</strong> on Clients
+                to batch-update everyone with a remembered PIN.
+            </p>
+        </div>
+
+        <div class="form-section">
             <h3 style="color: #2c3e50; margin-bottom: 15px;">☁️ GitHub Cloud Backup</h3>
             <p style="color: #636e72; margin-bottom: 20px;">Automatically backup your data to a private GitHub repository. Your data syncs across all devices and works offline.</p>
             
@@ -466,11 +478,11 @@
     </main>
 
     <!-- Shared Scripts -->
-    <script src="shared/sanitize.js?v=48"></script>
-    <script src="shared/app-state.js?v=48"></script>
-    <script src="shared/calculations.js?v=48"></script>
-    <script src="shared/cloud-backup.js?v=48"></script>
-    <script src="shared/navigation.js?v=48"></script>
+    <script src="shared/sanitize.js?v=68"></script>
+    <script src="shared/app-state.js?v=68"></script>
+    <script src="shared/calculations.js?v=68"></script>
+    <script src="shared/cloud-backup.js?v=68"></script>
+    <script src="shared/navigation.js?v=68"></script>
 
     <script>
         // App Version
@@ -1155,6 +1167,6 @@
         document.addEventListener('DOMContentLoaded', init);
     </script>
     <!-- Service Worker Registration -->
-    <script src="shared/sw-register.js?v=48"></script>
+    <script src="shared/sw-register.js?v=68"></script>
 </body>
 </html>

@@ -18,6 +18,7 @@ PAGES=(
     stockvel.html
     clients.html
     client-relationship.html
+    client-portal.html
     reports.html
     loan-income-calculator.html
     settings.html
@@ -32,6 +33,11 @@ done
 cp manifest.json sw.js TBFS_Logo.png dist/
 cp -r shared dist/shared
 cp -r icons dist/icons
+mkdir -p dist/client-status
+# Published encrypted packs land here after operator publish + deploy
+if [ -d client-status ]; then
+    cp -r client-status/. dist/client-status/ 2>/dev/null || true
+fi
 
 # Vendored third-party libraries (present from the F-10 patch onward)
 if [ -d vendor ]; then

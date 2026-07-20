@@ -254,11 +254,13 @@
     </main>
     
     <!-- Shared Modules -->
-    <script src="shared/sanitize.js?v=48"></script>
-    <script src="shared/app-state.js?v=48"></script>
-    <script src="shared/calculations.js?v=48"></script>
-    <script src="shared/cloud-backup.js?v=48"></script>
-    <script src="shared/navigation.js?v=48"></script>
+    <script src="shared/sanitize.js?v=68"></script>
+    <script src="shared/app-state.js?v=68"></script>
+    <script src="shared/calculations.js?v=68"></script>
+    <script src="shared/cloud-backup.js?v=68"></script>
+    <script src="shared/client-status.js?v=68"></script>
+    <script src="shared/loan-statement-pdf.js?v=68"></script>
+    <script src="shared/navigation.js?v=68"></script>
     
     <!-- Page Logic -->
     <script>
@@ -981,6 +983,10 @@
                                             onclick="adjustLoan(${loan.loan_id})">
                                         🔧 Adjust Loan
                                     </button>
+                                    <button class="btn" style="padding: 8px 12px; font-size: 13px; background: #2d3436; color: white;"
+                                            onclick="manageLoanClientPortal(${loan.loan_id})">
+                                        🔐 Client Portal
+                                    </button>
                                 ` : `
                                     <button class="btn btn-secondary" style="padding: 8px 12px; font-size: 13px;"
                                             onclick="viewLoanDetails(${loan.loan_id})">
@@ -1114,7 +1120,7 @@ Click "OK" to process payment or "Cancel" to go back.
          * @param {number} payoffMonth - The month the loan is being paid off
          * @param {object} payoffData - Calculated payoff breakdown from calculateEarlyPayoff()
          */
-        function processEarlyPayoff(loan, payoffMonth, payoffData) {
+        async function processEarlyPayoff(loan, payoffMonth, payoffData) {
             try {
                 const totalPayoff = payoffData.totalPayoff;
                 
@@ -1276,6 +1282,8 @@ Click "OK" to process payment or "Cancel" to go back.
                 
                 // Save state
                 AppStateManager.save(AppState);
+                const portalNote = portalRefreshHintForLoan(loan);
+                schedulePortalRefreshForLoan(loan);
                 
                 // Show success message
                 alert(
@@ -1291,7 +1299,8 @@ Click "OK" to process payment or "Cancel" to go back.
                         : '') + `\n` +
                     `💵 You Saved: ${payoffData.formatted.savings}\n` +
                     `⏰ Finished ${payoffData.monthsSaved} months early!\n\n` +
-                    `Thank you for your business! 🌟`
+                    `Thank you for your business! 🌟` +
+                    portalNote
                 );
                 
                 // Refresh display
@@ -1356,20 +1365,137 @@ Click "OK" to process payment or "Cancel" to go back.
             const acct = loan.account_number || loan.client_account;
             const name = loan.client_name;
             const clients = AppState.clients || [];
-            const found = clients.find(c => {
-                if (!c) return false;
-                if (acct && (c.account_number === acct || c.accountNumber === acct)) return true;
-                if (loan.memberNumber != null && c.memberNumber === loan.memberNumber) return true;
-                const cName = c.name || [c.first_name || c.firstName || '', c.last_name || c.lastName || ''].join(' ').trim();
-                return name && cName && String(cName).toLowerCase() === String(name).toLowerCase();
-            });
-            if (found) return found;
+            // Priority: account → memberNumber → name. Never let an earlier
+            // member-only row steal a later account-matched borrower.
+            if (acct) {
+                const acctKey = String(acct).toUpperCase();
+                const byAcct = clients.find(c => {
+                    if (!c) return false;
+                    const cAcct = c.account_number || c.accountNumber;
+                    return cAcct && String(cAcct).toUpperCase() === acctKey;
+                });
+                if (byAcct) return byAcct;
+            }
+            if (loan.memberNumber != null) {
+                const byMember = clients.find(c =>
+                    c && c.memberNumber === loan.memberNumber);
+                if (byMember) return byMember;
+            }
+            if (name) {
+                const byName = clients.find(c => {
+                    if (!c) return false;
+                    const cName = c.name ||
+                        [c.first_name || c.firstName || '', c.last_name || c.lastName || '']
+                            .join(' ').trim();
+                    return cName && String(cName).toLowerCase() === String(name).toLowerCase();
+                });
+                if (byName) return byName;
+            }
             return {
                 account_number: acct,
                 memberNumber: loan.memberNumber,
                 name: name,
                 first_name: name
             };
+        }
+
+        /**
+         * Live AppState client for a loan (portal-enabled check / publish target).
+         * Falls back to the loan's account when the client is linked only by
+         * memberNumber (stockvel) and lacks account_number on the record.
+         */
+        function resolvePortalClientForLoan(loan) {
+            const client = resolveClientForLoan(loan);
+            if (!client) return null;
+            const acct = client.account_number || client.accountNumber ||
+                (loan && (loan.account_number || loan.client_account || loan.accountNumber));
+            if (!acct) return null;
+            const clients = AppState.clients || [];
+            const acctKey = String(acct).toUpperCase();
+
+            // Account match first — never let a memberNumber-only row win when
+            // an account holder exists (order-dependent .find OR bug).
+            let live = clients.find(c => {
+                if (!c) return false;
+                const cAcct = c.account_number || c.accountNumber;
+                return cAcct && String(cAcct).toUpperCase() === acctKey;
+            });
+            // Prefer the borrower resolveClientForLoan already found over a
+            // memberNumber fallback that might point at a different person.
+            if (!live && clients.includes(client)) {
+                live = client;
+            }
+            if (!live && loan && loan.memberNumber != null) {
+                live = clients.find(c =>
+                    c && c.memberNumber === loan.memberNumber);
+            }
+
+            const target = live || client;
+            if (!(target.account_number || target.accountNumber)) {
+                target.account_number = acct;
+                // Persist whenever target is a real Clients record. Skip synthetics.
+                const inAppState = clients.includes(target);
+                if (inAppState && typeof AppStateManager !== 'undefined' && AppStateManager.save) {
+                    AppStateManager.save(AppState);
+                }
+            }
+            return target;
+        }
+
+        /**
+         * Sync hint for success alerts — never awaits network/crypto work.
+         */
+        function portalRefreshHintForLoan(loan) {
+            if (typeof ClientStatus === 'undefined' || !ClientStatus.maybeAutoPublish) {
+                return '';
+            }
+            const target = resolvePortalClientForLoan(loan);
+            if (!target || !target.client_access || !target.client_access.enabled) {
+                return '';
+            }
+            const acct = target.account_number || target.accountNumber;
+            if (!ClientStatus.getRememberedPin(acct)) {
+                return ClientStatus.formatAutoPublishNote({ ok: false, reason: 'no_pin' });
+            }
+            return '\n\n📡 Portal will try to refresh in the background.';
+        }
+
+        /**
+         * Republish portal pack without blocking payment/adjustment UI.
+         * GitHub remote work must not delay success confirmation.
+         */
+        function schedulePortalRefreshForLoan(loan) {
+            if (typeof ClientStatus === 'undefined' || !ClientStatus.maybeAutoPublish) {
+                return;
+            }
+            const target = resolvePortalClientForLoan(loan);
+            if (!target || !target.client_access || !target.client_access.enabled) return;
+            const acct = target.account_number || target.accountNumber;
+            if (!ClientStatus.getRememberedPin(acct)) return;
+
+            const publishedAtBefore =
+                target.client_access && target.client_access.published_at;
+            void ClientStatus.maybeAutoPublish(target, AppState)
+                .then(function (result) {
+                    // Persist when this waiter saw a publish, or when a coalesced
+                    // drain updated published_at even if we only got "superseded".
+                    const publishedAtAfter =
+                        target.client_access && target.client_access.published_at;
+                    const shouldSave = result && result.ok && (
+                        result.reason === 'published' ||
+                        (result.reason === 'superseded' &&
+                            publishedAtAfter &&
+                            publishedAtAfter !== publishedAtBefore)
+                    );
+                    if (shouldSave) {
+                        AppStateManager.save(AppState);
+                    }
+                    dbg('Background portal refresh:',
+                        result && result.reason, result && result.error);
+                })
+                .catch(function (err) {
+                    console.error('Background portal refresh failed:', err);
+                });
         }
 
         function getLendingPatternsForLoan(loan) {
@@ -1558,6 +1684,18 @@ Click "OK" to process payment or "Cancel" to go back.
          * a given date (modal open, preview, or confirmed payment date).
          */
         function assessOpenInstallmentFees(loan, openEntry, nextDueDate, asOfDate, gracePeriodDays) {
+            if (typeof Calculations.assessOpenInstallmentFees === 'function') {
+                const dueIso = nextDueDate instanceof Date
+                    ? nextDueDate.toISOString()
+                    : nextDueDate;
+                const entry = openEntry
+                    ? Object.assign({}, openEntry, {
+                        due_date: openEntry.due_date || dueIso
+                    })
+                    : (dueIso ? { due_date: dueIso, status: 'pending' } : null);
+                return Calculations.assessOpenInstallmentFees(
+                    loan, entry, asOfDate, gracePeriodDays);
+            }
             const result = {
                 latePenalty: 0,
                 latePenaltyAssessedCandidate: 0,
@@ -1727,14 +1865,17 @@ Click "OK" to process payment or "Cancel" to go back.
             }
             const ctx = paymentModalCtx;
             closePaymentModal();
-            processPayment(ctx, amount, dateVal);
+            processPayment(ctx, amount, dateVal).catch(function (err) {
+                console.error('Payment processing error:', err);
+                alert('❌ Payment error:\n' + (err && err.message ? err.message : err));
+            });
         }
 
         /**
          * Apply a confirmed payment — the original makePayment flow from the
          * point where user input has been collected. (F-13)
          */
-        function processPayment(ctx, amount, paymentDateInput) {
+        async function processPayment(ctx, amount, paymentDateInput) {
             const loan = ctx.loan;
             const loanId = ctx.loanId;
             let nextDueDate = ctx.nextDueDate;
@@ -2220,6 +2361,8 @@ Click "OK" to process payment or "Cancel" to go back.
             // Save all changes to localStorage for persistence
             // This also triggers cross-tab synchronization via AppStateManager
             AppStateManager.save(AppState);
+            const portalNote = portalRefreshHintForLoan(loan);
+            schedulePortalRefreshForLoan(loan);
             
             // Calculate remaining amounts for display
             const newRemainingInitiationFee = Math.max(0, loan.total_initiation_fee - loan.initiation_fee_paid);
@@ -2266,7 +2409,8 @@ Click "OK" to process payment or "Cancel" to go back.
                 `💵 Remaining Balances:\n` +
                 `• Principal: ${Calculations.formatCurrency(loan.remaining_principal)}\n` +
                 `• Interest: ${Calculations.formatCurrency(newRemainingInterest)}\n` +
-                `• Initiation Fee: ${Calculations.formatCurrency(newRemainingInitiationFee)}`
+                `• Initiation Fee: ${Calculations.formatCurrency(newRemainingInitiationFee)}` +
+                portalNote
             );
             
             // Reload loans
@@ -2824,460 +2968,141 @@ Click "OK" to process payment or "Cancel" to go back.
          * @param {number} loanId - The ID of the loan to generate statement for
          */
         function downloadLoanStatementPDF(loanId) {
-            // STEP 1: VALIDATION - Find loan
             const loan = allLoans.find(l => l.loan_id === loanId);
             if (!loan) {
                 alert('❌ Loan not found!');
                 return;
             }
-            
             try {
-                // STEP 2: INITIALIZE PDF DOCUMENT
-                // Create new PDF document using jsPDF library
-                const { jsPDF } = window.jspdf;
-                const doc = new jsPDF();
-                
-                // Page settings
-                const pageWidth = doc.internal.pageSize.width;
-                const pageHeight = doc.internal.pageSize.height;
-                const margin = 20;
-                const contentWidth = pageWidth - (2 * margin);
-                let yPos = 20;
-                
-                // Helper function to check if we need a new page
-                function checkPageBreak(neededSpace) {
-                    if (yPos + neededSpace > pageHeight - 20) {
-                        doc.addPage();
-                        yPos = 20;
-                        return true;
-                    }
-                    return false;
+                if (typeof LoanStatementPDF === 'undefined' || !LoanStatementPDF.download) {
+                    throw new Error('LoanStatementPDF module not loaded');
                 }
-                
-                // Helper function to add text with word wrap
-                function addText(text, x, y, options = {}) {
-                    const fontSize = options.fontSize || 10;
-                    const maxWidth = options.maxWidth || contentWidth;
-                    const align = options.align || 'left';
-                    
-                    doc.setFontSize(fontSize);
-                    if (options.bold) doc.setFont('helvetica', 'bold');
-                    else doc.setFont('helvetica', 'normal');
-                    
-                    const lines = doc.splitTextToSize(text, maxWidth);
-                    lines.forEach((line, index) => {
-                        checkPageBreak(fontSize * 0.5);
-                        doc.text(line, x, y + (index * fontSize * 0.5), { align: align });
-                    });
-                    
-                    return y + (lines.length * fontSize * 0.5);
-                }
-
-                // Helper: wrap text while respecting explicit newlines
-                function writeWrappedLines(text, x, maxWidth, lineHeight) {
-                    if (text === null || text === undefined) return;
-                    const blocks = String(text).split(/\r?\n/);
-                    blocks.forEach((block, idx) => {
-                        const lines = doc.splitTextToSize(block, maxWidth);
-                        lines.forEach(line => {
-                            checkPageBreak(lineHeight + 2);
-                            doc.text(line, x, yPos);
-                            yPos += lineHeight;
-                        });
-                        // Small gap between newline-separated blocks
-                        if (idx < blocks.length - 1) yPos += 1;
-                    });
-                }
-                
-                // ============================================
-                // HEADER
-                // ============================================
-                doc.setFillColor(41, 128, 185);
-                doc.rect(0, 0, pageWidth, 40, 'F');
-                
-                doc.setTextColor(255, 255, 255);
-                doc.setFontSize(22);
-                doc.setFont('helvetica', 'bold');
-                doc.text('TBFS LOAN STATEMENT', pageWidth / 2, 18, { align: 'center' });
-                
-                doc.setFontSize(12);
-                doc.setFont('helvetica', 'normal');
-                doc.text(`Loan #${loan.loan_id} - ${loan.client_name}`, pageWidth / 2, 30, { align: 'center' });
-                
-                doc.setTextColor(0, 0, 0);
-                yPos = 50;
-                
-                // ============================================
-                // LOAN SUMMARY
-                // ============================================
-                checkPageBreak(40);
-                doc.setFillColor(236, 240, 241);
-                doc.rect(margin, yPos, contentWidth, 8, 'F');
-                doc.setFontSize(14);
-                doc.setFont('helvetica', 'bold');
-                doc.text('LOAN SUMMARY', margin + 2, yPos + 5.5);
-                yPos += 12;
-                
-                const principal = loan.original_principal || loan.principal_amount || loan.principal || 0;
-                const loanType = loan.loan_type === 'stockvel' ? 'Stockvel Member' : 'Standard';
-                const createdDate = new Date(loan.created_at || Date.now()).toLocaleDateString('en-ZA');
-                
-                doc.setFontSize(10);
-                doc.setFont('helvetica', 'normal');
-                
-                const summaryData = [
-                    ['Loan Type:', loanType],
-                    ['Original Principal:', Calculations.formatCurrency(principal)],
-                    ['Term:', `${loan.term_months} months`],
-                    ['Monthly Payment:', Calculations.formatCurrency(loan.monthly_payment || 0)],
-                    ['Status:', loan.status.toUpperCase()],
-                    ['Created:', createdDate]
-                ];
-                
-                if (loan.completion_date) {
-                    summaryData.push(['Completed:', new Date(loan.completion_date).toLocaleDateString('en-ZA')]);
-                }
-                
-                if (loan.early_payoff) {
-                    summaryData.push(['Early Payoff:', `YES (Month ${loan.payoff_month})`]);
-                    summaryData.push(['Savings:', Calculations.formatCurrency(loan.savings_from_early_payoff || 0)]);
-                }
-                
-                summaryData.forEach(([label, value]) => {
-                    checkPageBreak(6);
-                    doc.setFont('helvetica', 'bold');
-                    doc.text(label, margin + 5, yPos);
-                    doc.setFont('helvetica', 'normal');
-                    doc.text(value, margin + 60, yPos);
-                    yPos += 6;
+                const model = Calculations.buildLoanStatementModel(loan, AppState, {
+                    gracePeriodDays: AppState.gracePeriodDays || 3
                 });
-                
-                yPos += 5;
-                
-                // ============================================
-                // FINANCIAL BREAKDOWN
-                // ============================================
-                checkPageBreak(50);
-                doc.setFillColor(236, 240, 241);
-                doc.rect(margin, yPos, contentWidth, 8, 'F');
-                doc.setFontSize(14);
-                doc.setFont('helvetica', 'bold');
-                doc.text('FINANCIAL BREAKDOWN', margin + 2, yPos + 5.5);
-                yPos += 12;
-                
-                const totalInterest = loan.total_interest || 0;
-                const totalInitiationFee = loan.total_initiation_fee || 0;
-                const totalAdminFees = (loan.term_months || 0) * 60;
-                const totalCost = principal + totalInterest + totalInitiationFee + totalAdminFees;
-                
-                doc.setFontSize(10);
-                doc.setFont('helvetica', 'normal');
-                
-                const financialData = [
-                    ['Original Principal:', Calculations.formatCurrency(principal)],
-                    ['Total Interest:', Calculations.formatCurrency(totalInterest)],
-                    ['Initiation Fee:', Calculations.formatCurrency(totalInitiationFee)],
-                    ['Admin Fees:', Calculations.formatCurrency(totalAdminFees)]
-                ];
-                
-                financialData.forEach(([label, value]) => {
-                    checkPageBreak(6);
-                    doc.setFont('helvetica', 'normal');
-                    doc.text(label, margin + 5, yPos);
-                    doc.text(value, margin + 60, yPos);
-                    yPos += 6;
-                });
-                
-                // Total line
-                checkPageBreak(8);
-                doc.setDrawColor(0, 0, 0);
-                doc.line(margin + 55, yPos, margin + contentWidth - 5, yPos);
-                yPos += 5;
-                doc.setFont('helvetica', 'bold');
-                doc.text('TOTAL LOAN COST:', margin + 5, yPos);
-                doc.text(Calculations.formatCurrency(totalCost), margin + 60, yPos);
-                yPos += 10;
-                
-                if (loan.interest_calculation_months) {
-                    checkPageBreak(6);
-                    doc.setFont('helvetica', 'normal');
-                    doc.setFontSize(9);
-                    doc.text(`Interest Period: ${loan.interest_calculation_months} months`, margin + 5, yPos);
-                    yPos += 5;
-                    
-                    if (loan.interest_recalculated) {
-                        doc.setTextColor(231, 76, 60);
-                        doc.text('⚠ Interest Recalculated due to early overpayment', margin + 5, yPos);
-                        yPos += 5;
-                        doc.setFont('helvetica', 'bold');
-                        doc.text(`New Max Interest: ${Calculations.formatCurrency(loan.max_interest_allowed || 0)}`, margin + 5, yPos);
-                        doc.setTextColor(0, 0, 0);
-                        yPos += 5;
-                    }
-                }
-                
-                yPos += 5;
-                
-                // ============================================
-                // CURRENT POSITION
-                // ============================================
-                checkPageBreak(80);
-                doc.setFillColor(236, 240, 241);
-                doc.rect(margin, yPos, contentWidth, 8, 'F');
-                doc.setFontSize(14);
-                doc.setFont('helvetica', 'bold');
-                doc.text('CURRENT POSITION', margin + 2, yPos + 5.5);
-                yPos += 12;
-                
-                const remainingPrincipal = loan.remaining_principal || 0;
-                const interestPaid = loan.interest_paid || 0;
-                const interestRemaining = Math.max(0, totalInterest - interestPaid);
-                const initiationFeePaid = loan.initiation_fee_paid || 0;
-                const initiationFeeRemaining = Math.max(0, totalInitiationFee - initiationFeePaid);
-                const paymentsMade = loan.payments_made || 0;
-                const paymentsRemaining = (loan.term_months || 0) - paymentsMade;
-                const totalPrincipalReceived = loan.total_principal_received || 0;
-                const progress = ((paymentsMade / (loan.term_months || 1)) * 100).toFixed(1);
-                
-                doc.setFontSize(10);
-                doc.setFont('helvetica', 'normal');
-                
-                const positionData = [
-                    ['Payments Made:', `${paymentsMade} of ${loan.term_months}`],
-                    ['Payments Remaining:', `${paymentsRemaining}`],
-                    ['Progress:', `${progress}%`],
-                    ['', ''],
-                    ['Principal Paid:', Calculations.formatCurrency(totalPrincipalReceived)],
-                    ['Principal Remaining:', Calculations.formatCurrency(remainingPrincipal)],
-                    ['', ''],
-                    ['Interest Paid:', Calculations.formatCurrency(interestPaid)],
-                    ['Interest Remaining:', Calculations.formatCurrency(interestRemaining)],
-                    ['', ''],
-                    ['Initiation Fee Paid:', Calculations.formatCurrency(initiationFeePaid)],
-                    ['Initiation Fee Remaining:', Calculations.formatCurrency(initiationFeeRemaining)],
-                    ['', ''],
-                    ['Admin Fees Paid:', Calculations.formatCurrency(paymentsMade * 60)],
-                    ['Admin Fees Remaining:', Calculations.formatCurrency(paymentsRemaining * 60)]
-                ];
-                
-                positionData.forEach(([label, value]) => {
-                    if (label === '') {
-                        yPos += 3;
-                        return;
-                    }
-                    checkPageBreak(6);
-                    doc.text(label, margin + 5, yPos);
-                    doc.text(value, margin + 70, yPos);
-                    yPos += 6;
-                });
-                
-                // Totals
-                checkPageBreak(10);
-                const totalPaid = totalPrincipalReceived + interestPaid + initiationFeePaid + (paymentsMade * 60);
-                const totalRemaining = remainingPrincipal + interestRemaining + initiationFeeRemaining + (paymentsRemaining * 60);
-                
-                doc.line(margin + 65, yPos, margin + contentWidth - 5, yPos);
-                yPos += 5;
-                doc.setFont('helvetica', 'bold');
-                doc.text('TOTAL PAID:', margin + 5, yPos);
-                doc.text(Calculations.formatCurrency(totalPaid), margin + 70, yPos);
-                yPos += 6;
-                doc.text('TOTAL REMAINING:', margin + 5, yPos);
-                doc.text(Calculations.formatCurrency(totalRemaining), margin + 70, yPos);
-                yPos += 10;
-                
-                // ============================================
-                // ACTIVITY HISTORY
-                // ============================================
-                checkPageBreak(30);
-                doc.setFillColor(236, 240, 241);
-                doc.rect(margin, yPos, contentWidth, 8, 'F');
-                doc.setFontSize(14);
-                doc.setFont('helvetica', 'bold');
-                doc.text('ACTIVITY HISTORY', margin + 2, yPos + 5.5);
-                yPos += 12;
-                
-                // Build activities
-                const activities = [];
-                
-                activities.push({
-                    date: new Date(loan.created_at || Date.now()),
-                    type: 'creation',
-                    description: 'Loan created and disbursed',
-                    amount: principal
-                });
-                
-                if (loan.payment_history && loan.payment_history.length > 0) {
-                    loan.payment_history.forEach((payment, index) => {
-                        const paymentNum = index + 1;
-                        let description = `Payment #${paymentNum}: `;
-                        const parts = [];
-                        
-                        if (payment.principal > 0) parts.push(`Principal: ${Calculations.formatCurrency(payment.principal)}`);
-                        if (payment.interest > 0) parts.push(`Interest: ${Calculations.formatCurrency(payment.interest)}`);
-                        if (payment.initiation_fee > 0) parts.push(`Init Fee: ${Calculations.formatCurrency(payment.initiation_fee)}`);
-                        if (payment.admin_fee > 0) parts.push(`Admin: ${Calculations.formatCurrency(payment.admin_fee)}`);
-                        
-                        description += parts.join(', ');
-                        
-                        activities.push({
-                            date: new Date(payment.date),
-                            type: 'payment',
-                            description: description,
-                            subDescription: `Balance after: ${Calculations.formatCurrency(payment.remaining_principal_after)} | Payments: ${payment.payments_made_after}/${loan.term_months}`,
-                            amount: payment.amount,
-                            recalculated: payment.interest_recalculated,
-                            newMaxInterest: payment.new_max_interest
-                        });
-                    });
-                }
-
-                // Loan adjustments (term changes / top-ups)
-                const adjustmentEvents = getLoanAdjustmentEvents(loan);
-                adjustmentEvents.forEach((ev) => {
-                    const lines = [];
-                    if (ev.reason) lines.push(`Reason: ${ev.reason}`);
-                    if (ev.meta?.scheduleRegenerated) lines.push('- Payment schedule regenerated');
-                    if (Array.isArray(ev.changes) && ev.changes.length > 0) {
-                        ev.changes.forEach(ch => lines.push(formatAdjustmentChangeLine(ch, 'pdf')));
-                    }
-
-                    activities.push({
-                        date: new Date(ev.timestamp || Date.now()),
-                        type: 'adjustment',
-                        description: `Loan adjusted (${humanizeAdjustmentType(ev.adjustmentType)})`,
-                        subDescription: lines.join('\n'),
-                        amount: Number(ev.meta?.amountAdded || ev.meta?.amount || 0)
-                    });
-                });
-                
-                if (loan.early_payoff && loan.payoff_date) {
-                    activities.push({
-                        date: new Date(loan.payoff_date),
-                        type: 'early_payoff',
-                        description: `Early payoff in month ${loan.payoff_month}`,
-                        subDescription: `Saved: ${Calculations.formatCurrency(loan.savings_from_early_payoff || 0)}`,
-                        amount: loan.payoff_amount || 0
-                    });
-                }
-                
-                if (loan.status === 'completed' && loan.completion_date) {
-                    activities.push({
-                        date: new Date(loan.completion_date),
-                        type: 'completion',
-                        description: 'Loan fully paid and completed',
-                        amount: 0
-                    });
-                }
-                
-                if (loan.status === 'defaulted' && loan.default_date) {
-                    activities.push({
-                        date: new Date(loan.default_date),
-                        type: 'default',
-                        description: 'Loan marked as DEFAULTED',
-                        amount: 0
-                    });
-                }
-                
-                activities.sort((a, b) => a.date - b.date);
-                
-                doc.setFontSize(9);
-                doc.setFont('helvetica', 'normal');
-                
-                if (activities.length === 0) {
-                    doc.text('No activity recorded yet.', margin + 5, yPos);
-                    yPos += 6;
-                } else {
-                    activities.forEach((activity) => {
-                        checkPageBreak(20);
-                        
-                        const dateStr = activity.date.toLocaleDateString('en-ZA', {
-                            year: 'numeric', month: 'short', day: 'numeric'
-                        });
-                        const timeStr = activity.date.toLocaleTimeString('en-ZA', {
-                            hour: '2-digit', minute: '2-digit'
-                        });
-                        
-                        // Date and time
-                        doc.setFont('helvetica', 'bold');
-                        doc.text(`${dateStr} ${timeStr}`, margin + 5, yPos);
-                        yPos += 5;
-                        
-                        // Description
-                        doc.setFont('helvetica', 'normal');
-                        writeWrappedLines(activity.description, margin + 10, contentWidth - 15, 4);
-                        
-                        // Sub-description
-                        if (activity.subDescription) {
-                            doc.setFontSize(8);
-                            doc.setTextColor(100, 100, 100);
-                            writeWrappedLines(activity.subDescription, margin + 10, contentWidth - 15, 3.5);
-                            doc.setFontSize(9);
-                            doc.setTextColor(0, 0, 0);
-                        }
-                        
-                        // Amount
-                        if (activity.amount > 0) {
-                            doc.setFont('helvetica', 'bold');
-                            doc.text(`Amount: ${Calculations.formatCurrency(activity.amount)}`, margin + 10, yPos);
-                            doc.setFont('helvetica', 'normal');
-                            yPos += 4;
-                        }
-                        
-                        // Recalculation note
-                        if (activity.recalculated) {
-                            doc.setTextColor(231, 76, 60);
-                            doc.setFont('helvetica', 'bold');
-                            doc.text(`⚠ Interest recalculated! New max: ${Calculations.formatCurrency(activity.newMaxInterest)}`, margin + 10, yPos);
-                            doc.setFont('helvetica', 'normal');
-                            doc.setTextColor(0, 0, 0);
-                            yPos += 4;
-                        }
-                        
-                        yPos += 3;
-                    });
-                }
-                
-                // ============================================
-                // FOOTER on each page
-                // ============================================
-                const pageCount = doc.internal.getNumberOfPages();
-                for (let i = 1; i <= pageCount; i++) {
-                    doc.setPage(i);
-                    doc.setFontSize(8);
-                    doc.setFont('helvetica', 'normal');
-                    doc.setTextColor(128, 128, 128);
-                    doc.text(`Generated: ${new Date().toLocaleString('en-ZA')}`, margin, pageHeight - 10);
-                    doc.text(`Page ${i} of ${pageCount}`, pageWidth - margin, pageHeight - 10, { align: 'right' });
-                    doc.text('TBFS - Transparent, Fair, Simple', pageWidth / 2, pageHeight - 10, { align: 'center' });
-                }
-                
-                // Download
-                const filename = `TBFS_Loan_Statement_${loan.loan_id}_${loan.client_name.replace(/\s+/g, '_')}_${new Date().toISOString().split('T')[0]}.pdf`;
-                
-                // Mobile-friendly download
-                if (/Android|webOS|iPhone|iPad|iPod/i.test(navigator.userAgent)) {
-                    const blob = doc.output('blob');
-                    const url = URL.createObjectURL(blob);
-                    const a = document.createElement('a');
-                    a.href = url;
-                    a.download = filename;
-                    document.body.appendChild(a);
-                    a.click();
-                    document.body.removeChild(a);
-                    URL.revokeObjectURL(url);
-                } else {
-                    doc.save(filename);
-                }
-                
+                const filename = LoanStatementPDF.download(model);
                 alert(`✅ Loan statement downloaded!\n\nFile: ${filename}`);
-                
             } catch (error) {
                 console.error('Error generating PDF:', error);
                 alert(`❌ Error generating PDF:\n\n${error.message}`);
             }
         }
-        
+
+        /**
+         * Client portal PIN / publish shortcuts from an active loan card.
+         * Uses the same account / memberNumber resolution as auto-publish.
+         */
+        async function manageLoanClientPortal(loanId) {
+            const loan = allLoans.find(l => l.loan_id === loanId);
+            if (!loan) {
+                alert('Loan not found');
+                return;
+            }
+            const loanAccount = loan.account_number || loan.client_account ||
+                loan.accountNumber || null;
+            let live = resolvePortalClientForLoan(loan);
+
+            // Synthetic objects are not in AppState — promote by account only.
+            // Do not re-match on memberNumber here: that can override the
+            // account-priority borrower resolvePortalClientForLoan already chose.
+            if (live && !(AppState.clients || []).includes(live)) {
+                const acct = live.account_number || live.accountNumber || loanAccount;
+                const fromState = acct
+                    ? (AppState.clients || []).find(c => {
+                        if (!c) return false;
+                        const cAcct = c.account_number || c.accountNumber;
+                        return cAcct &&
+                            String(cAcct).toUpperCase() === String(acct).toUpperCase();
+                    })
+                    : null;
+                live = fromState || null;
+            }
+
+            const resolvedAccount = (live && (live.account_number || live.accountNumber)) ||
+                loanAccount;
+
+            if (!live) {
+                if (!resolvedAccount) {
+                    alert(
+                        'Could not resolve a client account for this loan.\n' +
+                        'Add/link the client in Clients first (account number required for portal).'
+                    );
+                    return;
+                }
+                if (!confirm('No Clients record yet for ' + resolvedAccount +
+                    '.\nCreate a basic client record so portal access can be saved?')) {
+                    return;
+                }
+                const parts = String(loan.client_name || '').trim().split(/\s+/);
+                live = {
+                    account_number: resolvedAccount,
+                    first_name: parts[0] || loan.client_name || 'Client',
+                    last_name: parts.slice(1).join(' ') || '',
+                    status: 'active',
+                    client_type: loan.memberNumber != null ? 'stockvel' : 'standard',
+                    memberNumber: loan.memberNumber != null ? loan.memberNumber : undefined
+                };
+                if (!AppState.clients) AppState.clients = [];
+                AppState.clients.push(live);
+                AppStateManager.save(AppState);
+            } else if (!(live.account_number || live.accountNumber) && resolvedAccount) {
+                live.account_number = resolvedAccount;
+                AppStateManager.save(AppState);
+            }
+            if (typeof ClientStatus === 'undefined') {
+                alert('ClientStatus module not loaded');
+                return;
+            }
+            const access = live.client_access || {};
+            const displayAccount = live.account_number || live.accountNumber || resolvedAccount;
+            const choice = prompt(
+                'Client portal — Loan #' + loanId + ' / ' + displayAccount + '\n\n' +
+                'Access: ' + (access.enabled ? 'ENABLED' : 'disabled') +
+                (access.published_at ? '\nLast published: ' + access.published_at : '') +
+                '\n\n1 — Set / reset PIN\n2 — Publish status pack\n3 — Copy portal link\n\nEnter 1, 2, or 3:'
+            );
+            if (!choice) return;
+            try {
+                if (choice.trim() === '1') {
+                    const pin = prompt('PIN for this client (min 4 characters):');
+                    if (!pin) return;
+                    try {
+                        const result = await ClientStatus.enableAndPublish(live, AppState, pin);
+                        AppStateManager.save(AppState);
+                        alert(
+                            '✅ PIN saved and status published.\n' +
+                            'Remote: ' + (result.pub && result.pub.remote ? 'yes' : 'local only') +
+                            '\nPIN remembered for this browser session (auto-refresh after payments).' +
+                            '\nPortal: ' + ClientStatus.portalUrl()
+                        );
+                    } catch (pubErr) {
+                        AppStateManager.save(AppState);
+                        throw pubErr;
+                    }
+                } else if (choice.trim() === '2') {
+                    let pin = ClientStatus.getRememberedPin(displayAccount);
+                    if (!pin) {
+                        pin = prompt('Enter client PIN to publish encrypted status:');
+                        if (!pin) return;
+                    }
+                    const result = await ClientStatus.publishForClient(live, AppState, pin);
+                    AppStateManager.save(AppState);
+                    alert('✅ Published.\nRemote: ' + (result.pub.remote ? 'yes' : 'local only') +
+                        '\nPortal: ' + ClientStatus.portalUrl());
+                } else if (choice.trim() === '3') {
+                    const url = ClientStatus.portalUrl();
+                    if (navigator.clipboard && navigator.clipboard.writeText) {
+                        await navigator.clipboard.writeText(url);
+                        alert('Copied: ' + url);
+                    } else {
+                        prompt('Portal link:', url);
+                    }
+                }
+            } catch (e) {
+                alert('❌ ' + (e.message || e));
+            }
+        }
+
         /**
          * View comprehensive loan statement with full activity history
          */
@@ -3287,313 +3112,109 @@ Click "OK" to process payment or "Cancel" to go back.
                 alert('❌ Loan not found!');
                 return;
             }
-            
-            // Build comprehensive loan statement
+
+            const model = Calculations.buildLoanStatementModel(loan, AppState, {
+                gracePeriodDays: AppState.gracePeriodDays || 3
+            });
+            const money = (n) => Calculations.formatCurrency(n);
+            const fmtDate = (v) => {
+                if (!v) return '—';
+                const d = new Date(v);
+                return isNaN(d.getTime()) ? String(v) : d.toLocaleString('en-ZA');
+            };
+            const s = model.summary;
+            const f = model.financials;
+            const p = model.position;
+            const boxInner = (text) => {
+                const line = String(text || '').slice(0, 48).padEnd(48, ' ');
+                return '║' + line + '║\n';
+            };
             let statement = '';
-            
-            // ============================================
-            // HEADER - Loan Summary
-            // ============================================
+            statement += '╔' + '═'.repeat(48) + '╗\n';
+            statement += boxInner('        TBFS LOAN STATEMENT');
+            statement += boxInner(
+                '        Loan #' + s.loan_id + ' - ' + (s.client_name || '').slice(0, 28)
+            );
+            statement += '╚' + '═'.repeat(48) + '╝\n\n';
+            statement += `📋 LOAN SUMMARY
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Loan Type:              ${s.loan_type_label}
+Original Principal:     ${money(s.original_principal)}
+Term:                   ${s.term_months} months
+Monthly Payment:        ${money(s.monthly_payment)}
+Status:                 ${String(s.status || '').toUpperCase()}
+Created:                ${fmtDate(s.created_at)}
+`;
+            if (s.completion_date) statement += `Completed:              ${fmtDate(s.completion_date)}\n`;
+            if (s.early_payoff) {
+                statement += `Early Payoff:           YES (Month ${s.payoff_month})\n`;
+                statement += `Savings from Early:     ${money(s.savings_from_early_payoff)}\n`;
+            }
             statement += `
-╔════════════════════════════════════════════════╗
-║        TBFS LOAN STATEMENT                     ║
-║        Loan #${loan.loan_id} - ${loan.client_name.padEnd(28, ' ')}║
-╚════════════════════════════════════════════════╝
+💰 FINANCIAL BREAKDOWN
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Original Principal:     ${money(f.original_principal)}
+Total Interest:         ${money(f.total_interest)}
+Initiation Fee:         ${money(f.initiation_fee)}
+Admin (scheduled):      ${money(f.admin_scheduled)}
+Admin (extra):          ${money(f.admin_extra_assessed)}
+Late Penalties:         ${money(f.late_penalties_assessed)}
+TOTAL LOAN COST:        ${money(f.total_loan_cost)}
 
-📋 LOAN SUMMARY
+📈 CURRENT POSITION
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Payments:               ${p.payments_made} of ${p.term_months} (${p.progress_pct}%)
+Principal Remaining:    ${money(p.principal_remaining)}
+Interest Remaining:     ${money(p.interest_remaining)}
+Admin Remaining:        ${money(p.admin_remaining)}
+Late Penalty Remaining: ${money(p.late_penalty_remaining)}
+TOTAL PAID:             ${money(p.total_paid)}
+TOTAL REMAINING:        ${money(p.total_remaining)}
+
+📜 ACTIVITY HISTORY
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 `;
-            
-            const principal = loan.original_principal || loan.principal_amount || loan.principal || 0;
-            const loanType = loan.loan_type === 'stockvel' ? '🌟 Stockvel Member' : '📄 Standard';
-            const createdDate = new Date(loan.created_at || Date.now()).toLocaleDateString('en-ZA', {
-                year: 'numeric', month: 'short', day: 'numeric'
-            });
-            
-            statement += `
-Loan Type:              ${loanType}
-Original Principal:     ${Calculations.formatCurrency(principal)}
-Term:                   ${loan.term_months} months
-Monthly Payment:        ${Calculations.formatCurrency(loan.monthly_payment || 0)}
-Status:                 ${loan.status.toUpperCase()}
-Created:                ${createdDate}
-`;
-            
-            if (loan.completion_date) {
-                const completedDate = new Date(loan.completion_date).toLocaleDateString('en-ZA', {
-                    year: 'numeric', month: 'short', day: 'numeric'
-                });
-                statement += `Completed:              ${completedDate}\n`;
-            }
-            
-            if (loan.early_payoff) {
-                statement += `Early Payoff:           ✅ YES (Month ${loan.payoff_month})\n`;
-                statement += `Savings from Early:     ${Calculations.formatCurrency(loan.savings_from_early_payoff || 0)}\n`;
-            }
-            
-            // ============================================
-            // FINANCIAL BREAKDOWN
-            // ============================================
-            statement += `
-\n💰 FINANCIAL BREAKDOWN
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-`;
-            
-            const totalInterest = loan.total_interest || 0;
-            const totalInitiationFee = loan.total_initiation_fee || 0;
-            const totalAdminFees = (loan.term_months || 0) * 60;
-            const totalCost = principal + totalInterest + totalInitiationFee + totalAdminFees;
-            
-            statement += `
-Original Principal:     ${Calculations.formatCurrency(principal)}
-Total Interest:         ${Calculations.formatCurrency(totalInterest)}
-Initiation Fee:         ${Calculations.formatCurrency(totalInitiationFee)}
-Admin Fees:             ${Calculations.formatCurrency(totalAdminFees)}
-                        ────────────────────
-TOTAL LOAN COST:        ${Calculations.formatCurrency(totalCost)}
-`;
-            
-            // Interest calculation details
-            if (loan.interest_calculation_months) {
-                statement += `\n📊 Interest Period:     ${loan.interest_calculation_months} months\n`;
-                if (loan.interest_recalculated) {
-                    statement += `⚠️  Interest Recalculated: YES (due to early overpayment)\n`;
-                    statement += `   New Max Interest:    ${Calculations.formatCurrency(loan.max_interest_allowed || 0)}\n`;
-                }
-            }
-            
-            // ============================================
-            // CURRENT POSITION
-            // ============================================
-            statement += `
-\n📈 CURRENT POSITION
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-`;
-            
-            const remainingPrincipal = loan.remaining_principal || 0;
-            const interestPaid = loan.interest_paid || 0;
-            const interestRemaining = Math.max(0, totalInterest - interestPaid);
-            const initiationFeePaid = loan.initiation_fee_paid || 0;
-            const initiationFeeRemaining = Math.max(0, totalInitiationFee - initiationFeePaid);
-            const paymentsMade = loan.payments_made || 0;
-            const paymentsRemaining = (loan.term_months || 0) - paymentsMade;
-            const totalPrincipalReceived = loan.total_principal_received || 0;
-            
-            statement += `
-Payments Made:          ${paymentsMade} of ${loan.term_months}
-Payments Remaining:     ${paymentsRemaining}
-Progress:               ${((paymentsMade / (loan.term_months || 1)) * 100).toFixed(1)}%
-
-Principal Paid:         ${Calculations.formatCurrency(totalPrincipalReceived)}
-Principal Remaining:    ${Calculations.formatCurrency(remainingPrincipal)}
-
-Interest Paid:          ${Calculations.formatCurrency(interestPaid)}
-Interest Remaining:     ${Calculations.formatCurrency(interestRemaining)}
-
-Initiation Fee Paid:    ${Calculations.formatCurrency(initiationFeePaid)}
-Initiation Fee Remaining: ${Calculations.formatCurrency(initiationFeeRemaining)}
-
-Admin Fees Paid:        ${Calculations.formatCurrency((paymentsMade * 60))}
-Admin Fees Remaining:   ${Calculations.formatCurrency((paymentsRemaining * 60))}
-`;
-            
-            const totalPaid = totalPrincipalReceived + interestPaid + initiationFeePaid + (paymentsMade * 60);
-            const totalRemaining = remainingPrincipal + interestRemaining + initiationFeeRemaining + (paymentsRemaining * 60);
-            
-            statement += `
-                        ────────────────────
-TOTAL PAID:             ${Calculations.formatCurrency(totalPaid)}
-TOTAL REMAINING:        ${Calculations.formatCurrency(totalRemaining)}
-`;
-            
-            // ============================================
-            // PAYMENT HISTORY / ACTIVITY LOG
-            // ============================================
-            statement += `
-\n📜 ACTIVITY HISTORY
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-`;
-            
-            // Build activity timeline
-            const activities = [];
-            
-            // 1. Loan Creation
-            activities.push({
-                date: new Date(loan.created_at || Date.now()),
-                type: 'creation',
-                description: 'Loan created and disbursed',
-                amount: principal,
-                icon: '🆕'
-            });
-            
-            // 2. Payment History
-            if (loan.payment_history && loan.payment_history.length > 0) {
-                loan.payment_history.forEach((payment, index) => {
-                    const paymentNum = index + 1;
-                    let description = `Payment #${paymentNum}: `;
-                    description += `Principal: ${Calculations.formatCurrency(payment.principal)}`;
-                    
-                    if (payment.interest > 0) {
-                        description += `, Interest: ${Calculations.formatCurrency(payment.interest)}`;
-                    }
-                    if (payment.initiation_fee > 0) {
-                        description += `, Init Fee: ${Calculations.formatCurrency(payment.initiation_fee)}`;
-                    }
-                    if (payment.admin_fee > 0) {
-                        description += `, Admin: ${Calculations.formatCurrency(payment.admin_fee)}`;
-                    }
-                    
-                    description += `\n   → Balance after: ${Calculations.formatCurrency(payment.remaining_principal_after)}`;
-                    description += ` | Payments: ${payment.payments_made_after}/${loan.term_months}`;
-                    
-                    if (payment.interest_recalculated) {
-                        description += `\n   🔄 Interest recalculated! New max: ${Calculations.formatCurrency(payment.new_max_interest)}`;
-                    }
-                    
-                    activities.push({
-                        date: new Date(payment.date),
-                        type: 'payment',
-                        description: description,
-                        amount: payment.amount,
-                        icon: '💰'
-                    });
-                });
-            }
-
-            // 2b. Loan Adjustments (term changes / top-ups)
-            const adjustmentEvents = getLoanAdjustmentEvents(loan);
-            adjustmentEvents.forEach((ev) => {
-                let description = `Loan adjusted (${humanizeAdjustmentType(ev.adjustmentType)})`;
-                if (ev.reason) description += `\n   Reason: ${ev.reason}`;
-                if (ev.meta?.scheduleRegenerated) description += `\n   • Payment schedule regenerated`;
-                if (Array.isArray(ev.changes) && ev.changes.length > 0) {
-                    ev.changes.forEach(ch => {
-                        description += `\n   ${formatAdjustmentChangeLine(ch, 'text')}`;
-                    });
-                }
-
-                activities.push({
-                    date: new Date(ev.timestamp || Date.now()),
-                    type: 'adjustment',
-                    description: description,
-                    amount: Number(ev.meta?.amountAdded || ev.meta?.amount || 0),
-                    icon: '🔧'
-                });
-            });
-            
-            // 3. Interest Recalculation Events
-            if (loan.interest_recalculated && loan.last_recalculation_date) {
-                // Check if not already shown in payment
-                const recalcAlreadyShown = activities.some(a => 
-                    a.type === 'payment' && 
-                    a.date.toISOString() === new Date(loan.last_recalculation_date).toISOString()
-                );
-                
-                if (!recalcAlreadyShown) {
-                    activities.push({
-                        date: new Date(loan.last_recalculation_date),
-                        type: 'recalculation',
-                        description: `Interest recalculated due to overpayment\n   → New max interest: ${Calculations.formatCurrency(loan.max_interest_allowed)}`,
-                        amount: 0,
-                        icon: '🔄'
-                    });
-                }
-            }
-            
-            // 4. Early Payoff
-            if (loan.early_payoff && loan.payoff_date) {
-                activities.push({
-                    date: new Date(loan.payoff_date),
-                    type: 'early_payoff',
-                    description: `Early payoff in month ${loan.payoff_month}\n   → Saved: ${Calculations.formatCurrency(loan.savings_from_early_payoff || 0)}`,
-                    amount: loan.payoff_amount || 0,
-                    icon: '🎯'
-                });
-            }
-            
-            // 5. Completion
-            if (loan.status === 'completed' && loan.completion_date) {
-                activities.push({
-                    date: new Date(loan.completion_date),
-                    type: 'completion',
-                    description: 'Loan fully paid and completed',
-                    amount: 0,
-                    icon: '✅'
-                });
-            }
-            
-            // 6. Default
-            if (loan.status === 'defaulted' && loan.default_date) {
-                activities.push({
-                    date: new Date(loan.default_date),
-                    type: 'default',
-                    description: 'Loan marked as DEFAULTED',
-                    amount: 0,
-                    icon: '⚠️'
-                });
-            }
-            
-            // Sort activities by date (oldest first)
-            activities.sort((a, b) => a.date - b.date);
-            
-            // Display activities
-            if (activities.length === 0) {
-                statement += `\nNo activity recorded yet.\n`;
+            if (!model.activity.length) {
+                statement += '\nNo activity recorded yet.\n';
             } else {
-                activities.forEach((activity, index) => {
-                    const dateStr = activity.date.toLocaleDateString('en-ZA', {
-                        year: 'numeric',
-                        month: 'short',
-                        day: 'numeric'
-                    });
-                    
-                    const timeStr = activity.date.toLocaleTimeString('en-ZA', {
-                        hour: '2-digit',
-                        minute: '2-digit'
-                    });
-                    
-                    statement += `\n${activity.icon} ${dateStr} ${timeStr}\n`;
-                    statement += `   ${activity.description}\n`;
-                    
-                    if (activity.amount > 0) {
-                        statement += `   Amount: ${Calculations.formatCurrency(activity.amount)}\n`;
+                model.activity.forEach(item => {
+                    statement += `\n• ${fmtDate(item.date)}\n  ${item.title}\n`;
+                    if (item.detail) statement += `  ${item.detail.replace(/\n/g, '\n  ')}\n`;
+                    if (Number(item.amount) > 0) statement += `  Amount: ${money(item.amount)}\n`;
+                });
+            }
+            statement += `
+📅 PAYMENT SCHEDULE
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+`;
+            if (!model.schedule.length) {
+                statement += '\nNo schedule on file.\n';
+            } else {
+                model.schedule.forEach(row => {
+                    statement += `\n#${row.index} Due ${fmtDate(row.due_date)} [${String(row.status || '').toUpperCase()}]\n`;
+                    statement += `  P ${money(row.principal)} | I ${money(row.interest)} | Init ${money(row.initiation_fee)} | Admin ${money(row.admin_fee)}\n`;
+                    if (Number(row.extra_admin_assessed) > 0 || Number(row.late_penalty_assessed) > 0) {
+                        statement += `  Assessed extra admin ${money(row.extra_admin_assessed)} | late penalty ${money(row.late_penalty_assessed)}\n`;
+                    }
+                    if (Number(row.amount_paid) > 0) {
+                        statement += `  Paid ${money(row.amount_paid)}${row.payment_date ? ' on ' + fmtDate(row.payment_date) : ''}\n`;
                     }
                 });
             }
-            
-            // ============================================
-            // FOOTER
-            // ============================================
             statement += `
-\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-Generated: ${new Date().toLocaleString('en-ZA')}
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Generated: ${fmtDate(model.generated_at)}
 TBFS - Transparent, Fair, Simple
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 `;
-            
-            // Display in alert with option to download PDF
             const choice = confirm(
-                statement + 
-                '\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n' +
-                '📥 Would you like to download this statement as PDF?\n\n' +
-                'Click OK to download PDF, or Cancel to close.'
+                statement +
+                '\n\n📥 Download this statement as PDF?\n\nClick OK to download PDF, or Cancel to close.'
             );
-            
-            if (choice) {
-                downloadLoanStatementPDF(loanId);
-            }
+            if (choice) downloadLoanStatementPDF(loanId);
         }
-        
-        /**
-         * Mark loan as defaulted
-         */
-        /**
-         * Main loan adjustment function
-         * Provides options to adjust loan terms and amounts
-         * 
-         * @param {number} loanId - The ID of the loan to adjust
-         */
-        function adjustLoan(loanId) {
+
+        async function adjustLoan(loanId) {
             const loan = allLoans.find(l => l.loan_id === loanId);
             if (!loan) {
                 alert('❌ Loan not found!');
@@ -3622,16 +3243,24 @@ TBFS - Transparent, Fair, Simple
                 return; // User cancelled
             }
             
-            switch (option.trim()) {
-                case '1':
-                    changeRepaymentPeriod(loanId);
-                    break;
-                case '2':
-                    addAmountToLoan(loanId);
-                    break;
-                default:
-                    alert('❌ Invalid option selected!');
-                    return;
+            try {
+                switch (option.trim()) {
+                    case '1':
+                        await changeRepaymentPeriod(loanId);
+                        break;
+                    case '2':
+                        await addAmountToLoan(loanId);
+                        break;
+                    default:
+                        alert('❌ Invalid option selected!');
+                        return;
+                }
+            } catch (err) {
+                console.error('Loan adjustment failed:', err);
+                alert(
+                    '❌ Loan adjustment failed:\n\n' +
+                    (err && err.message ? err.message : String(err))
+                );
             }
         }
         
@@ -3643,7 +3272,7 @@ TBFS - Transparent, Fair, Simple
          * 
          * @param {number} loanId - The ID of the loan to adjust
          */
-        function changeRepaymentPeriod(loanId) {
+        async function changeRepaymentPeriod(loanId) {
             const loan = allLoans.find(l => l.loan_id === loanId);
             if (!loan) {
                 alert('❌ Loan not found!');
@@ -3836,7 +3465,8 @@ TBFS - Transparent, Fair, Simple
             loan.total_interest = totalInterest;
             loan.total_initiation_fee = totalInitiationFee;
             loan.interest_calculation_months = preserveThrough + remainingInterestPeriod;
-            loan.max_interest_allowed = Math.min(loan.total_interest, loan.original_principal || loan.principal_amount || remainingPrincipal);
+            // Cap = calculated interest for the interest period (matches schedule).
+            loan.max_interest_allowed = Number(loan.total_interest) || 0;
             loan.expected_monthly_interest = repaymentBreakdown.interestPerMonthRaw;
             
             // STEP 4: UPDATE MONTHLY PAYMENT
@@ -3887,6 +3517,8 @@ TBFS - Transparent, Fair, Simple
             
             // STEP 7: SAVE STATE
             AppStateManager.save(AppState);
+            const portalNote = portalRefreshHintForLoan(loan);
+            schedulePortalRefreshForLoan(loan);
             
             // STEP 8: RELOAD LOANS TO REFLECT CHANGES
             loadLoans();
@@ -3907,7 +3539,8 @@ TBFS - Transparent, Fair, Simple
                 `────────────────────────\n` +
                 `Total Monthly Repayment: ${Calculations.formatCurrency(repaymentBreakdown.monthlyPayment)}\n\n` +
                 `Reason: ${reason}\n\n` +
-                `💡 Payment schedule has been regenerated.`
+                `💡 Payment schedule has been regenerated.` +
+                portalNote
             );
         }
         
@@ -3922,7 +3555,7 @@ TBFS - Transparent, Fair, Simple
          * 
          * @param {number} loanId - The ID of the loan to add amount to
          */
-        function addAmountToLoan(loanId) {
+        async function addAmountToLoan(loanId) {
             const loan = allLoans.find(l => l.loan_id === loanId);
             if (!loan) {
                 alert('❌ Loan not found!');
@@ -4119,7 +3752,7 @@ TBFS - Transparent, Fair, Simple
             // Update interest cap
             const interestPeriod = Calculations.calculateInterestPeriod(currentTerm).interestMonths;
             loan.interest_calculation_months = interestPeriod;
-            loan.max_interest_allowed = Math.min(recalculatedInterest, newPrincipal);
+            loan.max_interest_allowed = Number(recalculatedInterest) || 0;
             loan.expected_monthly_interest = remainingInterest / remainingMonths;
             
             // STEP 5: UPDATE APPSTATE
@@ -4166,6 +3799,8 @@ TBFS - Transparent, Fair, Simple
             
             // STEP 8: SAVE STATE
             AppStateManager.save(AppState);
+            const portalNote = portalRefreshHintForLoan(loan);
+            schedulePortalRefreshForLoan(loan);
             
             // STEP 9: RELOAD LOANS TO REFLECT CHANGES
             loadLoans();
@@ -4181,7 +3816,8 @@ TBFS - Transparent, Fair, Simple
                 `Monthly Payment: ${Calculations.formatCurrency(oldMonthlyPayment)} → ${Calculations.formatCurrency(newMonthlyPayment)}\n` +
                 `Additional Initiation Fee: ${Calculations.formatCurrency(additionalInitiationFee)}\n\n` +
                 `Reason: ${reason}\n\n` +
-                `💡 Payment schedule has been regenerated.`
+                `💡 Payment schedule has been regenerated.` +
+                portalNote
             );
         }
         
@@ -4297,8 +3933,10 @@ TBFS - Transparent, Fair, Simple
             
             // Save state
             AppStateManager.save(AppState);
+            const portalNote = portalRefreshHintForLoan(loan);
+            schedulePortalRefreshForLoan(loan);
             
-            alert('✅ Loan marked as defaulted.');
+            alert('✅ Loan marked as defaulted.' + portalNote);
             loadLoans();
         }
         
@@ -4553,6 +4191,6 @@ TBFS - Transparent, Fair, Simple
     </div>
 
     <!-- Service Worker Registration -->
-    <script src="shared/sw-register.js?v=48"></script>
+    <script src="shared/sw-register.js?v=68"></script>
 </body>
 </html>

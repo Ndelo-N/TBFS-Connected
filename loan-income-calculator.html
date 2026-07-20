@@ -407,7 +407,8 @@
                 <h4 style="color: #1976d2; margin-bottom: 10px; font-size: 16px;">📋 Fixed Calculation Parameters</h4>
                 <p style="color: #424242; font-size: 14px; margin-bottom: 5px;"><strong>Monthly TBFS Income:</strong> 30% of outstanding balance</p>
                 <p style="color: #424242; font-size: 14px; margin-bottom: 5px;"><strong>Initiation Fee:</strong> 12% of principal (distributed over term)</p>
-                <p style="color: #424242; font-size: 14px;"><strong>Admin Fee:</strong> R60 per month</p>
+                <p style="color: #424242; font-size: 14px; margin-bottom: 5px;"><strong>Admin Fee:</strong> R60 per month</p>
+                <p style="color: #424242; font-size: 14px;"><strong>Interest period:</strong> max(3, ceil(term ÷ 2)), capped at term — then equalized across all months</p>
             </div>
 
             <div style="text-align: center; margin-top: 20px;">
@@ -458,12 +459,13 @@
             </div>
 
             <div class="info-box">
-                <h4>ℹ️ New Calculation Method (Updated)</h4>
-                <p><strong>Monthly TBFS Income:</strong> 30% of outstanding balance each month</p>
-                <p style="margin-top: 8px;"><strong>Breakdown:</strong> 
+                <h4>ℹ️ Standard Loan Method (shared calculator)</h4>
+                <p><strong>Monthly TBFS Income:</strong> 30% of outstanding balance during the interest period only</p>
+                <p style="margin-top: 8px;"><strong>Breakdown:</strong>
                     • Initiation Fee: 12% of principal (distributed evenly over term)<br>
                     • Admin Fee: R60 per month<br>
-                    • Interest: Remainder (30% - initiation portion - admin fee)
+                    • Interest: computed for interest-period months, then equalized across the full term<br>
+                    • Max collectible interest = calculated interest (not capped at principal)
                 </p>
                 <p style="margin-top: 8px;"><strong>Total Income = Interest + Initiation Fee (12%) + (R60 × Term)</strong></p>
             </div>
@@ -476,46 +478,21 @@
         </div>
     </main>
 
+    <script src="shared/calculations.js?v=68"></script>
     <script>
         function calculateLoanIncome(principal, term) {
-            // NEW CALCULATION METHOD:
-            // Monthly TBFS income = 30% of outstanding balance
-            // Total initiation fee = 12% of principal (distributed over term)
-            // Admin fee = R60 per month
-            // Interest = TBFS income - initiation portion - admin fee
-            
-            const initiationFee = principal * 0.12;
-            const monthlyInitiationFee = initiationFee / term;
-            const adminFeePerMonth = 60;
-            
-            let outstandingBalance = principal;
-            let totalInterest = 0;
-            const monthlyPrincipalPayment = principal / term;
-            
-            for (let month = 1; month <= term; month++) {
-                // Calculate TBFS income as 30% of outstanding balance
-                const tbfsIncome = outstandingBalance * 0.30;
-                
-                // Break down TBFS income
-                const monthlyInterest = tbfsIncome - monthlyInitiationFee - adminFeePerMonth;
-                
-                totalInterest += monthlyInterest;
-                outstandingBalance -= monthlyPrincipalPayment;
-            }
-            
-            // Calculate fees
-            const totalAdminFees = adminFeePerMonth * term;
-            
-            // Total income
-            const totalIncome = totalInterest + initiationFee + totalAdminFees;
-            
+            // Single source of truth: same interest-period + equalization as
+            // calculator.html / Calculations.calculateStandardLoan.
+            const result = Calculations.calculateStandardLoan(principal, term);
             return {
                 principal,
                 term,
-                totalInterest: Math.round(totalInterest * 100) / 100,
-                initiationFee: Math.round(initiationFee * 100) / 100,
-                totalAdminFees,
-                totalIncome: Math.round(totalIncome * 100) / 100
+                totalInterest: result.totalInterest,
+                initiationFee: result.totalInitiationFee,
+                totalAdminFees: result.totalAdminFees,
+                totalIncome: result.totalInterest + result.totalInitiationFee + result.totalAdminFees,
+                interestMonths: result.interestMonths,
+                maxInterestAllowed: result.maxInterestAllowed
             };
         }
 
@@ -590,7 +567,7 @@
         }
 
         function generateSampleBreakdown(sampleAmount) {
-            const sampleTerm = 3; // 3-month example
+            const sampleTerm = 6; // shows interest-period protection (3 of 6 months)
             const result = calculateLoanIncome(sampleAmount, sampleTerm);
             
             const container = document.getElementById('sampleBreakdown');
@@ -604,8 +581,12 @@
                     <div class="value">${sampleTerm} Months</div>
                 </div>
                 <div class="breakdown-card">
-                    <h4>Interest Earned</h4>
-                    <div class="value">${formatCurrency(result.totalInterest)}</div>
+                    <h4>Interest Period</h4>
+                    <div class="value">${result.interestMonths} of ${sampleTerm}</div>
+                </div>
+                <div class="breakdown-card">
+                    <h4>Interest Earned (cap)</h4>
+                    <div class="value">${formatCurrency(result.maxInterestAllowed)}</div>
                 </div>
                 <div class="breakdown-card">
                     <h4>Initiation Fee</h4>
@@ -712,8 +693,8 @@
     </script>
     
     <!-- Shared Modules -->
-    <script src="shared/navigation.js?v=48"></script>
+    <script src="shared/navigation.js?v=68"></script>
     <!-- Service Worker Registration -->
-    <script src="shared/sw-register.js?v=48"></script>
+    <script src="shared/sw-register.js?v=68"></script>
 </body>
 </html>

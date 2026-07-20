@@ -202,24 +202,28 @@ const Calculations = {
     },
     
     /**
-     * Calculate interest period for long-term loans
-     * Rule: Math.ceil(term/2) with minimum 3 months, capped at actual term
-     * This prevents excessive interest on long-term loans while ensuring revenue
+     * Calculate interest period for long-term loans.
+     * Rule: max(3, ceil(term/2)), capped at the actual term.
+     * Interest is computed only over this period (declining balance), then
+     * equalized across all term months — that is the long-term protection,
+     * not a separate "100% of principal" clamp on collectible interest.
      */
     calculateInterestPeriod(term) {
-        const calculatedMonths = Math.ceil(term / 2) >= 3 ? Math.ceil(term / 2) : 3;
-        const interestMonths = Math.min(calculatedMonths, term);
-        
-        dbg(`Interest Period Calculation: term=${term} months → interest period=${interestMonths} months`);
-        
+        const t = Math.max(0, Math.floor(Number(term) || 0));
+        const halfCeil = Math.ceil(t / 2);
+        const calculatedMonths = Math.max(3, halfCeil);
+        const interestMonths = Math.min(calculatedMonths, t || 0);
+
+        dbg(`Interest Period Calculation: term=${t} months → interest period=${interestMonths} months`);
+
         return {
             interestMonths,
             calculatedMonths,
-            description: term <= 2 ? 
-                `Short-term: Full ${term} month interest` :
-                term <= 6 ?
-                `Medium-term: ${interestMonths} months (min 3)` :
-                `Long-term: ${interestMonths} months (half term)`
+            description: t <= 2
+                ? `Short-term: Full ${t} month interest`
+                : t <= 6
+                    ? `Medium-term: ${interestMonths} months (min 3 / half term)`
+                    : `Long-term: ${interestMonths} months (half term)`
         };
     },
     
@@ -235,17 +239,20 @@ const Calculations = {
         
         // Calculate interest period
         const interestPeriod = this.calculateInterestPeriod(term);
+        const interestTotal = Number(totalInterest) || 0;
         
         // Return fields to add to loan object
         return {
             // Interest Calculation Period
             interest_calculation_months: interestPeriod.interestMonths,
             
-            // Interest Cap (100% of principal maximum)
-            max_interest_allowed: Math.min(totalInterest, principal),
+            // Collectible interest = calculated period interest (matches schedule /
+            // monthly payment). Long-term protection is the shortened interest
+            // period, not a principal-sized ceiling that under-collects vs the bill.
+            max_interest_allowed: this.round(interestTotal),
             
             // Expected monthly interest (equalized)
-            expected_monthly_interest: totalInterest / term,
+            expected_monthly_interest: term > 0 ? interestTotal / term : 0,
             
             // Tracking fields
             total_interest_charged: 0,
@@ -541,6 +548,114 @@ const Calculations = {
         };
     },
     
+    /**
+     * Quote-only stockvel loan estimate (no disbursement / no AppState writes).
+     * Mirrors the calculator's tiered declining-balance schedule, then equalizes
+     * the monthly installment across the term.
+     */
+    estimateStockvelLoanQuote(principal, term, totalContributions, monthlyContribution) {
+        const p = Number(principal) || 0;
+        const t = Math.max(1, Math.floor(Number(term) || 0));
+        const startSavings = Math.max(0, Number(totalContributions) || 0);
+        const monthlySav = Math.max(0, Number(monthlyContribution) || 0);
+        if (p <= 0) {
+            return {
+                monthlyPayment: 0, totalInterest: 0, totalAdminFees: 0,
+                totalInitiationFee: 0, totalCost: 0, months: t
+            };
+        }
+
+        let outstandingBalance = p;
+        let currentSavings = startSavings;
+        const initiationFee = p <= currentSavings
+            ? 0
+            : (p - currentSavings) * RATES.INITIATION_FEE_RATE;
+        const monthlyInitiationFee = initiationFee / t;
+        const monthlyDetails = [];
+
+        for (let month = 1; month <= t; month++) {
+            if (month > 1) currentSavings += monthlySav;
+            const tieredResult = this.calculateTieredStockvelInterest(
+                outstandingBalance, currentSavings);
+            const principalPayment = p / t;
+            let interestPayment = 0;
+            if (tieredResult && tieredResult.tiers1to4Interest !== undefined &&
+                outstandingBalance > 0) {
+                const tieredInterest = tieredResult.tiers1to4Interest *
+                    (p / outstandingBalance);
+                const minimumInterest = (p / t) * RATES.STOCKVEL_MIN_MONTHLY_RATE;
+                interestPayment = Math.max(tieredInterest, minimumInterest);
+            } else {
+                interestPayment = (p / t) * RATES.STOCKVEL_MIN_MONTHLY_RATE;
+            }
+            let adminFee = RATES.ADMIN_FEE_STANDARD;
+            if (tieredResult && tieredResult.tier1to4Amount > 0) {
+                const effectiveRate = tieredResult.tiers1to4Interest /
+                    tieredResult.tier1to4Amount;
+                adminFee = Math.max(0, RATES.ADMIN_FEE_STANDARD * (1 - effectiveRate));
+            }
+            monthlyDetails.push({
+                principal_payment: principalPayment,
+                interest_payment: interestPayment,
+                admin_fee: adminFee,
+                initiation_fee: monthlyInitiationFee
+            });
+            outstandingBalance -= principalPayment;
+        }
+
+        const totalInterest = monthlyDetails.reduce(
+            (s, m) => s + (m.interest_payment || 0), 0);
+        const totalAdminFees = monthlyDetails.reduce(
+            (s, m) => s + (m.admin_fee || 0), 0);
+        const totalInitiationFee = initiationFee;
+        const totalCost = p + totalInterest + totalAdminFees + totalInitiationFee;
+        const monthlyPayment = totalCost / t;
+
+        return {
+            monthlyPayment: this.round(monthlyPayment),
+            totalInterest: this.round(totalInterest),
+            totalAdminFees: this.round(totalAdminFees),
+            totalInitiationFee: this.round(totalInitiationFee),
+            totalCost: this.round(totalCost),
+            months: t
+        };
+    },
+
+    /**
+     * Side-by-side standard vs stockvel quote for client portal education.
+     * Stockvel estimate uses hypothetical contributions (client-entered).
+     */
+    estimateLoanComparison(principal, term, options) {
+        const opts = options || {};
+        const standardRaw = this.calculateStandardLoan(principal, term);
+        const standard = {
+            monthlyPayment: standardRaw.monthlyPayment,
+            totalInterest: standardRaw.totalInterest,
+            totalAdminFees: standardRaw.totalAdminFees,
+            totalInitiationFee: standardRaw.totalInitiationFee,
+            totalCost: standardRaw.totalCost,
+            months: term,
+            interestMonths: standardRaw.interestMonths,
+            maxInterestAllowed: standardRaw.maxInterestAllowed
+        };
+        const stockvel = this.estimateStockvelLoanQuote(
+            principal,
+            term,
+            opts.totalContributions || 0,
+            opts.monthlyContribution || 0
+        );
+        const savings = {
+            monthly: this.round(standard.monthlyPayment - stockvel.monthlyPayment),
+            total: this.round(standard.totalCost - stockvel.totalCost),
+            interest: this.round(standard.totalInterest - stockvel.totalInterest),
+            fees: this.round(
+                (standard.totalAdminFees + standard.totalInitiationFee) -
+                (stockvel.totalAdminFees + stockvel.totalInitiationFee)
+            )
+        };
+        return { standard, stockvel, savings };
+    },
+
     /**
      * Calculate bonus for stockvel member payment
      * Returns bonus amount earned (if any)
@@ -1062,6 +1177,70 @@ const Calculations = {
     },
 
     /**
+     * Live late penalty + post-grace extra admin for an open installment.
+     * Does not mutate the loan — used by payment UI and portal statement packs
+     * so unpaid accrued fees appear before they are persisted on payment.
+     */
+    assessOpenInstallmentFees(loan, openEntry, asOfDate, gracePeriodDays) {
+        const result = {
+            latePenalty: 0,
+            latePenaltyAssessedCandidate: 0,
+            daysLate: 0,
+            isPaymentLate: false,
+            extraAdminDue: 0,
+            extraAdminMonths: 0,
+            extraAdminAssessedCandidate: 0
+        };
+        if (!loan || !this.isLateFeesEligible(loan)) return result;
+        const loanStatus = String(loan.status || 'active').toLowerCase();
+        if (loanStatus && loanStatus !== 'active') return result;
+
+        const grace = typeof gracePeriodDays === 'number' ? gracePeriodDays : 3;
+        const asOf = asOfDate instanceof Date ? asOfDate : new Date(asOfDate || Date.now());
+        if (isNaN(asOf.getTime())) return result;
+
+        let due = null;
+        if (openEntry && openEntry.due_date) {
+            due = new Date(openEntry.due_date);
+            if (isNaN(due.getTime())) due = null;
+        }
+        if (!due) {
+            due = this.getOpenInstallmentDueDate(loan);
+        }
+        if (!due || isNaN(due.getTime())) return result;
+
+        const graceCutoff = new Date(due.getTime());
+        graceCutoff.setDate(graceCutoff.getDate() + grace);
+        if (asOf > graceCutoff) {
+            result.daysLate = Math.floor((asOf - due) / (1000 * 60 * 60 * 24));
+            const assessed = this.calculateLatePenalty(
+                result.daysLate - grace, loan.remaining_principal || 0);
+            const priorAssessed = Number(openEntry && openEntry.late_penalty_assessed) || 0;
+            result.latePenaltyAssessedCandidate = Math.max(priorAssessed, assessed);
+            const alreadyPaid = Number(
+                (openEntry && openEntry.paid_breakdown || {}).late_penalty
+            ) || 0;
+            result.latePenalty = Math.max(
+                0, this.round(result.latePenaltyAssessedCandidate - alreadyPaid));
+            result.isPaymentLate = result.latePenalty > 0.01 || assessed > 0;
+        }
+
+        const extra = this.calculateExtraAdminDue(loan, openEntry, asOf, grace);
+        const priorExtra = Number(openEntry && openEntry.extra_admin_assessed) || 0;
+        result.extraAdminAssessedCandidate = Math.max(priorExtra, extra.amount);
+        result.extraAdminMonths = extra.months;
+        const baseAdmin = Number(openEntry && openEntry.admin_fee) || 0;
+        const paidAdmin = Number(
+            (openEntry && openEntry.paid_breakdown || {}).admin
+        ) || 0;
+        const totalAdminOwed = baseAdmin + result.extraAdminAssessedCandidate;
+        const unpaidAdmin = Math.max(0, totalAdminOwed - paidAdmin);
+        const unpaidBase = Math.max(0, baseAdmin - Math.min(paidAdmin, baseAdmin));
+        result.extraAdminDue = Math.max(0, this.round(unpaidAdmin - unpaidBase));
+        return result;
+    },
+
+    /**
      * Admin still owed on a schedule entry including extra_admin_assessed.
      */
     getEntryEffectiveAdminDue(entry) {
@@ -1152,7 +1331,8 @@ const Calculations = {
      */
     getClientLoans(client, loans) {
         const list = Array.isArray(loans) ? loans : [];
-        const acct = client && (client.account_number || client.accountNumber);
+        const acctRaw = client && (client.account_number || client.accountNumber);
+        const acctNorm = acctRaw ? String(acctRaw).trim().toUpperCase() : '';
         const memberNumber = client && client.memberNumber;
         const name = client && (client.name || [
             client.first_name || client.firstName || '',
@@ -1160,7 +1340,12 @@ const Calculations = {
         ].join(' ').trim());
         return list.filter(l => {
             if (!l) return false;
-            if (acct && (l.account_number === acct || l.client_account === acct)) return true;
+            if (acctNorm) {
+                const loanAcct = String(
+                    l.account_number || l.accountNumber || l.client_account || ''
+                ).trim().toUpperCase();
+                if (loanAcct && loanAcct === acctNorm) return true;
+            }
             if (memberNumber != null && l.memberNumber === memberNumber) return true;
             if (name && l.client_name &&
                 String(l.client_name).toLowerCase() === String(name).toLowerCase()) {
@@ -2257,6 +2442,653 @@ const Calculations = {
         if (!Number.isFinite(startMonthIndex)) return null;
         const startYear = this.resolveScheduleStartYear(loanDate, startMonthIndex);
         return this.calculateDueDate(startYear, startMonthIndex, (Number(paymentNumber) || 0) + 1);
+    },
+
+    humanizeAdjustmentType(adjustmentType) {
+        switch (adjustmentType) {
+            case 'change_repayment_period':
+                return 'Change repayment period';
+            case 'add_amount':
+                return 'Add amount to loan';
+            default:
+                return adjustmentType
+                    ? String(adjustmentType).replace(/_/g, ' ')
+                    : 'Loan adjustment';
+        }
+    },
+
+    formatAdjustmentChangeLine(change) {
+        if (!change) return '';
+        const fmt = (format, value) => {
+            if (value === null || value === undefined || value === '') return 'N/A';
+            if (format === 'currency') return this.formatCurrency(Number(value) || 0);
+            return String(value);
+        };
+        return '- ' + (change.label || 'Change') + ': ' +
+            fmt(change.format, change.before) + ' -> ' + fmt(change.format, change.after);
+    },
+
+    buildChangesFromLegacyAdjustmentDetails(details) {
+        const changes = [];
+        if (!details || typeof details !== 'object') return changes;
+        if (details.adjustmentType === 'change_repayment_period') {
+            if (details.oldTerm !== undefined && details.newTerm !== undefined) {
+                changes.push({
+                    label: 'Term (months)', format: 'number',
+                    before: details.oldTerm, after: details.newTerm
+                });
+            }
+            if (details.oldMonthlyPayment !== undefined && details.newMonthlyPayment !== undefined) {
+                changes.push({
+                    label: 'Monthly Payment', format: 'currency',
+                    before: details.oldMonthlyPayment, after: details.newMonthlyPayment
+                });
+            }
+            if (details.oldTotalInterest !== undefined && details.newTotalInterest !== undefined) {
+                changes.push({
+                    label: 'Total Interest', format: 'currency',
+                    before: details.oldTotalInterest, after: details.newTotalInterest
+                });
+            } else if (details.newTotalInterest !== undefined) {
+                changes.push({
+                    label: 'Total Interest', format: 'currency',
+                    before: null, after: details.newTotalInterest
+                });
+            }
+            if (details.oldTotalInitiationFee !== undefined &&
+                details.newTotalInitiationFee !== undefined) {
+                changes.push({
+                    label: 'Total Initiation Fee', format: 'currency',
+                    before: details.oldTotalInitiationFee, after: details.newTotalInitiationFee
+                });
+            }
+        } else if (details.adjustmentType === 'add_amount') {
+            if (details.amountAdded !== undefined) {
+                changes.push({
+                    label: 'Amount added', format: 'currency',
+                    before: null, after: details.amountAdded
+                });
+            }
+            if (details.oldPrincipal !== undefined && details.newPrincipal !== undefined) {
+                changes.push({
+                    label: 'Principal', format: 'currency',
+                    before: details.oldPrincipal, after: details.newPrincipal
+                });
+            }
+        }
+        return changes;
+    },
+
+    /**
+     * Collect loan adjustment events from loan-local history + global txs.
+     */
+    getLoanAdjustmentEvents(loan, state) {
+        if (!loan) return [];
+        const loanId = loan.loan_id;
+        const events = [];
+        const pushUnique = (ev) => {
+            if (!ev) return;
+            const key = ev.id
+                ? 'id:' + ev.id
+                : 'k:' + (ev.timestamp || '') + '|' + (ev.adjustmentType || '') + '|' + (ev.reason || '');
+            if (events.some(e => {
+                const k = e.id
+                    ? 'id:' + e.id
+                    : 'k:' + (e.timestamp || '') + '|' + (e.adjustmentType || '') + '|' + (e.reason || '');
+                return k === key;
+            })) return;
+            events.push(ev);
+        };
+
+        (Array.isArray(loan.adjustment_history) ? loan.adjustment_history : []).forEach(e => {
+            if (!e) return;
+            pushUnique({
+                id: e.id,
+                timestamp: e.timestamp,
+                adjustmentType: e.adjustmentType,
+                reason: e.reason || '',
+                changes: Array.isArray(e.changes) ? e.changes : [],
+                meta: e.meta || {}
+            });
+        });
+
+        const txs = (state && Array.isArray(state.transactions)) ? state.transactions : [];
+        // One pass per transaction — prefer details, else data — so legacy rows
+        // that carry both shapes cannot emit duplicate adjustment activities.
+        txs.forEach(tx => {
+            if (!tx || tx.type !== 'loan_adjustment') return;
+            const details = tx.details || null;
+            const data = tx.data || null;
+            let payload = null;
+            if (details && details.loanId === loanId) payload = details;
+            else if (data && data.loanId === loanId) payload = data;
+            if (!payload) return;
+            pushUnique({
+                id: tx.id || payload.id,
+                timestamp: tx.timestamp || tx.date || payload.timestamp,
+                adjustmentType: payload.adjustmentType,
+                reason: payload.reason || '',
+                changes: Array.isArray(payload.changes)
+                    ? payload.changes
+                    : this.buildChangesFromLegacyAdjustmentDetails(payload),
+                meta: payload
+            });
+        });
+
+        events.sort((a, b) =>
+            (this._parseEventDate(a.timestamp) || 0) - (this._parseEventDate(b.timestamp) || 0));
+        return events;
+    },
+
+    /**
+     * Unified loan statement DTO for PDF, text view, and client portal.
+     */
+    buildLoanStatementModel(loan, state, options) {
+        const opts = options || {};
+        const asOf = opts.asOf ? new Date(opts.asOf) : new Date();
+        if (!loan) {
+            return {
+                loan_id: null, client_name: '', summary: {}, financials: {},
+                position: {}, activity: [], schedule: [], generated_at: asOf.toISOString()
+            };
+        }
+
+        const principal = this.loanPrincipalAmount(loan);
+        const term = this.loanTermMonths(loan) || Number(loan.term_months) || 0;
+        const monthlyAdmin = this.getMonthlyAdminFeeForLoan(loan) || RATES.ADMIN_FEE_STANDARD;
+        const totalInterest = Number(loan.total_interest) || 0;
+        const totalInitiationFee = Number(loan.total_initiation_fee) || 0;
+        const schedule = Array.isArray(loan.schedule) ? loan.schedule : [];
+        const history = Array.isArray(loan.payment_history) ? loan.payment_history : [];
+
+        let adminScheduled = 0;
+        let adminExtraAssessed = 0;
+        let adminPaid = 0;
+        let latePenaltyAssessed = 0;
+        let latePenaltyPaid = 0;
+        schedule.forEach(entry => {
+            if (!entry) return;
+            adminScheduled += Number(entry.admin_fee) || 0;
+            adminExtraAssessed += Number(entry.extra_admin_assessed) || 0;
+            const pb = entry.paid_breakdown || {};
+            adminPaid += Number(pb.admin) || 0;
+            latePenaltyAssessed += Number(entry.late_penalty_assessed) || 0;
+            latePenaltyPaid += Number(pb.late_penalty) || 0;
+        });
+        if (!schedule.length) {
+            adminScheduled = term * monthlyAdmin;
+            history.forEach(h => {
+                adminPaid += Number(h.admin_fee) || 0;
+                latePenaltyPaid += Number(h.late_penalty) || 0;
+            });
+        } else {
+            // Prefer history late_penalty if schedule paid_breakdown empty on older loans
+            const histPenalty = history.reduce((s, h) => s + (Number(h.late_penalty) || 0), 0);
+            if (latePenaltyPaid < histPenalty) latePenaltyPaid = histPenalty;
+        }
+
+        // Live late/extra-admin on the open row (same rules as payment UI) so
+        // portal packs are not understated when fees are not yet persisted.
+        const graceDays = opts.gracePeriodDays || 3;
+        const openEntry = schedule.find(e =>
+            e && (e.status === 'pending' || e.status === 'partial'));
+        let openLiveExtra = null;
+        let openLiveLate = null;
+        if (openEntry) {
+            const fees = this.assessOpenInstallmentFees(loan, openEntry, asOf, graceDays);
+            openLiveExtra = fees.extraAdminAssessedCandidate;
+            openLiveLate = fees.latePenaltyAssessedCandidate;
+            const priorExtra = Number(openEntry.extra_admin_assessed) || 0;
+            const priorLate = Number(openEntry.late_penalty_assessed) || 0;
+            if (openLiveExtra > priorExtra) {
+                adminExtraAssessed += (openLiveExtra - priorExtra);
+            }
+            if (openLiveLate > priorLate) {
+                latePenaltyAssessed += (openLiveLate - priorLate);
+            }
+        }
+
+        const adminTotalAssessed = this.round(adminScheduled + adminExtraAssessed);
+        const adminRemaining = Math.max(0, this.round(adminTotalAssessed - adminPaid));
+        const latePenaltyRemaining = Math.max(0, this.round(latePenaltyAssessed - latePenaltyPaid));
+
+        const remainingPrincipal = Number(loan.remaining_principal) || 0;
+        const interestPaid = Number(loan.interest_paid) || 0;
+        // Match payment allocation: never show more interest still owed than
+        // max_interest_allowed − interest_paid (recalc / legacy capped loans).
+        let interestRemaining = Math.max(0, this.round(totalInterest - interestPaid));
+        const maxInterestAllowed = Number(loan.max_interest_allowed);
+        const interestCapRemaining = Number.isFinite(maxInterestAllowed)
+            ? Math.max(0, this.round(maxInterestAllowed - interestPaid))
+            : null;
+        if (interestCapRemaining != null) {
+            interestRemaining = Math.min(interestRemaining, interestCapRemaining);
+        }
+        const initiationFeePaid = Number(loan.initiation_fee_paid) || 0;
+        const initiationFeeRemaining = Math.max(0, this.round(totalInitiationFee - initiationFeePaid));
+        const paymentsMade = Number(loan.payments_made) || 0;
+        const paymentsRemaining = Math.max(0, term - paymentsMade);
+        const totalPrincipalReceived = Number(loan.total_principal_received) ||
+            Math.max(0, this.round(principal - remainingPrincipal));
+
+        const totalPaid = this.round(
+            totalPrincipalReceived + interestPaid + initiationFeePaid +
+            adminPaid + latePenaltyPaid
+        );
+        const totalRemaining = this.round(
+            remainingPrincipal + interestRemaining + initiationFeeRemaining +
+            adminRemaining + latePenaltyRemaining
+        );
+        const claimableInterestTotal = interestCapRemaining != null
+            ? Math.min(totalInterest, this.round(maxInterestAllowed))
+            : totalInterest;
+        const totalLoanCost = this.round(
+            principal + claimableInterestTotal + totalInitiationFee +
+            adminTotalAssessed + latePenaltyAssessed
+        );
+
+        this.updateLoanPaymentSignals(loan, graceDays, asOf);
+        const signals = loan.payment_signals || {};
+        const openDue = this.getOpenInstallmentDueDate(loan);
+        const interestPeriodMonths = Number(loan.interest_calculation_months) ||
+            this.calculateInterestPeriod(term).interestMonths;
+
+        const summary = {
+            loan_id: loan.loan_id,
+            client_name: loan.client_name || '',
+            account_number: loan.account_number || loan.client_account || '',
+            loan_type: (loan.loan_type === 'stockvel' || loan.isStockvelLoan)
+                ? 'stockvel' : 'standard',
+            loan_type_label: (loan.loan_type === 'stockvel' || loan.isStockvelLoan)
+                ? 'Stockvel Member' : 'Standard',
+            original_principal: this.round(principal),
+            term_months: term,
+            monthly_payment: this.round(Number(loan.monthly_payment) || 0),
+            status: String(loan.status || 'active').toLowerCase(),
+            created_at: loan.created_at || null,
+            completion_date: loan.completion_date || null,
+            early_payoff: !!loan.early_payoff,
+            payoff_month: loan.payoff_month || null,
+            savings_from_early_payoff: this.round(Number(loan.savings_from_early_payoff) || 0),
+            interest_calculation_months: interestPeriodMonths,
+            interest_recalculated: !!loan.interest_recalculated,
+            max_interest_allowed: this.round(
+                Number(loan.max_interest_allowed) || totalInterest || 0)
+        };
+
+        const financials = {
+            original_principal: this.round(principal),
+            total_interest: this.round(totalInterest),
+            initiation_fee: this.round(totalInitiationFee),
+            admin_scheduled: this.round(adminScheduled),
+            admin_extra_assessed: this.round(adminExtraAssessed),
+            admin_total: adminTotalAssessed,
+            late_penalties_assessed: this.round(latePenaltyAssessed),
+            total_loan_cost: totalLoanCost
+        };
+
+        const fallbackInterest = term > 0 ? this.round(totalInterest / term) : 0;
+        const fallbackInitiation = term > 0 ? this.round(totalInitiationFee / term) : 0;
+        const fallbackPrincipal = term > 0 ? this.round(principal / term) : 0;
+
+        // Waterfall claimable interest across pending/partial rows so later
+        // schedule lines cannot imply more interest than interest_remaining.
+        let interestCapLeft = interestCapRemaining;
+
+        const scheduleRows = schedule.map((entry, index) => {
+            const pb = entry.paid_breakdown || {};
+            const unpaid = (due, done) => Math.max(0, this.round((Number(due) || 0) - (Number(done) || 0)));
+            // Missing fields (null/undefined) fall back to equalized loan totals.
+            // Explicit 0 is kept (e.g. stockvel initiation waived).
+            let rowPrincipal = Number(entry.principal_payment);
+            let rowInterest = Number(entry.interest_payment);
+            let rowInitiation = Number(entry.initiation_fee);
+            let rowAdmin = Number(entry.admin_fee);
+            if (!Number.isFinite(rowPrincipal) || rowPrincipal < 0) {
+                rowPrincipal = fallbackPrincipal;
+            }
+            if (!Number.isFinite(rowInterest) || rowInterest < 0) {
+                rowInterest = fallbackInterest;
+            }
+            if (!Number.isFinite(rowInitiation) || rowInitiation < 0) {
+                rowInitiation = fallbackInitiation;
+            }
+            if (!Number.isFinite(rowAdmin) || rowAdmin < 0) {
+                rowAdmin = monthlyAdmin;
+            }
+
+            const rowStatus = entry.status || 'pending';
+            const isCollectibleRow = rowStatus === 'pending' || rowStatus === 'partial';
+
+            let extraAdmin = this.round(Number(entry.extra_admin_assessed) || 0);
+            let latePenalty = this.round(Number(entry.late_penalty_assessed) || 0);
+            if (entry === openEntry) {
+                if (openLiveExtra != null) {
+                    extraAdmin = this.round(Math.max(extraAdmin, openLiveExtra));
+                }
+                if (openLiveLate != null) {
+                    latePenalty = this.round(Math.max(latePenalty, openLiveLate));
+                }
+            }
+            const paidPrincipal = this.round(Number(pb.principal) || 0);
+            const paidInterest = this.round(Number(pb.interest) || 0);
+            const paidInitiation = this.round(Number(pb.initiation) || 0);
+            const paidAdmin = this.round(Number(pb.admin) || 0);
+            const paidLate = this.round(Number(pb.late_penalty) || 0);
+
+            const duePrincipal = unpaid(rowPrincipal, paidPrincipal);
+            let dueInterest = unpaid(rowInterest, paidInterest);
+            if (interestCapLeft != null && isCollectibleRow) {
+                const claimable = Math.min(dueInterest, interestCapLeft);
+                interestCapLeft = Math.max(0, this.round(interestCapLeft - claimable));
+                dueInterest = claimable;
+            }
+            const dueInitiation = unpaid(rowInitiation, paidInitiation);
+            const dueAdmin = unpaid(rowAdmin + extraAdmin, paidAdmin);
+            const dueLatePenalty = unpaid(latePenalty, paidLate);
+            // Keep installment_total / monthly_payment aligned with claimable
+            // interest on every unpaid row (portal/PDF schedule lines).
+            let interestForTotals = this.round(rowInterest);
+            if (interestCapRemaining != null && isCollectibleRow) {
+                interestForTotals = this.round(paidInterest + dueInterest);
+            }
+            const installmentTotal = this.round(
+                rowPrincipal + interestForTotals + rowInitiation + rowAdmin +
+                extraAdmin + latePenalty
+            );
+            const amountDue = this.round(
+                duePrincipal + dueInterest + dueInitiation + dueAdmin + dueLatePenalty
+            );
+            let contractedMonthly = this.round(
+                Number(entry.monthly_payment) ||
+                (rowPrincipal + rowInterest + rowInitiation + rowAdmin)
+            );
+            if (interestCapRemaining != null && isCollectibleRow) {
+                contractedMonthly = this.round(
+                    rowPrincipal + interestForTotals + rowInitiation + rowAdmin
+                );
+            }
+
+            return {
+                index: index + 1,
+                due_date: entry.due_date || null,
+                status: rowStatus,
+                principal: this.round(rowPrincipal),
+                interest: this.round(rowInterest),
+                initiation_fee: this.round(rowInitiation),
+                admin_fee: this.round(rowAdmin),
+                extra_admin_assessed: extraAdmin,
+                late_penalty_assessed: latePenalty,
+                monthly_payment: contractedMonthly,
+                installment_total: installmentTotal,
+                amount_due: amountDue,
+                due_principal: duePrincipal,
+                due_interest: dueInterest,
+                due_initiation: dueInitiation,
+                due_admin: dueAdmin,
+                due_late_penalty: dueLatePenalty,
+                paid_principal: paidPrincipal,
+                paid_interest: paidInterest,
+                paid_initiation: paidInitiation,
+                paid_admin: paidAdmin,
+                paid_late_penalty: paidLate,
+                amount_paid: this.round(Number(entry.amount_paid) || 0),
+                payment_date: entry.payment_date || null,
+                partial_payment: !!entry.partial_payment
+            };
+        });
+
+        const openRow = scheduleRows.find(r =>
+            r && (r.status === 'pending' || r.status === 'partial'));
+        const installmentAmountDue = openRow
+            ? openRow.amount_due
+            : 0;
+        const contractedMonthly = this.round(
+            Number(loan.monthly_payment) ||
+            (openRow && openRow.monthly_payment) ||
+            (scheduleRows[0] && scheduleRows[0].monthly_payment) ||
+            0
+        );
+
+        const position = {
+            payments_made: paymentsMade,
+            payments_remaining: paymentsRemaining,
+            term_months: term,
+            progress_pct: term
+                ? this.round((paymentsMade / term) * 100) : 0,
+            principal_paid: this.round(totalPrincipalReceived),
+            principal_remaining: this.round(remainingPrincipal),
+            interest_paid: this.round(interestPaid),
+            interest_remaining: interestRemaining,
+            initiation_fee_paid: this.round(initiationFeePaid),
+            initiation_fee_remaining: initiationFeeRemaining,
+            admin_paid: this.round(adminPaid),
+            admin_remaining: adminRemaining,
+            late_penalty_paid: this.round(latePenaltyPaid),
+            late_penalty_remaining: latePenaltyRemaining,
+            total_paid: totalPaid,
+            total_remaining: totalRemaining,
+            monthly_installment: contractedMonthly,
+            installment_amount_due: this.round(installmentAmountDue),
+            installment_due_breakdown: openRow ? {
+                principal: openRow.due_principal,
+                interest: openRow.due_interest,
+                initiation_fee: openRow.due_initiation,
+                admin: openRow.due_admin,
+                late_penalty: openRow.due_late_penalty
+            } : null,
+            next_due_date: openDue ? openDue.toISOString() : null,
+            days_past_grace: Number(signals.days_past_grace) || 0,
+            extra_admin_months: Number(signals.extra_admin_months) || 0
+        };
+
+        const activity = [];
+        activity.push({
+            date: loan.created_at || asOf.toISOString(),
+            type: 'creation',
+            title: 'Loan created and disbursed',
+            detail: '',
+            amount: this.round(principal)
+        });
+
+        history.forEach((payment, index) => {
+            const parts = [];
+            if (Number(payment.principal) > 0) {
+                parts.push('Principal: ' + this.formatCurrency(payment.principal));
+            }
+            if (Number(payment.interest) > 0) {
+                parts.push('Interest: ' + this.formatCurrency(payment.interest));
+            }
+            if (Number(payment.initiation_fee) > 0) {
+                parts.push('Init Fee: ' + this.formatCurrency(payment.initiation_fee));
+            }
+            if (Number(payment.admin_fee) > 0) {
+                parts.push('Admin: ' + this.formatCurrency(payment.admin_fee));
+            }
+            if (Number(payment.late_penalty) > 0) {
+                parts.push('Late penalty: ' + this.formatCurrency(payment.late_penalty));
+            }
+            let detail = parts.join(', ');
+            if (payment.remaining_principal_after != null) {
+                detail += (detail ? '\n' : '') +
+                    'Balance after: ' + this.formatCurrency(payment.remaining_principal_after) +
+                    ' | Payments: ' + (payment.payments_made_after != null
+                        ? payment.payments_made_after : (index + 1)) + '/' + term;
+            }
+            if (payment.payment_status) {
+                detail += (detail ? '\n' : '') + 'Status: ' + payment.payment_status +
+                    (payment.days_late != null ? ' (' + payment.days_late + ' days late)' : '');
+            }
+            if (payment.interest_recalculated) {
+                detail += (detail ? '\n' : '') +
+                    'Interest recalculated. New max: ' +
+                    this.formatCurrency(payment.new_max_interest || 0);
+            }
+            activity.push({
+                date: payment.date || payment.payment_date || asOf.toISOString(),
+                type: 'payment',
+                title: 'Payment #' + (index + 1),
+                detail: detail,
+                amount: this.round(Number(payment.amount) || 0),
+                payment_status: payment.payment_status || null,
+                days_late: payment.days_late != null ? payment.days_late : null,
+                recalculated: !!payment.interest_recalculated,
+                new_max_interest: this.round(Number(payment.new_max_interest) || 0)
+            });
+        });
+
+        this.getLoanAdjustmentEvents(loan, state).forEach(ev => {
+            const lines = [];
+            if (ev.reason) lines.push('Reason: ' + ev.reason);
+            if (ev.meta && ev.meta.scheduleRegenerated) {
+                lines.push('Payment schedule regenerated');
+            }
+            (Array.isArray(ev.changes) ? ev.changes : []).forEach(ch => {
+                lines.push(this.formatAdjustmentChangeLine(ch));
+            });
+            activity.push({
+                date: ev.timestamp || asOf.toISOString(),
+                type: 'adjustment',
+                title: 'Loan adjusted (' + this.humanizeAdjustmentType(ev.adjustmentType) + ')',
+                detail: lines.join('\n'),
+                amount: this.round(Number(
+                    (ev.meta && (ev.meta.amountAdded || ev.meta.amount)) || 0
+                ))
+            });
+        });
+
+        schedule.forEach((entry, index) => {
+            if (!entry || !entry.due_date) return;
+            if (Number(entry.extra_admin_assessed) > 0) {
+                activity.push({
+                    date: entry.due_date,
+                    type: 'extra_admin',
+                    title: 'Extra admin assessed (installment #' + (index + 1) + ')',
+                    detail: this.formatCurrency(entry.extra_admin_assessed),
+                    amount: this.round(Number(entry.extra_admin_assessed) || 0)
+                });
+            }
+            if (Number(entry.late_penalty_assessed) > 0) {
+                activity.push({
+                    date: entry.due_date,
+                    type: 'late_penalty',
+                    title: 'Late penalty assessed (installment #' + (index + 1) + ')',
+                    detail: this.formatCurrency(entry.late_penalty_assessed),
+                    amount: this.round(Number(entry.late_penalty_assessed) || 0)
+                });
+            }
+        });
+
+        if (loan.interest_recalculated && loan.last_recalculation_date) {
+            const already = activity.some(a =>
+                a.recalculated && a.date === loan.last_recalculation_date);
+            if (!already) {
+                activity.push({
+                    date: loan.last_recalculation_date,
+                    type: 'recalculation',
+                    title: 'Interest recalculated due to overpayment',
+                    detail: 'New max interest: ' +
+                        this.formatCurrency(loan.max_interest_allowed || 0),
+                    amount: 0
+                });
+            }
+        }
+
+        if (loan.early_payoff && loan.payoff_date) {
+            const earlyTx = ((state && state.transactions) || []).find(tx =>
+                tx && tx.type === 'early_payoff' &&
+                tx.details && tx.details.loanId === loan.loan_id);
+            const detailParts = [
+                'Saved: ' + this.formatCurrency(loan.savings_from_early_payoff || 0)
+            ];
+            if (earlyTx && earlyTx.details) {
+                if (Number(earlyTx.details.latePenaltyPaid) > 0) {
+                    detailParts.push('Late penalty collected: ' +
+                        this.formatCurrency(earlyTx.details.latePenaltyPaid));
+                }
+                if (Number(earlyTx.details.extraAdminPaid) > 0) {
+                    detailParts.push('Extra admin collected: ' +
+                        this.formatCurrency(earlyTx.details.extraAdminPaid));
+                }
+            }
+            activity.push({
+                date: loan.payoff_date,
+                type: 'early_payoff',
+                title: 'Early payoff in month ' + (loan.payoff_month || '?'),
+                detail: detailParts.join('\n'),
+                amount: this.round(Number(loan.payoff_amount) || 0)
+            });
+        }
+
+        if (loan.status === 'completed' && loan.completion_date) {
+            activity.push({
+                date: loan.completion_date,
+                type: 'completion',
+                title: 'Loan fully paid and completed',
+                detail: '',
+                amount: 0
+            });
+        }
+        if (loan.status === 'defaulted') {
+            activity.push({
+                date: loan.default_date || loan.updated_at || loan.created_at || asOf.toISOString(),
+                type: 'default',
+                title: 'Loan marked as DEFAULTED',
+                detail: '',
+                amount: 0
+            });
+        }
+
+        activity.sort((a, b) =>
+            (this._parseEventDate(a.date) || 0) - (this._parseEventDate(b.date) || 0));
+
+        return {
+            loan_id: loan.loan_id,
+            client_name: loan.client_name || '',
+            summary,
+            financials,
+            position,
+            activity,
+            schedule: scheduleRows,
+            generated_at: asOf.toISOString()
+        };
+    },
+
+    /**
+     * Client-safe pack of statement models for portal publishing.
+     * Uses state.gracePeriodDays when options omit gracePeriodDays so portal
+     * packs match the operator Settings grace period.
+     */
+    buildClientStatusPack(client, state, options) {
+        const opts = Object.assign({}, options || {});
+        if (typeof opts.gracePeriodDays !== 'number') {
+            const fromState = state && Number(state.gracePeriodDays);
+            if (Number.isFinite(fromState)) opts.gracePeriodDays = fromState;
+        }
+        const loans = this.getClientLoans(client, state && state.loans);
+        const includeCompleted = !opts.activeOnly;
+        const selected = loans.filter(l => {
+            if (!l) return false;
+            const st = String(l.status || '').toLowerCase();
+            if (st === 'active') return true;
+            if (includeCompleted && (st === 'completed' || st === 'defaulted')) return true;
+            return false;
+        });
+        return {
+            v: 1,
+            account_number: client && (client.account_number || client.accountNumber) || '',
+            client_name: client
+                ? (client.name || [
+                    client.first_name || client.firstName || '',
+                    client.last_name || client.lastName || ''
+                ].join(' ').trim())
+                : '',
+            memberNumber: client && client.memberNumber != null ? client.memberNumber : null,
+            published_at: (opts.asOf
+                ? new Date(opts.asOf)
+                : new Date()).toISOString(),
+            loans: selected.map(l => this.buildLoanStatementModel(l, state, opts))
+        };
     }
 };
 

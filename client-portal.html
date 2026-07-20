@@ -1,0 +1,541 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self' https://ndelo-n.github.io https://raw.githubusercontent.com https://api.github.com; font-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none';">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#2980b9">
+    <meta name="description" content="TBFS Client Loan Status Portal">
+    <title>Client Portal - TBFS</title>
+    <link rel="manifest" href="manifest.json">
+    <link rel="icon" type="image/png" sizes="32x32" href="icons/icon-32x32.png">
+    <link rel="stylesheet" href="shared/styles.css">
+    <style>
+        body {
+            min-height: 100vh;
+            background: linear-gradient(160deg, #e8f1f8 0%, #f7f9fc 45%, #eef2f7 100%);
+        }
+        .portal-wrap { max-width: 920px; margin: 0 auto; padding: 24px 16px 48px; }
+        .portal-brand {
+            font-family: Georgia, "Times New Roman", serif;
+            font-size: clamp(1.8rem, 4vw, 2.4rem);
+            font-weight: 700;
+            color: #1a5276;
+            margin: 0 0 6px;
+            letter-spacing: -0.02em;
+        }
+        .portal-sub { color: #5d6d7e; margin: 0 0 24px; }
+        .portal-card {
+            background: #fff;
+            border-radius: 14px;
+            padding: 22px;
+            box-shadow: 0 8px 28px rgba(26, 82, 118, 0.08);
+            margin-bottom: 18px;
+        }
+        .portal-card h2 { margin: 0 0 12px; font-size: 1.15rem; color: #1a5276; }
+        label { display: block; font-weight: 600; margin: 10px 0 6px; color: #2c3e50; }
+        input {
+            width: 100%; padding: 12px; border: 2px solid #dfe6e9; border-radius: 10px;
+            font-size: 16px; box-sizing: border-box;
+        }
+        .btn-row { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 16px; }
+        .error { color: #c0392b; min-height: 1.2em; margin-top: 10px; }
+        .muted { color: #7f8c8d; font-size: 14px; }
+        .loan-chip {
+            display: inline-block; padding: 3px 10px; border-radius: 999px;
+            font-size: 11px; font-weight: 700; text-transform: uppercase; color: #fff;
+        }
+        .st-active { background: #27ae60; }
+        .st-completed { background: #2980b9; }
+        .st-defaulted { background: #e74c3c; }
+        .info-row {
+            display: flex; justify-content: space-between; gap: 12px;
+            padding: 7px 0; border-bottom: 1px solid #f0f0f0; font-size: 14px;
+        }
+        .timeline-item, .sched-row {
+            padding: 10px 0; border-bottom: 1px solid #eee; font-size: 14px;
+        }
+        .hidden { display: none !important; }
+        .est-grid {
+            display: grid; grid-template-columns: 1fr 1fr; gap: 12px;
+        }
+        @media (max-width: 640px) { .est-grid { grid-template-columns: 1fr; } }
+        .compare-grid {
+            display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-top: 14px;
+        }
+        @media (max-width: 640px) { .compare-grid { grid-template-columns: 1fr; } }
+        .compare-col {
+            background: #f7fafc; border-radius: 12px; padding: 14px;
+            border: 1px solid #e8eef3;
+        }
+        .compare-col h3 { margin: 0 0 10px; font-size: 1rem; color: #1a5276; }
+        .savings-banner {
+            margin-top: 14px; padding: 12px 14px; border-radius: 12px;
+            background: #e8f8f0; color: #1e8449; font-weight: 600;
+        }
+        .savings-banner.warn {
+            background: #fef5e7; color: #9a7d0a;
+        }
+    </style>
+</head>
+<body>
+    <main class="portal-wrap" role="main">
+        <p class="portal-brand">TBFS</p>
+        <p class="portal-sub">Client loan status — view your statement anytime</p>
+
+        <section class="portal-card" id="loginCard">
+            <h2>Sign in</h2>
+            <p class="muted">Use the account number and PIN provided by TBFS.</p>
+            <label for="accountInput">Account number</label>
+            <input id="accountInput" autocomplete="username" inputmode="text">
+            <label for="pinInput">PIN</label>
+            <input id="pinInput" type="password" autocomplete="current-password">
+            <p class="error" id="loginError"></p>
+            <div class="btn-row">
+                <button class="btn btn-primary" type="button" id="loginBtn">View my loans</button>
+            </div>
+        </section>
+
+        <section class="hidden" id="dashboard">
+            <div class="portal-card" style="display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;align-items:center;">
+                <div>
+                    <h2 style="margin:0;" id="welcomeName">Welcome</h2>
+                    <p class="muted" id="publishedMeta" style="margin:6px 0 0;"></p>
+                </div>
+                <div class="btn-row" style="margin:0;">
+                    <button class="btn btn-secondary" type="button" id="logoutBtn">Log out</button>
+                </div>
+            </div>
+
+            <section class="portal-card" id="estimateCard">
+                <h2>Loan estimate</h2>
+                <p class="muted">
+                    Quote only — this does not create a loan. Compare a standard loan with a
+                    Stockvel estimate so you can see the membership benefit.
+                </p>
+                <div class="est-grid">
+                    <div>
+                        <label for="estPrincipal">Loan amount (R)</label>
+                        <input id="estPrincipal" type="number" min="100" step="100" inputmode="decimal" value="10000">
+                    </div>
+                    <div>
+                        <label for="estTerm">Term (months)</label>
+                        <input id="estTerm" type="number" min="1" max="60" step="1" inputmode="numeric" value="3">
+                    </div>
+                    <div>
+                        <label for="estContributions">Stockvel contributions so far (R)</label>
+                        <input id="estContributions" type="number" min="0" step="100" inputmode="decimal" value="5000">
+                    </div>
+                    <div>
+                        <label for="estMonthly">Monthly contribution (R)</label>
+                        <input id="estMonthly" type="number" min="0" step="50" inputmode="decimal" value="500">
+                    </div>
+                </div>
+                <div class="btn-row">
+                    <button class="btn btn-primary" type="button" id="estBtn">Compare estimates</button>
+                </div>
+                <p class="error" id="estError"></p>
+                <div id="estResults" class="hidden"></div>
+            </section>
+
+            <div id="loanList"></div>
+        </section>
+    </main>
+
+    <script src="vendor/jspdf.umd.min.js"></script>
+    <script src="shared/sanitize.js?v=68"></script>
+    <script src="shared/calculations.js?v=68"></script>
+    <script src="shared/client-status.js?v=68"></script>
+    <script src="shared/loan-statement-pdf.js?v=68"></script>
+    <script>
+        const esc = (typeof Sanitize !== 'undefined' && Sanitize.esc)
+            ? (v) => Sanitize.esc(v)
+            : (v) => String(v == null ? '' : v);
+        const money = (n) => (typeof Calculations !== 'undefined')
+            ? Calculations.formatCurrency(n)
+            : ('R ' + Number(n || 0).toFixed(2));
+        const SESSION_KEY = 'tbfsClientPortalSession';
+        const SESSION_CREDS_KEY = 'tbfsClientPortalCreds';
+        const ATTEMPT_KEY = 'tbfsClientPortalAttempts';
+
+        let sessionPack = null;
+
+        function fmtDate(v) {
+            if (!v) return '—';
+            const d = new Date(v);
+            return isNaN(d.getTime()) ? String(v) : d.toLocaleDateString('en-ZA');
+        }
+
+        function readAttempts() {
+            try { return JSON.parse(localStorage.getItem(ATTEMPT_KEY) || '{}'); }
+            catch (e) { return {}; }
+        }
+        function writeAttempts(obj) {
+            localStorage.setItem(ATTEMPT_KEY, JSON.stringify(obj));
+        }
+        function assertNotLocked(account) {
+            const key = ClientStatus.normalizeAccount(account);
+            const all = readAttempts();
+            const row = all[key] || { fails: 0, lockUntil: 0 };
+            if (row.lockUntil && Date.now() < row.lockUntil) {
+                const mins = Math.ceil((row.lockUntil - Date.now()) / 60000);
+                throw new Error('Too many failed attempts. Try again in ' + mins + ' minute(s).');
+            }
+            return row;
+        }
+        function recordFail(account) {
+            const key = ClientStatus.normalizeAccount(account);
+            const all = readAttempts();
+            const row = all[key] || { fails: 0, lockUntil: 0 };
+            row.fails = (row.fails || 0) + 1;
+            if (row.fails >= 5) {
+                row.lockUntil = Date.now() + 15 * 60 * 1000;
+                row.fails = 0;
+            }
+            all[key] = row;
+            writeAttempts(all);
+        }
+        function clearFails(account) {
+            const key = ClientStatus.normalizeAccount(account);
+            const all = readAttempts();
+            delete all[key];
+            writeAttempts(all);
+        }
+
+        function showLogin() {
+            document.getElementById('loginCard').classList.remove('hidden');
+            document.getElementById('dashboard').classList.add('hidden');
+            sessionPack = null;
+            sessionStorage.removeItem(SESSION_KEY);
+            sessionStorage.removeItem(SESSION_CREDS_KEY);
+        }
+
+        function saveSessionCreds(account, pin) {
+            try {
+                sessionStorage.setItem(SESSION_CREDS_KEY, JSON.stringify({
+                    account: ClientStatus.normalizeAccount(account),
+                    pin: String(pin)
+                }));
+            } catch (e) { /* ignore quota / private mode */ }
+        }
+
+        function readSessionCreds() {
+            try {
+                const raw = sessionStorage.getItem(SESSION_CREDS_KEY);
+                if (!raw) return null;
+                const parsed = JSON.parse(raw);
+                if (!parsed || !parsed.account || !parsed.pin) return null;
+                return parsed;
+            } catch (e) {
+                return null;
+            }
+        }
+
+        function showDashboard(pack) {
+            sessionPack = pack;
+            sessionStorage.setItem(SESSION_KEY, JSON.stringify(pack));
+            document.getElementById('loginCard').classList.add('hidden');
+            document.getElementById('dashboard').classList.remove('hidden');
+            document.getElementById('welcomeName').textContent =
+                'Hello, ' + (pack.client_name || pack.account_number || 'client');
+            document.getElementById('publishedMeta').textContent =
+                'Status as of ' + fmtDate(pack.published_at) +
+                ' · Account ' + (pack.account_number || '');
+            prefillsEstimate(pack);
+            document.getElementById('estResults').classList.add('hidden');
+            document.getElementById('estError').textContent = '';
+            renderLoans(pack);
+        }
+
+        /**
+         * Re-fetch + decrypt the latest published pack using session creds.
+         * Returns { ok, reason } — auth/missing clear the session; network
+         * failures leave the caller free to keep a temporary cached view.
+         */
+        async function refreshSessionPack(opts) {
+            const options = opts || {};
+            const creds = readSessionCreds();
+            if (!creds) return { ok: false, reason: 'no_creds' };
+
+            let envelope;
+            try {
+                envelope = await ClientStatus.fetchEnvelope(creds.account);
+            } catch (e) {
+                return { ok: false, reason: 'network', error: e };
+            }
+
+            if (!envelope) {
+                if (options.clearOnMissing !== false) showLogin();
+                return { ok: false, reason: 'missing' };
+            }
+
+            try {
+                const pack = await ClientStatus.decryptEnvelope(
+                    envelope, creds.account, creds.pin);
+                showDashboard(pack);
+                return { ok: true, reason: 'ok', pack: pack };
+            } catch (e) {
+                // PIN reset, republished ciphertext, or stale session creds —
+                // never leave a stale dashboard up.
+                showLogin();
+                return { ok: false, reason: 'auth', error: e };
+            }
+        }
+
+        function prefillsEstimate(pack) {
+            const active = (pack.loans || []).find(l =>
+                l && l.summary && String(l.summary.status).toLowerCase() === 'active');
+            const model = active || (pack.loans || [])[0];
+            if (!model || !model.summary) return;
+            const principal = Number(model.summary.original_principal) ||
+                Number(model.position && model.position.principal_remaining) || 0;
+            const term = Number(model.summary.term_months) || 3;
+            if (principal > 0) document.getElementById('estPrincipal').value = String(Math.round(principal));
+            if (term > 0) document.getElementById('estTerm').value = String(term);
+        }
+
+        function quoteCol(title, q) {
+            const interestPeriod = q.interestMonths
+                ? '<div class="info-row"><span>Interest period</span><strong>' +
+                    esc(q.interestMonths) + ' of ' + esc(q.months) + ' mo</strong></div>'
+                : '';
+            const maxInterest = q.maxInterestAllowed != null
+                ? '<div class="info-row"><span>Max interest</span><strong>' +
+                    money(q.maxInterestAllowed) + '</strong></div>'
+                : '';
+            return '<div class="compare-col"><h3>' + esc(title) + '</h3>' +
+                '<div class="info-row"><span>Monthly payment</span><strong>' + money(q.monthlyPayment) + '</strong></div>' +
+                '<div class="info-row"><span>Total interest</span><strong>' + money(q.totalInterest) + '</strong></div>' +
+                interestPeriod +
+                maxInterest +
+                '<div class="info-row"><span>Initiation fee</span><strong>' + money(q.totalInitiationFee) + '</strong></div>' +
+                '<div class="info-row"><span>Admin fees</span><strong>' + money(q.totalAdminFees) + '</strong></div>' +
+                '<div class="info-row"><span>Total cost</span><strong>' + money(q.totalCost) + '</strong></div>' +
+                '</div>';
+        }
+
+        function runEstimate() {
+            const err = document.getElementById('estError');
+            const out = document.getElementById('estResults');
+            err.textContent = '';
+            out.classList.add('hidden');
+            const principal = parseFloat(document.getElementById('estPrincipal').value);
+            const term = parseInt(document.getElementById('estTerm').value, 10);
+            const contributions = parseFloat(document.getElementById('estContributions').value) || 0;
+            const monthly = parseFloat(document.getElementById('estMonthly').value) || 0;
+            if (!Calculations.estimateLoanComparison) {
+                err.textContent = 'Estimator unavailable. Refresh the page.';
+                return;
+            }
+            if (isNaN(principal) || principal < 100) {
+                err.textContent = 'Enter a loan amount of at least R100.';
+                return;
+            }
+            if (isNaN(term) || term < 1) {
+                err.textContent = 'Enter a term of at least 1 month.';
+                return;
+            }
+            const cmp = Calculations.estimateLoanComparison(principal, term, {
+                totalContributions: contributions,
+                monthlyContribution: monthly
+            });
+            let banner;
+            if (cmp.savings.total > 0.01) {
+                banner = '<div class="savings-banner">Stockvel estimate could save about ' +
+                    money(cmp.savings.total) + ' over the full term' +
+                    ' (about ' + money(cmp.savings.monthly) + ' per month vs standard).</div>';
+            } else if (cmp.savings.total < -0.01) {
+                banner = '<div class="savings-banner warn">With these contribution inputs, ' +
+                    'Stockvel is not cheaper than standard on this quote. Try higher contributions.</div>';
+            } else {
+                banner = '<div class="savings-banner warn">Similar cost on this quote — ' +
+                    'Stockvel benefits grow as contributions grow.</div>';
+            }
+            out.innerHTML =
+                '<div class="compare-grid">' +
+                quoteCol('Standard loan', cmp.standard) +
+                quoteCol('Stockvel estimate', cmp.stockvel) +
+                '</div>' +
+                banner +
+                '<p class="muted" style="margin-top:12px;">Estimates only. Actual Stockvel terms depend on membership, ' +
+                'verified contributions, and approval by TBFS.</p>';
+            out.classList.remove('hidden');
+        }
+
+        function renderLoans(pack) {
+            const host = document.getElementById('loanList');
+            const loans = Array.isArray(pack.loans) ? pack.loans : [];
+            if (!loans.length) {
+                host.innerHTML = '<section class="portal-card"><p class="muted">No loans in this status pack.</p></section>';
+                return;
+            }
+            host.innerHTML = loans.map((model, idx) => {
+                const s = model.summary || {};
+                const p = model.position || {};
+                const st = String(s.status || 'active').toLowerCase();
+                const chip = 'loan-chip st-' + (st === 'completed' || st === 'defaulted' ? st : 'active');
+                const activity = (model.activity || []).slice().reverse().slice(0, 12);
+                const schedule = model.schedule || [];
+                return '<section class="portal-card" data-loan-idx="' + idx + '">' +
+                    '<div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:center;">' +
+                    '<h2 style="margin:0;">Loan #' + esc(s.loan_id) + '</h2>' +
+                    '<span class="' + chip + '">' + esc(st) + '</span></div>' +
+                    '<div class="info-row"><span>Contracted monthly installment</span><strong>' +
+                    money(p.monthly_installment != null ? p.monthly_installment : s.monthly_payment) +
+                    '</strong></div>' +
+                    '<div class="info-row"><span>Installment amount due now</span><strong>' +
+                    money(p.installment_amount_due) + '</strong></div>' +
+                    (p.installment_due_breakdown
+                        ? '<div class="muted" style="margin:4px 0 8px;">Due breakdown: ' +
+                          'P ' + money(p.installment_due_breakdown.principal) +
+                          ' · Interest ' + money(p.installment_due_breakdown.interest) +
+                          ' · Initiation ' + money(p.installment_due_breakdown.initiation_fee) +
+                          ' · Admin ' + money(p.installment_due_breakdown.admin) +
+                          (Number(p.installment_due_breakdown.late_penalty) > 0
+                              ? ' · Penalty ' + money(p.installment_due_breakdown.late_penalty)
+                              : '') +
+                          '</div>'
+                        : '') +
+                    '<div class="info-row"><span>Principal remaining</span><strong>' + money(p.principal_remaining) + '</strong></div>' +
+                    '<div class="info-row"><span>Total remaining</span><strong>' + money(p.total_remaining) + '</strong></div>' +
+                    '<div class="info-row"><span>Payments</span><strong>' + esc(p.payments_made) + ' / ' + esc(p.term_months) + '</strong></div>' +
+                    (s.interest_calculation_months
+                        ? '<div class="info-row"><span>Interest calculated over</span><strong>' +
+                          esc(s.interest_calculation_months) + ' of ' + esc(s.term_months) +
+                          ' months</strong></div>'
+                        : '') +
+                    (p.next_due_date ? '<div class="info-row"><span>Next due date</span><strong>' + esc(fmtDate(p.next_due_date)) + '</strong></div>' : '') +
+                    '<div class="btn-row">' +
+                    '<button class="btn btn-primary" type="button" onclick="downloadPortalStatement(' + idx + ')">Download statement PDF</button>' +
+                    '</div>' +
+                    '<h2 style="margin-top:18px;">Recent activity</h2>' +
+                    (activity.length ? activity.map(a =>
+                        '<div class="timeline-item"><strong>' + esc(fmtDate(a.date)) + '</strong> · ' +
+                        esc(a.title) +
+                        (a.detail ? '<div class="muted">' + esc(a.detail).replace(/\n/g, '<br>') + '</div>' : '') +
+                        '</div>'
+                    ).join('') : '<p class="muted">No activity.</p>') +
+                    '<h2 style="margin-top:18px;">Payment schedule</h2>' +
+                    (schedule.length ? schedule.map(row =>
+                        '<div class="sched-row"><strong>#' + esc(row.index) + '</strong> ' +
+                        esc(fmtDate(row.due_date)) + ' · ' + esc(String(row.status || '').toUpperCase()) +
+                        '<div class="muted">Installment ' + money(row.monthly_payment != null ? row.monthly_payment : row.installment_total) +
+                        (Number(row.amount_due) > 0.005 && String(row.status).toLowerCase() !== 'paid'
+                            ? ' · Still due ' + money(row.amount_due)
+                            : '') +
+                        '</div>' +
+                        '<div class="muted">P ' + money(row.principal) +
+                        ' · Interest ' + money(row.interest) +
+                        ' · Initiation ' + money(row.initiation_fee) +
+                        ' · Admin ' + money(row.admin_fee) +
+                        (Number(row.extra_admin_assessed) > 0 ? ' · Extra admin ' + money(row.extra_admin_assessed) : '') +
+                        (Number(row.late_penalty_assessed) > 0 ? ' · Penalty ' + money(row.late_penalty_assessed) : '') +
+                        '</div>' +
+                        (Number(row.amount_paid) > 0
+                            ? '<div class="muted">Paid ' + money(row.amount_paid) +
+                              (row.payment_date ? ' on ' + esc(fmtDate(row.payment_date)) : '') +
+                              '</div>'
+                            : '') +
+                        '</div>'
+                    ).join('') : '<p class="muted">No schedule.</p>') +
+                    '</section>';
+            }).join('');
+        }
+
+        function downloadPortalStatement(idx) {
+            if (!sessionPack || !sessionPack.loans || !sessionPack.loans[idx]) return;
+            try {
+                const filename = LoanStatementPDF.download(sessionPack.loans[idx]);
+                alert('Downloaded: ' + filename);
+            } catch (e) {
+                alert('PDF error: ' + (e.message || e));
+            }
+        }
+
+        async function login() {
+            const err = document.getElementById('loginError');
+            err.textContent = '';
+            const account = document.getElementById('accountInput').value.trim();
+            const pin = document.getElementById('pinInput').value;
+            if (!account || !pin) {
+                err.textContent = 'Enter account number and PIN.';
+                return;
+            }
+            try {
+                assertNotLocked(account);
+            } catch (e) {
+                err.textContent = e.message || String(e);
+                return;
+            }
+            let envelope;
+            try {
+                envelope = await ClientStatus.fetchEnvelope(account);
+            } catch (e) {
+                err.textContent = e.message || String(e);
+                return;
+            }
+            if (!envelope) {
+                // Not a credential failure — do not count toward lockout.
+                err.textContent =
+                    'No published status found for this account. Ask TBFS to publish your status.';
+                return;
+            }
+            let pack;
+            try {
+                pack = await ClientStatus.decryptEnvelope(envelope, account, pin);
+            } catch (e) {
+                recordFail(account);
+                err.textContent = e.message || String(e);
+                return;
+            }
+            // Auth succeeded — never count dashboard/storage errors as PIN fails.
+            clearFails(account);
+            saveSessionCreds(account, pin);
+            try {
+                showDashboard(pack);
+            } catch (e) {
+                err.textContent = 'Signed in, but the dashboard could not open: ' +
+                    (e.message || String(e));
+            }
+        }
+
+        document.getElementById('loginBtn').addEventListener('click', login);
+        document.getElementById('pinInput').addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') login();
+        });
+        document.getElementById('logoutBtn').addEventListener('click', showLogin);
+        document.getElementById('estBtn').addEventListener('click', runEstimate);
+
+        // Restore session: optimistic cache only while a fresh fetch is possible;
+        // auth/decrypt/missing force re-login. Network blips keep credentials.
+        (async function restorePortalSession() {
+            let cachedPack = null;
+            try {
+                const cached = sessionStorage.getItem(SESSION_KEY);
+                if (cached) cachedPack = JSON.parse(cached);
+            } catch (e) {
+                cachedPack = null;
+            }
+            const creds = readSessionCreds();
+            if (!creds) {
+                // Cannot refresh without creds — drop any leftover pack.
+                if (cachedPack) sessionStorage.removeItem(SESSION_KEY);
+                return;
+            }
+            if (cachedPack) showDashboard(cachedPack);
+            const result = await refreshSessionPack({ clearOnMissing: true });
+            if (result && result.ok) return;
+            if (result && result.reason === 'network') {
+                // Offline / transient — keep creds; keep cache if we have it.
+                // Do not call showLogin() (it wipes SESSION_CREDS_KEY).
+                return;
+            }
+            // auth / missing / no_creds — force clean re-login
+            showLogin();
+        })();
+
+        window.downloadPortalStatement = downloadPortalStatement;
+    </script>
+    <script src="shared/sw-register.js?v=68"></script>
+</body>
+</html>

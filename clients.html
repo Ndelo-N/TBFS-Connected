@@ -288,9 +288,15 @@
                 </button>
             </div>
             
-            <!-- Export -->
-            <div class="filter-section" style="margin-top: 15px; padding-top: 15px; border-top: 1px solid #e9ecef;">
+            <!-- Export / portal batch -->
+            <div class="filter-section" style="margin-top: 15px; padding-top: 15px; border-top: 1px solid #e9ecef; gap: 10px; flex-wrap: wrap;">
                 <button class="btn btn-success" onclick="exportToExcel()">📊 Export to Excel</button>
+                <button class="btn" style="background:#00b894;color:white;" onclick="refreshAllClientPortals()">
+                    📡 Refresh all portals
+                </button>
+                <span style="color:#636e72;font-size:13px;">
+                    Uses PINs remembered this browser session. Unlock Cloud Backup for remote publish.
+                </span>
             </div>
             
             <!-- Client Database Table -->
@@ -316,10 +322,11 @@
     </main>
     
     <!-- Shared Modules -->
-    <script src="shared/app-state.js?v=48"></script>
-    <script src="shared/calculations.js?v=48"></script>
-    <script src="shared/cloud-backup.js?v=48"></script>
-    <script src="shared/navigation.js?v=48"></script>
+    <script src="shared/app-state.js?v=68"></script>
+    <script src="shared/calculations.js?v=68"></script>
+    <script src="shared/cloud-backup.js?v=68"></script>
+    <script src="shared/client-status.js?v=68"></script>
+    <script src="shared/navigation.js?v=68"></script>
     
     <!-- Page Logic -->
     <script>
@@ -534,6 +541,14 @@
                 const accountForUrl = encodeURIComponent(client.account_number || '');
                 actionsHtml += `<a class="btn" style="padding: 5px 10px; font-size: 12px; background:#0984e3;color:white;text-decoration:none;" href="client-relationship.html?account=${accountForUrl}">Relationship</a> `;
                 actionsHtml += `<button class="btn btn-primary" style="padding: 5px 10px; font-size: 12px;" onclick="addNewLoan('${firstNameForUrl}', '${lastNameForUrl}', '${accountForUrl}')">💳 New Loan</button> `;
+                const access = client.client_access || {};
+                const accessLabel = access.enabled
+                    ? (access.published_at ? 'Portal ✓' : 'PIN set')
+                    : 'Client portal';
+                actionsHtml += `<button class="btn" style="padding: 5px 10px; font-size: 12px; background:#2d3436;color:white;" onclick="manageClientPortalAccess('${accountForAttr}')">${accessLabel}</button> `;
+                if (access.enabled) {
+                    actionsHtml += `<button class="btn" style="padding: 5px 10px; font-size: 12px; background:#00b894;color:white;" onclick="publishClientStatus('${accountForAttr}')">Publish status</button> `;
+                }
                 
                 // Link to Stockvel page if stockvel member
                 if (clientType === 'stockvel' && client.memberNumber) {
@@ -1024,6 +1039,164 @@
         }
         
         /**
+         * Enable / reset / disable PIN-gated client portal access.
+         */
+        async function manageClientPortalAccess(accountNumber) {
+            const client = (AppState.clients || []).find(c => c.account_number === accountNumber);
+            if (!client) {
+                alert('Client not found');
+                return;
+            }
+            if (typeof ClientStatus === 'undefined') {
+                alert('ClientStatus module not loaded');
+                return;
+            }
+            const access = client.client_access || {};
+            const choice = prompt(
+                'Client portal access for ' + (client.first_name || '') + ' ' + (client.last_name || '') +
+                ' (' + accountNumber + ')\n\n' +
+                'Status: ' + (access.enabled ? 'ENABLED' : 'disabled') +
+                (access.published_at ? '\nLast published: ' + access.published_at : '') +
+                '\n\n1 — Set / reset PIN and enable\n' +
+                '2 — Copy portal link\n' +
+                '3 — Disable access\n\nEnter 1, 2, or 3:'
+            );
+            if (!choice) return;
+            if (choice.trim() === '1') {
+                const pin = prompt('Enter a PIN for this client (min 4 characters).\nShare it securely with the client.');
+                if (!pin) return;
+                try {
+                    const result = await ClientStatus.enableAndPublish(client, AppState, pin);
+                    AppStateManager.save(AppState);
+                    alert(
+                        '✅ Client portal PIN saved and status published.\n\n' +
+                        'Local cache: ' + (result.pub && result.pub.local ? 'yes' : 'no') + '\n' +
+                        'Remote GitHub: ' + (result.pub && result.pub.remote
+                            ? 'yes'
+                            : 'no (unlock Cloud Backup for remote)') +
+                        '\nPIN remembered for this browser session — payments will auto-refresh the portal.\n' +
+                        'Portal: ' + ClientStatus.portalUrl()
+                    );
+                    loadClients();
+                } catch (e) {
+                    // enableAndPublish rolls back client_access — persist that rollback
+                    AppStateManager.save(AppState);
+                    alert('❌ ' + (e.message || e) +
+                        '\n\nPortal access was not left enabled.');
+                    loadClients();
+                }
+            } else if (choice.trim() === '2') {
+                const url = ClientStatus.portalUrl();
+                try {
+                    if (navigator.clipboard && navigator.clipboard.writeText) {
+                        await navigator.clipboard.writeText(url);
+                        alert('Portal link copied:\n' + url);
+                    } else {
+                        prompt('Copy portal link:', url);
+                    }
+                } catch (e) {
+                    prompt('Copy portal link:', url);
+                }
+            } else if (choice.trim() === '3') {
+                try {
+                    const revoke = await ClientStatus.disableAccess(client);
+                    AppStateManager.save(AppState);
+                    alert(
+                        'Client portal access disabled.\n' +
+                        'Local pack removed: ' + (revoke && revoke.local ? 'yes' : 'n/a') + '\n' +
+                        'Remote pack removed: ' + (revoke && revoke.remote
+                            ? 'yes'
+                            : (revoke && revoke.error
+                                ? ('failed — ' + revoke.error)
+                                : 'no (unlock Cloud Backup to delete remote)'))
+                    );
+                    loadClients();
+                } catch (e) {
+                    alert('❌ Disable failed:\n' + (e.message || e));
+                }
+            }
+        }
+
+        /**
+         * Encrypt + publish this client's loan status pack.
+         * Uses session-remembered PIN when available.
+         */
+        async function publishClientStatus(accountNumber) {
+            const client = (AppState.clients || []).find(c => c.account_number === accountNumber);
+            if (!client) {
+                alert('Client not found');
+                return;
+            }
+            if (typeof ClientStatus === 'undefined') {
+                alert('ClientStatus module not loaded');
+                return;
+            }
+            if (!client.client_access || !client.client_access.enabled) {
+                alert('Enable client portal access and set a PIN first.');
+                return;
+            }
+            let pin = ClientStatus.getRememberedPin(accountNumber);
+            if (!pin) {
+                pin = prompt(
+                    'Enter the client PIN once for this browser session.\n\n' +
+                    'It will be remembered until you close the browser so payments can auto-refresh the portal.\n' +
+                    'Tip: unlock Cloud Backup first for remote (GitHub Pages) publish.'
+                );
+                if (!pin) return;
+            }
+            try {
+                const result = await ClientStatus.publishForClient(client, AppState, pin);
+                AppStateManager.save(AppState);
+                alert(
+                    '✅ Status published.\n\n' +
+                    'Local cache: yes\n' +
+                    'Remote GitHub: ' + (result.pub.remote ? 'yes' : 'no (unlock cloud backup to publish remotely)') +
+                    '\nPortal: ' + ClientStatus.portalUrl() +
+                    '\nAccount: ' + accountNumber
+                );
+                loadClients();
+            } catch (e) {
+                alert('❌ Publish failed:\n' + (e.message || e));
+            }
+        }
+
+        /**
+         * Batch-republish every portal-enabled client using session PINs.
+         */
+        async function refreshAllClientPortals() {
+            if (typeof ClientStatus === 'undefined' || !ClientStatus.refreshAllPortalClients) {
+                alert('ClientStatus module not loaded');
+                return;
+            }
+            const enabled = (AppState.clients || []).filter(c =>
+                c && c.client_access && c.client_access.enabled);
+            if (enabled.length === 0) {
+                alert('No clients have portal access enabled yet.');
+                return;
+            }
+            if (!confirm(
+                'Refresh portal packs for ' + enabled.length + ' client(s)?\n\n' +
+                'Uses PINs remembered this session. Clients without a remembered PIN are skipped.'
+            )) {
+                return;
+            }
+            try {
+                const summary = await ClientStatus.refreshAllPortalClients(AppState);
+                AppStateManager.save(AppState);
+                alert(
+                    '📡 Portal refresh complete\n\n' +
+                    'Published: ' + summary.published +
+                    ' (remote: ' + summary.remote + ')\n' +
+                    'Skipped (no session PIN): ' + summary.skipped + '\n' +
+                    'Failed: ' + summary.failed
+                );
+                loadClients();
+            } catch (e) {
+                alert('❌ Refresh failed:\n' + (e.message || e));
+            }
+        }
+
+        /**
          * Export clients to Excel
          */
         function exportToExcel() {
@@ -1058,6 +1231,6 @@
         document.addEventListener('DOMContentLoaded', init);
     </script>
     <!-- Service Worker Registration -->
-    <script src="shared/sw-register.js?v=48"></script>
+    <script src="shared/sw-register.js?v=68"></script>
 </body>
 </html>

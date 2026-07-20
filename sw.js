@@ -1,34 +1,37 @@
-const CACHE_NAME = 'tbfs-loan-manager-v48'; // Cache aligned v48 + fee/score bugbot fixes
+const CACHE_NAME = 'tbfs-loan-manager-v68'; // manageLoanClientPortal keeps account-priority resolve
 const urlsToCache = [
   './',
-  './index.html',                    // Dashboard (refactored)
-  './calculator.html',               // Loan Calculator
-  './active-loans.html',             // Active Loans Management
-  './stockvel.html',                 // Stockvel Members
-  './clients.html',                  // Client Database
-  './client-relationship.html',      // Client relationship dashboard
-  './reports.html',                  // Business Reports
-  './loan-income-calculator.html',   // Income Table Calculator
-  './settings.html',                 // Settings & Backup
-  './offline.html',                  // Offline Fallback Page
-  './splash.html',                   // Splash/Loading Screen
-  './shared/app-state.js?v=48',      // Shared: State Management
-  './shared/navigation.js?v=48',     // Shared: Navigation
-  './shared/calculations.js?v=48',   // Shared: Calculations
-  './shared/styles.css',             // Shared: Styles
-  './shared/sw-register.js?v=48',    // Shared: SW Registration
-  './shared/sanitize.js?v=48',       // Shared: HTML escaping (F-04)
-  './shared/cloud-backup.js?v=48',   // Shared: Cloud backup (F-12)
-  './manifest.json',                 // PWA Manifest
-  './vendor/jspdf.umd.min.js',       // Vendored (F-10)
-  './vendor/xlsx.full.min.js',       // Vendored, 0.20.3 (F-10)
-  './vendor/chart.umd.min.js',       // Vendored (F-10)
+  './index.html',                    // manageLoanClientPortal keeps account-priority resolve
+  './calculator.html',               // manageLoanClientPortal keeps account-priority resolve
+  './active-loans.html',             // manageLoanClientPortal keeps account-priority resolve
+  './stockvel.html',                 // manageLoanClientPortal keeps account-priority resolve
+  './clients.html',                  // manageLoanClientPortal keeps account-priority resolve
+  './client-relationship.html',      // manageLoanClientPortal keeps account-priority resolve
+  './client-portal.html',            // manageLoanClientPortal keeps account-priority resolve
+  './reports.html',                  // manageLoanClientPortal keeps account-priority resolve
+  './loan-income-calculator.html',   // manageLoanClientPortal keeps account-priority resolve
+  './settings.html',                 // manageLoanClientPortal keeps account-priority resolve
+  './offline.html',                  // manageLoanClientPortal keeps account-priority resolve
+  './splash.html',                   // manageLoanClientPortal keeps account-priority resolve
+  './shared/app-state.js?v=68',      // manageLoanClientPortal keeps account-priority resolve
+  './shared/navigation.js?v=68',     // manageLoanClientPortal keeps account-priority resolve
+  './shared/calculations.js?v=68',   // manageLoanClientPortal keeps account-priority resolve
+  './shared/styles.css',             // manageLoanClientPortal keeps account-priority resolve
+  './shared/sw-register.js?v=68',    // manageLoanClientPortal keeps account-priority resolve
+  './shared/sanitize.js?v=68',       // manageLoanClientPortal keeps account-priority resolve
+  './shared/cloud-backup.js?v=68',   // manageLoanClientPortal keeps account-priority resolve
+  './shared/client-status.js?v=68',  // manageLoanClientPortal keeps account-priority resolve
+  './shared/loan-statement-pdf.js?v=68', // manageLoanClientPortal keeps account-priority resolve
+  './manifest.json',                 // manageLoanClientPortal keeps account-priority resolve
+  './vendor/jspdf.umd.min.js',       // manageLoanClientPortal keeps account-priority resolve
+  './vendor/xlsx.full.min.js',       // manageLoanClientPortal keeps account-priority resolve
+  './vendor/chart.umd.min.js',       // manageLoanClientPortal keeps account-priority resolve
   './icons/icon-192x192.png',
   './icons/icon-512x512.png',
   './TBFS_Logo.png'
 ];
 
-// Install event - cache resources
+// manageLoanClientPortal keeps account-priority resolve
 self.addEventListener('install', function(event) {
   event.waitUntil(
     caches.open(CACHE_NAME)
@@ -42,20 +45,20 @@ self.addEventListener('install', function(event) {
   );
 });
 
-// Fetch event - network-first for HTML, cache-first for assets
+// manageLoanClientPortal keeps account-priority resolve
 self.addEventListener('fetch', function(event) {
-  // Skip non-HTTP(S) requests (chrome-extension, etc.)
+  // manageLoanClientPortal keeps account-priority resolve
   var url = new URL(event.request.url);
   if (url.protocol !== 'http:' && url.protocol !== 'https:') {
     return;
   }
   
-  // For HTML documents, use network-first strategy to always get fresh code
+  // manageLoanClientPortal keeps account-priority resolve
   if (event.request.destination === 'document' || event.request.mode === 'navigate') {
     event.respondWith(
       fetch(event.request)
         .then(function(response) {
-          // Cache the fresh response
+          // manageLoanClientPortal keeps account-priority resolve
           if (response && response.status === 200) {
             var responseToCache = response.clone();
             caches.open(CACHE_NAME)
@@ -63,13 +66,13 @@ self.addEventListener('fetch', function(event) {
                 cache.put(event.request, responseToCache);
               })
               .catch(function() {
-                // Silently handle cache errors
+                // manageLoanClientPortal keeps account-priority resolve
               });
           }
           return response;
         })
         .catch(function() {
-          // Network failed - try cache, then offline page
+          // manageLoanClientPortal keeps account-priority resolve
           return caches.match(event.request).then(function(response) {
             return response || caches.match('./offline.html');
           });
@@ -78,7 +81,7 @@ self.addEventListener('fetch', function(event) {
     return;
   }
   
-  // For everything else (CSS, JS, images), use cache-first strategy
+  // manageLoanClientPortal keeps account-priority resolve
   event.respondWith(
     caches.match(event.request)
       .then(function(response) {
@@ -87,31 +90,31 @@ self.addEventListener('fetch', function(event) {
         }
         
         return fetch(event.request).then(function(response) {
-          // Check if we received a valid response
+          // manageLoanClientPortal keeps account-priority resolve
           if (!response || response.status !== 200 || response.type !== 'basic') {
             return response;
           }
 
-          // Clone and cache the response
+          // manageLoanClientPortal keeps account-priority resolve
           var responseToCache = response.clone();
           caches.open(CACHE_NAME)
             .then(function(cache) {
               cache.put(event.request, responseToCache);
             })
             .catch(function() {
-              // Silently handle cache errors (e.g., quota exceeded)
+              // manageLoanClientPortal keeps account-priority resolve
             });
 
           return response;
         }).catch(function() {
-          // Asset not in cache and network failed
+          // manageLoanClientPortal keeps account-priority resolve
           return undefined;
         });
       })
   );
 });
 
-// Activate event - clean up old caches
+// manageLoanClientPortal keeps account-priority resolve
 self.addEventListener('activate', function(event) {
   event.waitUntil(
     caches.keys().then(function(cacheNames) {
@@ -124,20 +127,20 @@ self.addEventListener('activate', function(event) {
         })
       );
     }).then(function() {
-      // Claim all clients immediately so the new SW controls all open pages
+      // manageLoanClientPortal keeps account-priority resolve
       return self.clients.claim();
     })
   );
 });
 
-// Listen for skip waiting message from the app
+// manageLoanClientPortal keeps account-priority resolve
 self.addEventListener('message', function(event) {
   if (event.data && event.data.type === 'SKIP_WAITING') {
     self.skipWaiting();
   }
 });
 
-// Push notifications
+// manageLoanClientPortal keeps account-priority resolve
 self.addEventListener('push', function(event) {
   var options = {
     body: event.data ? event.data.text() : 'New notification from TBFS',
@@ -167,7 +170,7 @@ self.addEventListener('push', function(event) {
   );
 });
 
-// Notification click
+// manageLoanClientPortal keeps account-priority resolve
 self.addEventListener('notificationclick', function(event) {
   event.notification.close();
 
@@ -178,7 +181,7 @@ self.addEventListener('notificationclick', function(event) {
   }
 });
 
-// Background Sync - triggered when connectivity returns after offline queuing
+// manageLoanClientPortal keeps account-priority resolve
 self.addEventListener('sync', function(event) {
   if (event.tag === 'cloud-backup-sync') {
     event.waitUntil(
@@ -187,7 +190,7 @@ self.addEventListener('sync', function(event) {
   }
 });
 
-// Periodic Background Sync - auto-check for pending backups on schedule
+// manageLoanClientPortal keeps account-priority resolve
 self.addEventListener('periodicsync', function(event) {
   if (event.tag === 'periodic-cloud-backup') {
     event.waitUntil(

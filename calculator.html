@@ -284,6 +284,14 @@
                             <h3>Total Interest</h3>
                             <div class="value" id="totalInterest">R 0.00</div>
                         </div>
+                        <div class="summary-card" id="interestPeriodCard" style="display: none;">
+                            <h3>Interest Period</h3>
+                            <div class="value" id="interestPeriodDisplay">—</div>
+                        </div>
+                        <div class="summary-card" id="maxInterestCard" style="display: none;">
+                            <h3>Max Interest Allowed</h3>
+                            <div class="value" id="maxInterestDisplay">R 0.00</div>
+                        </div>
                         <div class="summary-card" id="stockvelSummaryCard" style="display: none;">
                             <h3>Initiation Fee</h3>
                             <div class="value" id="initiationFeeDisplay">R 0.00</div>
@@ -336,11 +344,11 @@
     </main>
     
     <!-- Shared Modules -->
-    <script src="shared/sanitize.js?v=48"></script>
-    <script src="shared/app-state.js?v=48"></script>
-    <script src="shared/calculations.js?v=48"></script>
-    <script src="shared/cloud-backup.js?v=48"></script>
-    <script src="shared/navigation.js?v=48"></script>
+    <script src="shared/sanitize.js?v=68"></script>
+    <script src="shared/app-state.js?v=68"></script>
+    <script src="shared/calculations.js?v=68"></script>
+    <script src="shared/cloud-backup.js?v=68"></script>
+    <script src="shared/navigation.js?v=68"></script>
     
     <!-- Page Logic -->
     <script>
@@ -776,7 +784,9 @@
                         totalInterest: standardResult.totalInterest,
                         totalFees: standardResult.totalAdminFees + standardResult.totalInitiationFee,
                         initiationFee: standardResult.totalInitiationFee,
-                        monthlyPayment: standardResult.monthlyPayment
+                        monthlyPayment: standardResult.monthlyPayment,
+                        interestMonths: standardResult.interestMonths,
+                        maxInterestAllowed: standardResult.maxInterestAllowed
                     };
                 }
                 
@@ -799,7 +809,12 @@
                     totalInterest: result.totalInterest,
                     totalFees: result.totalFees,
                     initiationFee: result.initiationFee || 0,
-                    monthlyPayment: result.monthlyPayment
+                    monthlyPayment: result.monthlyPayment,
+                    interestMonths: result.interestMonths ||
+                        Calculations.calculateInterestPeriod(term).interestMonths,
+                    maxInterestAllowed: result.maxInterestAllowed != null
+                        ? result.maxInterestAllowed
+                        : result.totalInterest
                 };
                 
                 // Display results
@@ -926,6 +941,25 @@
             document.getElementById('totalCost').textContent = Calculations.formatCurrency(totalCost);
             document.getElementById('numberOfPayments').textContent = loanData.term;
             document.getElementById('totalInterest').textContent = Calculations.formatCurrency(loanData.totalInterest);
+
+            // Interest period / collectible cap (standard loans; stockvel uses schedule total)
+            const interestPeriodEl = document.getElementById('interestPeriodDisplay');
+            const maxInterestEl = document.getElementById('maxInterestDisplay');
+            const interestPeriodCard = document.getElementById('interestPeriodCard');
+            const maxInterestCard = document.getElementById('maxInterestCard');
+            if (!loanData.isStockvelMember && loanData.interestMonths != null) {
+                interestPeriodCard.style.display = 'block';
+                maxInterestCard.style.display = 'block';
+                interestPeriodEl.textContent = `${loanData.interestMonths} of ${loanData.term} mo`;
+                maxInterestEl.textContent = Calculations.formatCurrency(
+                    loanData.maxInterestAllowed != null
+                        ? loanData.maxInterestAllowed
+                        : loanData.totalInterest
+                );
+            } else {
+                interestPeriodCard.style.display = 'none';
+                maxInterestCard.style.display = 'none';
+            }
             
             // Show initiation fee card for stockvel
             if (loanData.isStockvelMember) {
@@ -1674,6 +1708,6 @@
         document.addEventListener('DOMContentLoaded', init);
     </script>
     <!-- Service Worker Registration -->
-    <script src="shared/sw-register.js?v=48"></script>
+    <script src="shared/sw-register.js?v=68"></script>
 </body>
 </html>

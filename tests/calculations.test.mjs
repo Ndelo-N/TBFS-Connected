@@ -39,6 +39,25 @@ test('reference standard loan: R10,000 over 10 months', () => {
     assert.equal(Math.round(r.totalAdminFees), 600);        // 60 × 10
     assert.equal(Math.round(r.totalCost), 22900);           // 10000 + 11100 + 1200 + 600
     assert.equal(Math.round(r.monthlyPayment), 2290);       // 22900 / 10
+    // Cap = calculated interest (may exceed principal); not min(interest, principal)
+    assert.equal(r.maxInterestAllowed, r.totalInterest);
+    assert.ok(r.maxInterestAllowed > 10000);
+});
+
+test('6-month standard loan uses 3-month interest period (income table)', () => {
+    const r = C.calculateStandardLoan(5000, 6);
+    assert.equal(r.interestMonths, 3);
+    assert.equal(r.maxInterestAllowed, r.totalInterest);
+    // Full-term 30% roll would overstate; period total must be below that path
+    let fullTermInterest = 0;
+    let bal = 5000;
+    const principalPerMonth = 5000 / 6;
+    const monthlyInit = (5000 * 0.12) / 6;
+    for (let m = 1; m <= 6; m++) {
+        fullTermInterest += bal * 0.30 - monthlyInit - 60;
+        bal -= principalPerMonth;
+    }
+    assert.ok(r.totalInterest < fullTermInterest);
 });
 
 test('payment waterfall: production order, no overpay of a component', () => {
