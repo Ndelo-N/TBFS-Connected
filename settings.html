@@ -275,7 +275,7 @@
                 <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 15px;">
                     <div>
                         <p style="margin: 0; color: #636e72; font-size: 14px;">Current Version</p>
-                        <p style="margin: 5px 0 0 0; font-size: 24px; font-weight: bold; color: #2c3e50;" id="currentVersion">v1.7.11</p>
+                        <p style="margin: 5px 0 0 0; font-size: 24px; font-weight: bold; color: #2c3e50;" id="currentVersion">v1.7.12</p>
                         <p style="margin: 5px 0 0 0; font-size: 12px; color: #636e72;" id="updateStatus">Checking for updates...</p>
                     </div>
                     <button class="btn" onclick="checkForUpdates()" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 12px 24px;">
@@ -478,16 +478,16 @@
     </main>
 
     <!-- Shared Scripts -->
-    <script src="shared/sanitize.js?v=69"></script>
-    <script src="shared/app-state.js?v=69"></script>
-    <script src="shared/calculations.js?v=69"></script>
-    <script src="shared/cloud-backup.js?v=69"></script>
-    <script src="shared/navigation.js?v=69"></script>
+    <script src="shared/sanitize.js?v=70"></script>
+    <script src="shared/app-state.js?v=70"></script>
+    <script src="shared/calculations.js?v=70"></script>
+    <script src="shared/cloud-backup.js?v=70"></script>
+    <script src="shared/navigation.js?v=70"></script>
 
     <script>
-        // App Version
-        const APP_VERSION = '1.7.11';
-        const CACHE_NAME = 'tbfs-loan-manager-v39';
+        // App Version — bump when shipping loan-engine / PWA-visible fixes
+        const APP_VERSION = '1.7.12';
+        const CACHE_NAME = 'tbfs-loan-manager-v70';
         
         // Global state
         let AppState = {};
@@ -1167,6 +1167,6 @@
         document.addEventListener('DOMContentLoaded', init);
     </script>
     <!-- Service Worker Registration -->
-    <script src="shared/sw-register.js?v=69"></script>
+    <script src="shared/sw-register.js?v=70"></script>
 </body>
 </html>
