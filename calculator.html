@@ -831,83 +831,40 @@
          */
         function generateStockvelSchedule(principal, term, totalContributions, monthlyContribution, startMonthIndex, startYear) {
             try {
+                const currentSavings = totalContributions || 0;
+                const initiationFee = principal <= currentSavings
+                    ? 0
+                    : (principal - currentSavings) * Calculations.RATES.INITIATION_FEE_RATE;
+
+                // Shared month-level pricing (balance × 10% minimum, no principal scaling)
+                const plan = Calculations.buildStockvelRepaymentPlan({
+                    remainingPrincipal: principal,
+                    remainingMonths: term,
+                    remainingInitiationFee: initiationFee,
+                    startingContributions: currentSavings,
+                    monthlyContribution: monthlyContribution || 0
+                });
+
                 const schedule = [];
-                let outstandingBalance = principal;
-                let currentSavings = totalContributions || 0;
-                
-                // Calculate initiation fee
-                const initiationFee = principal <= currentSavings ? 0 : (principal - currentSavings) * Calculations.RATES.INITIATION_FEE_RATE;
-                const monthlyInitiationFee = initiationFee / term;
-                
-                // Calculate each month
-                const monthlyDetails = [];
-                for (let month = 1; month <= term; month++) {
-                    if (month > 1) {
-                        currentSavings += (monthlyContribution || 0);
-                    }
-                    
-                    // Calculate tiered interest
-                    const tieredResult = Calculations.calculateTieredStockvelInterest(outstandingBalance, currentSavings);
-                    const principalPayment = principal / term;
-                    
-                    // Calculate interest payment with 10% minimum
-                    let interestPayment = 0;
-                    if (tieredResult && tieredResult.tiers1to4Interest !== undefined) {
-                        const tieredInterest = tieredResult.tiers1to4Interest * (principal / outstandingBalance);
-                        const minimumInterest = (principal / term) * Calculations.RATES.STOCKVEL_MIN_MONTHLY_RATE;
-                        interestPayment = Math.max(tieredInterest, minimumInterest);
-                    } else {
-                        // Fallback: 10% minimum
-                        interestPayment = (principal / term) * Calculations.RATES.STOCKVEL_MIN_MONTHLY_RATE;
-                    }
-                    
-                    // Calculate admin fee
-                    let adminFee = Calculations.RATES.ADMIN_FEE_STANDARD;
-                    if (tieredResult && tieredResult.tier1to4Amount > 0) {
-                        const effectiveRate = tieredResult.tiers1to4Interest / tieredResult.tier1to4Amount;
-                        adminFee = Calculations.RATES.ADMIN_FEE_STANDARD * (1 - effectiveRate);
-                    }
-                    adminFee = Math.max(0, adminFee); // Ensure non-negative
-                    
-                    monthlyDetails.push({
-                        month,
-                        principal_payment: principalPayment,
-                        interest_payment: interestPayment,
-                        admin_fee: adminFee,
-                        initiation_fee: monthlyInitiationFee
-                    });
-                    
-                    outstandingBalance -= principalPayment;
-                }
-                
-                // Calculate total and equal monthly payment
-                const totalCost = monthlyDetails.reduce((sum, m) => 
-                    sum + (m.principal_payment || 0) + (m.interest_payment || 0) + (m.admin_fee || 0) + (m.initiation_fee || 0), 0
-                );
-                const equalMonthlyPayment = totalCost / term;
-                
-                // Build final schedule
-                let balance = principal;
-                for (let i = 0; i < monthlyDetails.length; i++) {
-                    const detail = monthlyDetails[i];
-                    const dueDate = Calculations.calculateDueDate(startYear, startMonthIndex, detail.month);
-                    
+                for (let i = 0; i < plan.breakdown.length; i++) {
+                    const detail = plan.breakdown[i];
+                    const month = i + 1;
+                    const dueDate = Calculations.calculateDueDate(startYear, startMonthIndex, month);
+
                     schedule.push({
-                        payment_number: detail.month,
+                        payment_number: month,
                         due_date: dueDate,
-                        monthly_payment: equalMonthlyPayment,
+                        monthly_payment: plan.equalMonthlyPaymentRaw,
                         principal_payment: detail.principal_payment || 0,
                         interest_payment: detail.interest_payment || 0,
                         admin_fee: detail.admin_fee || 0,
                         initiation_fee: detail.initiation_fee || 0,
-                        outstanding_balance: Math.max(0, balance - (detail.principal_payment || 0)),
-                        bonus: (detail.interest_payment || 0) * 0.1, // 10% of interest
+                        outstanding_balance: detail.outstanding_balance || 0,
+                        bonus: (detail.interest_payment || 0) * 0.1, // display hint; live bonus uses min-vs-tiered
                         status: 'pending'
                     });
-                    
-                    balance -= (detail.principal_payment || 0);
                 }
-                
+
                 return schedule;
             } catch (error) {
                 console.error('Error generating stockvel schedule:', error);
