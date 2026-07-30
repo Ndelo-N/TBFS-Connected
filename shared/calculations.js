@@ -3182,6 +3182,59 @@ const Calculations = {
      * Uses state.gracePeriodDays when options omit gracePeriodDays so portal
      * packs match the operator Settings grace period.
      */
+    /**
+     * Sort key for portal / status-pack loan ordering (most recent first).
+     * Prefers disbursement, then created_at / loan_date.
+     */
+    loanPortalDateMs(loanOrModel) {
+        if (!loanOrModel) return 0;
+        const summary = loanOrModel.summary || {};
+        const raw = loanOrModel.disbursement_date
+            || loanOrModel.created_at
+            || loanOrModel.loan_date
+            || summary.created_at
+            || summary.completion_date
+            || 0;
+        const ms = new Date(raw).getTime();
+        return Number.isFinite(ms) ? ms : 0;
+    },
+
+    /**
+     * Portal packs: last N loans by date (newest first), including the current
+     * active loan when present. Default limit is 6.
+     */
+    selectPortalHistoryLoans(loans, options) {
+        const opts = options || {};
+        const limit = Number.isFinite(Number(opts.limit)) ? Math.max(0, Number(opts.limit)) : 6;
+        const includeCompleted = !opts.activeOnly;
+        const selected = (Array.isArray(loans) ? loans : []).filter(l => {
+            if (!l) return false;
+            const st = String(
+                (l.summary && l.summary.status) || l.status || ''
+            ).toLowerCase();
+            if (st === 'active') return true;
+            if (includeCompleted && (st === 'completed' || st === 'defaulted')) return true;
+            return false;
+        });
+        selected.sort((a, b) => this.loanPortalDateMs(b) - this.loanPortalDateMs(a));
+        return selected.slice(0, limit);
+    },
+
+    /**
+     * Current (landing) loan: most recent active loan, or null.
+     */
+    selectCurrentPortalLoan(loans) {
+        const list = (Array.isArray(loans) ? loans.slice() : [])
+            .filter(l => l);
+        list.sort((a, b) => this.loanPortalDateMs(b) - this.loanPortalDateMs(a));
+        return list.find(l => {
+            const st = String(
+                (l.summary && l.summary.status) || l.status || ''
+            ).toLowerCase();
+            return st === 'active';
+        }) || null;
+    },
+
     buildClientStatusPack(client, state, options) {
         const opts = Object.assign({}, options || {});
         if (typeof opts.gracePeriodDays !== 'number') {
@@ -3189,14 +3242,15 @@ const Calculations = {
             if (Number.isFinite(fromState)) opts.gracePeriodDays = fromState;
         }
         const loans = this.getClientLoans(client, state && state.loans);
-        const includeCompleted = !opts.activeOnly;
-        const selected = loans.filter(l => {
-            if (!l) return false;
-            const st = String(l.status || '').toLowerCase();
-            if (st === 'active') return true;
-            if (includeCompleted && (st === 'completed' || st === 'defaulted')) return true;
-            return false;
+        const historyLimit = Number.isFinite(Number(opts.historyLimit))
+            ? Number(opts.historyLimit)
+            : 6;
+        const selected = this.selectPortalHistoryLoans(loans, {
+            activeOnly: opts.activeOnly,
+            limit: historyLimit
         });
+        const models = selected.map(l => this.buildLoanStatementModel(l, state, opts));
+        const current = this.selectCurrentPortalLoan(models);
         return {
             v: 1,
             account_number: client && (client.account_number || client.accountNumber) || '',
@@ -3210,7 +3264,10 @@ const Calculations = {
             published_at: (opts.asOf
                 ? new Date(opts.asOf)
                 : new Date()).toISOString(),
-            loans: selected.map(l => this.buildLoanStatementModel(l, state, opts))
+            current_loan_id: current && current.summary
+                ? current.summary.loan_id
+                : (current && current.loan_id) || null,
+            loans: models
         };
     }
 };

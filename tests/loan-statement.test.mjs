@@ -318,3 +318,64 @@ test('buildClientStatusPack uses state.gracePeriodDays for statement signals', (
     );
     assert.ok(shortGrace.loans.length === 1);
 });
+
+function miniLoan(id, status, createdAt) {
+    return {
+        loan_id: id,
+        client_name: 'Ada Client',
+        account_number: 'ACC-77',
+        status,
+        created_at: createdAt,
+        principal_amount: 1000,
+        original_principal: 1000,
+        term_months: 1,
+        monthly_payment: 1100,
+        remaining_principal: status === 'active' ? 1000 : 0,
+        total_interest: 100,
+        interest_paid: status === 'active' ? 0 : 100,
+        total_initiation_fee: 0,
+        initiation_fee_paid: 0,
+        payments_made: status === 'active' ? 0 : 1,
+        total_principal_received: status === 'active' ? 0 : 1000,
+        payment_history: [],
+        adjustment_history: [],
+        schedule: []
+    };
+}
+
+test('buildClientStatusPack keeps last 6 loans newest-first and marks current', () => {
+    const client = { account_number: 'ACC-77', first_name: 'Ada', last_name: 'Client' };
+    const loans = [
+        miniLoan(1, 'completed', '2025-01-01T00:00:00.000Z'),
+        miniLoan(2, 'completed', '2025-02-01T00:00:00.000Z'),
+        miniLoan(3, 'completed', '2025-03-01T00:00:00.000Z'),
+        miniLoan(4, 'completed', '2025-04-01T00:00:00.000Z'),
+        miniLoan(5, 'completed', '2025-05-01T00:00:00.000Z'),
+        miniLoan(6, 'completed', '2025-06-01T00:00:00.000Z'),
+        miniLoan(7, 'completed', '2025-07-01T00:00:00.000Z'),
+        miniLoan(8, 'active', '2025-08-01T00:00:00.000Z')
+    ];
+    const pack = C.buildClientStatusPack(client, { loans, transactions: [] });
+    assert.equal(pack.loans.length, 6);
+    assert.deepEqual(
+        pack.loans.map(l => l.summary.loan_id),
+        [8, 7, 6, 5, 4, 3]
+    );
+    assert.equal(pack.current_loan_id, 8);
+    assert.equal(C.selectCurrentPortalLoan(pack.loans).summary.loan_id, 8);
+});
+
+test('selectCurrentPortalLoan returns null when no active loan', () => {
+    const loans = [
+        miniLoan(1, 'completed', '2025-06-01T00:00:00.000Z'),
+        miniLoan(2, 'defaulted', '2025-07-01T00:00:00.000Z')
+    ];
+    const pack = C.buildClientStatusPack(
+        { account_number: 'ACC-77' },
+        { loans, transactions: [] }
+    );
+    assert.equal(pack.current_loan_id, null);
+    assert.equal(C.selectCurrentPortalLoan(pack.loans), null);
+    assert.equal(pack.loans.length, 2);
+    assert.equal(pack.loans[0].summary.loan_id, 2);
+});
