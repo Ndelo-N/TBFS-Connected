@@ -76,6 +76,33 @@
         .savings-banner.warn {
             background: #fef5e7; color: #9a7d0a;
         }
+        .portal-nav {
+            display: flex; gap: 8px; flex-wrap: wrap;
+            margin: 0 0 18px;
+        }
+        .portal-nav-btn {
+            flex: 1 1 140px;
+            border: 2px solid #d5e3ef;
+            background: #fff;
+            color: #1a5276;
+            border-radius: 12px;
+            padding: 12px 14px;
+            font-size: 15px;
+            font-weight: 700;
+            cursor: pointer;
+        }
+        .portal-nav-btn.active {
+            background: #1a5276;
+            border-color: #1a5276;
+            color: #fff;
+        }
+        .history-row {
+            display: flex; justify-content: space-between; gap: 12px;
+            flex-wrap: wrap; align-items: center;
+            padding: 12px 0; border-bottom: 1px solid #eef2f5;
+        }
+        .history-row:last-child { border-bottom: none; }
+        .history-meta { color: #5d6d7e; font-size: 13px; margin-top: 4px; }
     </style>
 </head>
 <body>
@@ -107,46 +134,68 @@
                 </div>
             </div>
 
-            <section class="portal-card" id="estimateCard">
-                <h2>Loan estimate</h2>
-                <p class="muted">
-                    Quote only — this does not create a loan. Compare a standard loan with a
-                    Stockvel estimate so you can see the membership benefit.
-                </p>
-                <div class="est-grid">
-                    <div>
-                        <label for="estPrincipal">Loan amount (R)</label>
-                        <input id="estPrincipal" type="number" min="100" step="100" inputmode="decimal" value="10000">
+            <nav class="portal-nav" aria-label="Portal pages">
+                <button type="button" class="portal-nav-btn active" id="navCurrentBtn" data-page="current">
+                    Current loan
+                </button>
+                <button type="button" class="portal-nav-btn" id="navHistoryBtn" data-page="history">
+                    Loan history
+                </button>
+            </nav>
+
+            <section id="pageCurrent">
+                <section class="portal-card" id="estimateCard">
+                    <h2>Loan estimate</h2>
+                    <p class="muted">
+                        Quote only — this does not create a loan. Compare a standard loan with a
+                        Stockvel estimate so you can see the membership benefit.
+                    </p>
+                    <div class="est-grid">
+                        <div>
+                            <label for="estPrincipal">Loan amount (R)</label>
+                            <input id="estPrincipal" type="number" min="100" step="100" inputmode="decimal" value="10000">
+                        </div>
+                        <div>
+                            <label for="estTerm">Term (months)</label>
+                            <input id="estTerm" type="number" min="1" max="60" step="1" inputmode="numeric" value="3">
+                        </div>
+                        <div>
+                            <label for="estContributions">Stockvel contributions so far (R)</label>
+                            <input id="estContributions" type="number" min="0" step="100" inputmode="decimal" value="5000">
+                        </div>
+                        <div>
+                            <label for="estMonthly">Monthly contribution (R)</label>
+                            <input id="estMonthly" type="number" min="0" step="50" inputmode="decimal" value="500">
+                        </div>
                     </div>
-                    <div>
-                        <label for="estTerm">Term (months)</label>
-                        <input id="estTerm" type="number" min="1" max="60" step="1" inputmode="numeric" value="3">
+                    <div class="btn-row">
+                        <button class="btn btn-primary" type="button" id="estBtn">Compare estimates</button>
                     </div>
-                    <div>
-                        <label for="estContributions">Stockvel contributions so far (R)</label>
-                        <input id="estContributions" type="number" min="0" step="100" inputmode="decimal" value="5000">
-                    </div>
-                    <div>
-                        <label for="estMonthly">Monthly contribution (R)</label>
-                        <input id="estMonthly" type="number" min="0" step="50" inputmode="decimal" value="500">
-                    </div>
-                </div>
-                <div class="btn-row">
-                    <button class="btn btn-primary" type="button" id="estBtn">Compare estimates</button>
-                </div>
-                <p class="error" id="estError"></p>
-                <div id="estResults" class="hidden"></div>
+                    <p class="error" id="estError"></p>
+                    <div id="estResults" class="hidden"></div>
+                </section>
+
+                <div id="currentLoanHost"></div>
             </section>
 
-            <div id="loanList"></div>
+            <section id="pageHistory" class="hidden">
+                <section class="portal-card">
+                    <h2>Loan history</h2>
+                    <p class="muted" style="margin-top:0;">
+                        Last 6 loans, newest first. Includes your current loan when you have one.
+                    </p>
+                    <div id="historyList"></div>
+                </section>
+                <div id="historyDetailHost"></div>
+            </section>
         </section>
     </main>
 
     <script src="vendor/jspdf.umd.min.js"></script>
-    <script src="shared/sanitize.js?v=72"></script>
-    <script src="shared/calculations.js?v=72"></script>
-    <script src="shared/client-status.js?v=72"></script>
-    <script src="shared/loan-statement-pdf.js?v=72"></script>
+    <script src="shared/sanitize.js?v=73"></script>
+    <script src="shared/calculations.js?v=73"></script>
+    <script src="shared/client-status.js?v=73"></script>
+    <script src="shared/loan-statement-pdf.js?v=73"></script>
     <script>
         const esc = (typeof Sanitize !== 'undefined' && Sanitize.esc)
             ? (v) => Sanitize.esc(v)
@@ -159,11 +208,56 @@
         const ATTEMPT_KEY = 'tbfsClientPortalAttempts';
 
         let sessionPack = null;
+        let portalPage = 'current';
+        let historyDetailIdx = null;
 
         function fmtDate(v) {
             if (!v) return '—';
             const d = new Date(v);
             return isNaN(d.getTime()) ? String(v) : d.toLocaleDateString('en-ZA');
+        }
+
+        function loanDateMs(model) {
+            if (typeof Calculations !== 'undefined' && Calculations.loanPortalDateMs) {
+                return Calculations.loanPortalDateMs(model);
+            }
+            const s = (model && model.summary) || {};
+            const raw = s.created_at || (model && model.created_at) || s.completion_date || 0;
+            const ms = new Date(raw).getTime();
+            return Number.isFinite(ms) ? ms : 0;
+        }
+
+        function historyLoans(pack) {
+            const loans = Array.isArray(pack && pack.loans) ? pack.loans.slice() : [];
+            if (typeof Calculations !== 'undefined' && Calculations.selectPortalHistoryLoans) {
+                return Calculations.selectPortalHistoryLoans(loans, { limit: 6 });
+            }
+            loans.sort((a, b) => loanDateMs(b) - loanDateMs(a));
+            return loans.slice(0, 6);
+        }
+
+        function currentLoan(pack) {
+            const loans = Array.isArray(pack && pack.loans) ? pack.loans : [];
+            if (typeof Calculations !== 'undefined' && Calculations.selectCurrentPortalLoan) {
+                return Calculations.selectCurrentPortalLoan(loans);
+            }
+            const sorted = loans.slice().sort((a, b) => loanDateMs(b) - loanDateMs(a));
+            return sorted.find(l =>
+                String((l.summary && l.summary.status) || '').toLowerCase() === 'active'
+            ) || null;
+        }
+
+        function packLoanIndex(pack, model) {
+            if (!pack || !model || !Array.isArray(pack.loans)) return -1;
+            const id = (model.summary && model.summary.loan_id) != null
+                ? model.summary.loan_id
+                : model.loan_id;
+            return pack.loans.findIndex(l => {
+                const lid = (l.summary && l.summary.loan_id) != null
+                    ? l.summary.loan_id
+                    : l.loan_id;
+                return lid === id;
+            });
         }
 
         function readAttempts() {
@@ -206,6 +300,8 @@
             document.getElementById('loginCard').classList.remove('hidden');
             document.getElementById('dashboard').classList.add('hidden');
             sessionPack = null;
+            historyDetailIdx = null;
+            portalPage = 'current';
             sessionStorage.removeItem(SESSION_KEY);
             sessionStorage.removeItem(SESSION_CREDS_KEY);
         }
@@ -231,6 +327,18 @@
             }
         }
 
+        function setPortalPage(page) {
+            portalPage = page === 'history' ? 'history' : 'current';
+            document.getElementById('pageCurrent').classList.toggle('hidden', portalPage !== 'current');
+            document.getElementById('pageHistory').classList.toggle('hidden', portalPage !== 'history');
+            document.getElementById('navCurrentBtn').classList.toggle('active', portalPage === 'current');
+            document.getElementById('navHistoryBtn').classList.toggle('active', portalPage === 'history');
+            if (portalPage !== 'history') {
+                historyDetailIdx = null;
+                document.getElementById('historyDetailHost').innerHTML = '';
+            }
+        }
+
         function showDashboard(pack) {
             sessionPack = pack;
             sessionStorage.setItem(SESSION_KEY, JSON.stringify(pack));
@@ -244,7 +352,8 @@
             prefillsEstimate(pack);
             document.getElementById('estResults').classList.add('hidden');
             document.getElementById('estError').textContent = '';
-            renderLoans(pack);
+            setPortalPage(portalPage || 'current');
+            renderPortalPages(pack);
         }
 
         /**
@@ -283,13 +392,11 @@
         }
 
         function prefillsEstimate(pack) {
-            const active = (pack.loans || []).find(l =>
-                l && l.summary && String(l.summary.status).toLowerCase() === 'active');
-            const model = active || (pack.loans || [])[0];
-            if (!model || !model.summary) return;
-            const principal = Number(model.summary.original_principal) ||
-                Number(model.position && model.position.principal_remaining) || 0;
-            const term = Number(model.summary.term_months) || 3;
+            const active = currentLoan(pack) || historyLoans(pack)[0];
+            if (!active || !active.summary) return;
+            const principal = Number(active.summary.original_principal) ||
+                Number(active.position && active.position.principal_remaining) || 0;
+            const term = Number(active.summary.term_months) || 3;
             if (principal > 0) document.getElementById('estPrincipal').value = String(Math.round(principal));
             if (term > 0) document.getElementById('estTerm').value = String(term);
         }
@@ -362,84 +469,152 @@
             out.classList.remove('hidden');
         }
 
-        function renderLoans(pack) {
-            const host = document.getElementById('loanList');
-            const loans = Array.isArray(pack.loans) ? pack.loans : [];
-            if (!loans.length) {
-                host.innerHTML = '<section class="portal-card"><p class="muted">No loans in this status pack.</p></section>';
-                return;
-            }
-            host.innerHTML = loans.map((model, idx) => {
-                const s = model.summary || {};
-                const p = model.position || {};
-                const st = String(s.status || 'active').toLowerCase();
-                const chip = 'loan-chip st-' + (st === 'completed' || st === 'defaulted' ? st : 'active');
-                const activity = (model.activity || []).slice().reverse().slice(0, 12);
-                const schedule = model.schedule || [];
-                return '<section class="portal-card" data-loan-idx="' + idx + '">' +
-                    '<div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:center;">' +
-                    '<h2 style="margin:0;">Loan #' + esc(s.loan_id) + '</h2>' +
-                    '<span class="' + chip + '">' + esc(st) + '</span></div>' +
-                    '<div class="info-row"><span>Contracted monthly installment</span><strong>' +
-                    money(p.monthly_installment != null ? p.monthly_installment : s.monthly_payment) +
-                    '</strong></div>' +
-                    '<div class="info-row"><span>Installment amount due now</span><strong>' +
-                    money(p.installment_amount_due) + '</strong></div>' +
-                    (p.installment_due_breakdown
-                        ? '<div class="muted" style="margin:4px 0 8px;">Due breakdown: ' +
-                          'P ' + money(p.installment_due_breakdown.principal) +
-                          ' · Interest ' + money(p.installment_due_breakdown.interest) +
-                          ' · Initiation ' + money(p.installment_due_breakdown.initiation_fee) +
-                          ' · Admin ' + money(p.installment_due_breakdown.admin) +
-                          (Number(p.installment_due_breakdown.late_penalty) > 0
-                              ? ' · Penalty ' + money(p.installment_due_breakdown.late_penalty)
-                              : '') +
+        function renderLoanDetail(model, idx, opts) {
+            const options = opts || {};
+            const s = model.summary || {};
+            const p = model.position || {};
+            const st = String(s.status || 'active').toLowerCase();
+            const chip = 'loan-chip st-' + (st === 'completed' || st === 'defaulted' ? st : 'active');
+            const activity = (model.activity || []).slice().reverse().slice(0, 12);
+            const schedule = model.schedule || [];
+            const heading = options.heading || ('Loan #' + esc(s.loan_id));
+            return '<section class="portal-card" data-loan-idx="' + idx + '">' +
+                '<div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:center;">' +
+                '<h2 style="margin:0;">' + heading + '</h2>' +
+                '<span class="' + chip + '">' + esc(st) + '</span></div>' +
+                '<div class="info-row"><span>Started</span><strong>' + esc(fmtDate(s.created_at)) + '</strong></div>' +
+                (s.completion_date
+                    ? '<div class="info-row"><span>Completed</span><strong>' + esc(fmtDate(s.completion_date)) + '</strong></div>'
+                    : '') +
+                '<div class="info-row"><span>Contracted monthly installment</span><strong>' +
+                money(p.monthly_installment != null ? p.monthly_installment : s.monthly_payment) +
+                '</strong></div>' +
+                '<div class="info-row"><span>Installment amount due now</span><strong>' +
+                money(p.installment_amount_due) + '</strong></div>' +
+                (p.installment_due_breakdown
+                    ? '<div class="muted" style="margin:4px 0 8px;">Due breakdown: ' +
+                      'P ' + money(p.installment_due_breakdown.principal) +
+                      ' · Interest ' + money(p.installment_due_breakdown.interest) +
+                      ' · Initiation ' + money(p.installment_due_breakdown.initiation_fee) +
+                      ' · Admin ' + money(p.installment_due_breakdown.admin) +
+                      (Number(p.installment_due_breakdown.late_penalty) > 0
+                          ? ' · Penalty ' + money(p.installment_due_breakdown.late_penalty)
+                          : '') +
+                      '</div>'
+                    : '') +
+                '<div class="info-row"><span>Principal remaining</span><strong>' + money(p.principal_remaining) + '</strong></div>' +
+                '<div class="info-row"><span>Total remaining</span><strong>' + money(p.total_remaining) + '</strong></div>' +
+                '<div class="info-row"><span>Payments</span><strong>' + esc(p.payments_made) + ' / ' + esc(p.term_months) + '</strong></div>' +
+                (s.interest_calculation_months
+                    ? '<div class="info-row"><span>Interest calculated over</span><strong>' +
+                      esc(s.interest_calculation_months) + ' of ' + esc(s.term_months) +
+                      ' months</strong></div>'
+                    : '') +
+                (p.next_due_date ? '<div class="info-row"><span>Next due date</span><strong>' + esc(fmtDate(p.next_due_date)) + '</strong></div>' : '') +
+                '<div class="btn-row">' +
+                '<button class="btn btn-primary" type="button" onclick="downloadPortalStatement(' + idx + ')">Download statement PDF</button>' +
+                (options.closeBtn
+                    ? '<button class="btn btn-secondary" type="button" onclick="closeHistoryDetail()">Close details</button>'
+                    : '') +
+                '</div>' +
+                '<h2 style="margin-top:18px;">Recent activity</h2>' +
+                (activity.length ? activity.map(a =>
+                    '<div class="timeline-item"><strong>' + esc(fmtDate(a.date)) + '</strong> · ' +
+                    esc(a.title) +
+                    (a.detail ? '<div class="muted">' + esc(a.detail).replace(/\n/g, '<br>') + '</div>' : '') +
+                    '</div>'
+                ).join('') : '<p class="muted">No activity.</p>') +
+                '<h2 style="margin-top:18px;">Payment schedule</h2>' +
+                (schedule.length ? schedule.map(row =>
+                    '<div class="sched-row"><strong>#' + esc(row.index) + '</strong> ' +
+                    esc(fmtDate(row.due_date)) + ' · ' + esc(String(row.status || '').toUpperCase()) +
+                    '<div class="muted">Installment ' + money(row.monthly_payment != null ? row.monthly_payment : row.installment_total) +
+                    (Number(row.amount_due) > 0.005 && String(row.status).toLowerCase() !== 'paid'
+                        ? ' · Still due ' + money(row.amount_due)
+                        : '') +
+                    '</div>' +
+                    '<div class="muted">P ' + money(row.principal) +
+                    ' · Interest ' + money(row.interest) +
+                    ' · Initiation ' + money(row.initiation_fee) +
+                    ' · Admin ' + money(row.admin_fee) +
+                    (Number(row.extra_admin_assessed) > 0 ? ' · Extra admin ' + money(row.extra_admin_assessed) : '') +
+                    (Number(row.late_penalty_assessed) > 0 ? ' · Penalty ' + money(row.late_penalty_assessed) : '') +
+                    '</div>' +
+                    (Number(row.amount_paid) > 0
+                        ? '<div class="muted">Paid ' + money(row.amount_paid) +
+                          (row.payment_date ? ' on ' + esc(fmtDate(row.payment_date)) : '') +
                           '</div>'
                         : '') +
-                    '<div class="info-row"><span>Principal remaining</span><strong>' + money(p.principal_remaining) + '</strong></div>' +
-                    '<div class="info-row"><span>Total remaining</span><strong>' + money(p.total_remaining) + '</strong></div>' +
-                    '<div class="info-row"><span>Payments</span><strong>' + esc(p.payments_made) + ' / ' + esc(p.term_months) + '</strong></div>' +
-                    (s.interest_calculation_months
-                        ? '<div class="info-row"><span>Interest calculated over</span><strong>' +
-                          esc(s.interest_calculation_months) + ' of ' + esc(s.term_months) +
-                          ' months</strong></div>'
-                        : '') +
-                    (p.next_due_date ? '<div class="info-row"><span>Next due date</span><strong>' + esc(fmtDate(p.next_due_date)) + '</strong></div>' : '') +
-                    '<div class="btn-row">' +
-                    '<button class="btn btn-primary" type="button" onclick="downloadPortalStatement(' + idx + ')">Download statement PDF</button>' +
-                    '</div>' +
-                    '<h2 style="margin-top:18px;">Recent activity</h2>' +
-                    (activity.length ? activity.map(a =>
-                        '<div class="timeline-item"><strong>' + esc(fmtDate(a.date)) + '</strong> · ' +
-                        esc(a.title) +
-                        (a.detail ? '<div class="muted">' + esc(a.detail).replace(/\n/g, '<br>') + '</div>' : '') +
-                        '</div>'
-                    ).join('') : '<p class="muted">No activity.</p>') +
-                    '<h2 style="margin-top:18px;">Payment schedule</h2>' +
-                    (schedule.length ? schedule.map(row =>
-                        '<div class="sched-row"><strong>#' + esc(row.index) + '</strong> ' +
-                        esc(fmtDate(row.due_date)) + ' · ' + esc(String(row.status || '').toUpperCase()) +
-                        '<div class="muted">Installment ' + money(row.monthly_payment != null ? row.monthly_payment : row.installment_total) +
-                        (Number(row.amount_due) > 0.005 && String(row.status).toLowerCase() !== 'paid'
-                            ? ' · Still due ' + money(row.amount_due)
-                            : '') +
-                        '</div>' +
-                        '<div class="muted">P ' + money(row.principal) +
-                        ' · Interest ' + money(row.interest) +
-                        ' · Initiation ' + money(row.initiation_fee) +
-                        ' · Admin ' + money(row.admin_fee) +
-                        (Number(row.extra_admin_assessed) > 0 ? ' · Extra admin ' + money(row.extra_admin_assessed) : '') +
-                        (Number(row.late_penalty_assessed) > 0 ? ' · Penalty ' + money(row.late_penalty_assessed) : '') +
-                        '</div>' +
-                        (Number(row.amount_paid) > 0
-                            ? '<div class="muted">Paid ' + money(row.amount_paid) +
-                              (row.payment_date ? ' on ' + esc(fmtDate(row.payment_date)) : '') +
-                              '</div>'
-                            : '') +
-                        '</div>'
-                    ).join('') : '<p class="muted">No schedule.</p>') +
-                    '</section>';
-            }).join('');
+                    '</div>'
+                ).join('') : '<p class="muted">No schedule.</p>') +
+                '</section>';
+        }
+
+        function renderPortalPages(pack) {
+            const current = currentLoan(pack);
+            const currentHost = document.getElementById('currentLoanHost');
+            if (!current) {
+                currentHost.innerHTML =
+                    '<section class="portal-card">' +
+                    '<h2>Current loan</h2>' +
+                    '<p class="muted">You do not have an active loan right now. ' +
+                    'Open Loan history to see recent loans.</p></section>';
+            } else {
+                const idx = packLoanIndex(pack, current);
+                currentHost.innerHTML = renderLoanDetail(current, idx, {
+                    heading: 'Current loan #' + esc((current.summary || {}).loan_id)
+                });
+            }
+
+            const history = historyLoans(pack);
+            const listHost = document.getElementById('historyList');
+            if (!history.length) {
+                listHost.innerHTML = '<p class="muted">No loans in this status pack.</p>';
+            } else {
+                listHost.innerHTML = history.map((model) => {
+                    const s = model.summary || {};
+                    const p = model.position || {};
+                    const st = String(s.status || 'active').toLowerCase();
+                    const chip = 'loan-chip st-' + (st === 'completed' || st === 'defaulted' ? st : 'active');
+                    const idx = packLoanIndex(pack, model);
+                    const isCurrent = current && packLoanIndex(pack, current) === idx;
+                    return '<div class="history-row">' +
+                        '<div>' +
+                        '<strong>Loan #' + esc(s.loan_id) + '</strong> ' +
+                        '<span class="' + chip + '">' + esc(st) + '</span>' +
+                        (isCurrent ? ' <span class="muted">(current)</span>' : '') +
+                        '<div class="history-meta">Started ' + esc(fmtDate(s.created_at)) +
+                        ' · Principal ' + money(s.original_principal) +
+                        ' · Remaining ' + money(p.total_remaining) +
+                        '</div></div>' +
+                        '<div class="btn-row" style="margin:0;">' +
+                        '<button class="btn btn-secondary" type="button" onclick="openHistoryDetail(' + idx + ')">View details</button>' +
+                        '</div></div>';
+                }).join('');
+            }
+
+            const detailHost = document.getElementById('historyDetailHost');
+            if (historyDetailIdx != null && pack.loans && pack.loans[historyDetailIdx]) {
+                detailHost.innerHTML = renderLoanDetail(
+                    pack.loans[historyDetailIdx], historyDetailIdx, { closeBtn: true });
+            } else {
+                detailHost.innerHTML = '';
+            }
+        }
+
+        function openHistoryDetail(idx) {
+            historyDetailIdx = idx;
+            if (!sessionPack) return;
+            setPortalPage('history');
+            renderPortalPages(sessionPack);
+            const host = document.getElementById('historyDetailHost');
+            if (host) host.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+
+        function closeHistoryDetail() {
+            historyDetailIdx = null;
+            if (!sessionPack) return;
+            renderPortalPages(sessionPack);
         }
 
         function downloadPortalStatement(idx) {
@@ -492,6 +667,8 @@
             clearFails(account);
             saveSessionCreds(account, pin);
             try {
+                portalPage = 'current';
+                historyDetailIdx = null;
                 showDashboard(pack);
             } catch (e) {
                 err.textContent = 'Signed in, but the dashboard could not open: ' +
@@ -505,6 +682,13 @@
         });
         document.getElementById('logoutBtn').addEventListener('click', showLogin);
         document.getElementById('estBtn').addEventListener('click', runEstimate);
+        document.getElementById('navCurrentBtn').addEventListener('click', () => {
+            setPortalPage('current');
+        });
+        document.getElementById('navHistoryBtn').addEventListener('click', () => {
+            setPortalPage('history');
+            if (sessionPack) renderPortalPages(sessionPack);
+        });
 
         // Restore session: optimistic cache only while a fresh fetch is possible;
         // auth/decrypt/missing force re-login. Network blips keep credentials.
@@ -535,7 +719,9 @@
         })();
 
         window.downloadPortalStatement = downloadPortalStatement;
+        window.openHistoryDetail = openHistoryDetail;
+        window.closeHistoryDetail = closeHistoryDetail;
     </script>
-    <script src="shared/sw-register.js?v=72"></script>
+    <script src="shared/sw-register.js?v=73"></script>
 </body>
 </html>
