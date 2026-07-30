@@ -297,9 +297,9 @@ const Calculations = {
         const remainingPrincipal = loan.remaining_principal || loan.principal_amount;
         const interestPeriod = loan.interest_calculation_months || this.calculateInterestPeriod(loan.term_months).interestMonths;
         // Waived initiation is intentionally 0 — use nullish check, not `||`.
-        const totalInitiationFee = (loan.total_initiation_fee != null)
-            ? Math.max(0, Number(loan.total_initiation_fee) || 0)
-            : (originalPrincipal * RATES.INITIATION_FEE_RATE);
+        const totalInitiationFee = this.resolveInitiationFeeForLoan(
+            loan, originalPrincipal, loan.total_contributions || 0
+        );
         const initiationFeePaid = loan.initiation_fee_paid || 0;
         const interestPaid = loan.interest_paid || 0;
         
@@ -568,9 +568,7 @@ const Calculations = {
             };
         }
 
-        const initiationFee = p <= startSavings
-            ? 0
-            : (p - startSavings) * RATES.INITIATION_FEE_RATE;
+        const initiationFee = this.calculateStockvelInitiationFee(p, startSavings);
         const plan = this.buildStockvelRepaymentPlan({
             remainingPrincipal: p,
             remainingMonths: t,
@@ -725,6 +723,37 @@ const Calculations = {
         if (c >= 20000) return RATES.ADMIN_FEE_CONTRIB_20K;
         if (c >= 10000) return RATES.ADMIN_FEE_CONTRIB_10K;
         return RATES.ADMIN_FEE_STANDARD;
+    },
+
+    /**
+     * Canonical stockvel initiation fee: waived up to contributions,
+     * 12% on the excess only. Never use `fee || principal*12%` — a waived
+     * 0 must stay 0, and over-contribution loans must use excess (not full
+     * principal).
+     */
+    calculateStockvelInitiationFee(principal, totalContributions) {
+        const p = Math.max(0, Number(principal) || 0);
+        const c = Math.max(0, Number(totalContributions) || 0);
+        if (p <= c) return 0;
+        return (p - c) * RATES.INITIATION_FEE_RATE;
+    },
+
+    /**
+     * Resolve initiation for adjustments / payoff.
+     * Stockvel always follows the waiver rule from principal vs contributions
+     * (repairs corrupted stored values like loan #89's R420).
+     * Standard keeps a stored fee when present (including 0), else principal×12%.
+     */
+    resolveInitiationFeeForLoan(loan, principal, contributions) {
+        const isStockvel = !!(loan && (loan.loan_type === 'stockvel' || loan.isStockvelLoan));
+        const p = Math.max(0, Number(principal) || 0);
+        if (isStockvel) {
+            return this.calculateStockvelInitiationFee(p, contributions);
+        }
+        if (loan && loan.total_initiation_fee != null && loan.total_initiation_fee !== '') {
+            return Math.max(0, Number(loan.total_initiation_fee) || 0);
+        }
+        return p * RATES.INITIATION_FEE_RATE;
     },
 
     /**

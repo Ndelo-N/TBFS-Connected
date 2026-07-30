@@ -117,23 +117,68 @@ test('loan #89 style: extension must not invent initiation when waived', () => {
     const brokenFallback = waived || (principal * 0.12);
     assert.equal(brokenFallback, 420);
 
-    const initiation = principal <= contributions
-        ? 0
-        : (principal - contributions) * C.RATES.INITIATION_FEE_RATE;
-    assert.equal(initiation, 0);
+    assert.equal(C.calculateStockvelInitiationFee(principal, contributions), 0);
+    // Corrupted stored R420 must still resolve to waived 0 for stockvel.
+    assert.equal(
+        C.resolveInitiationFeeForLoan(
+            { loan_type: 'stockvel', total_initiation_fee: 420 },
+            principal,
+            contributions
+        ),
+        0
+    );
 
     const plan = C.buildStockvelRepaymentPlan({
         remainingPrincipal: principal,
         remainingMonths: 2,
-        remainingInitiationFee: initiation,
+        remainingInitiationFee: 0,
         startingContributions: contributions,
         monthlyContribution: 500
     });
-    // Month 2 savings rise by R500; interest still balance×10% floor.
     assert.equal(C.round(plan.breakdown[0].interest_payment), 350);
     assert.equal(C.round(plan.breakdown[0].initiation_fee), 0);
     assert.equal(C.round(plan.breakdown[1].initiation_fee), 0);
     assert.equal(C.round(plan.totalInterestRaw), 525);
+});
+
+test('stockvel initiation charges 12% on excess only, even if stored fee is 0', () => {
+    // Regression: preserving stored 0 when principal > contributions undercharged.
+    assert.equal(C.calculateStockvelInitiationFee(6000, 5000), 120);
+    assert.equal(
+        C.resolveInitiationFeeForLoan(
+            { loan_type: 'stockvel', total_initiation_fee: 0 },
+            6000,
+            5000
+        ),
+        120
+    );
+    assert.equal(
+        C.resolveInitiationFeeForLoan(
+            { isStockvelLoan: true, total_initiation_fee: 999 },
+            6000,
+            5000
+        ),
+        120
+    );
+});
+
+test('standard initiation keeps stored fee including explicit 0', () => {
+    assert.equal(
+        C.resolveInitiationFeeForLoan(
+            { loan_type: 'standard', total_initiation_fee: 0 },
+            3500,
+            0
+        ),
+        0
+    );
+    assert.equal(
+        C.resolveInitiationFeeForLoan(
+            { loan_type: 'standard' },
+            3500,
+            0
+        ),
+        420
+    );
 });
 
 test('old wrong formula undercharges vs canonical plan (guards against regression)', () => {
