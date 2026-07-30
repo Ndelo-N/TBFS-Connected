@@ -271,3 +271,15 @@ test('refreshAllPortalClients publishes remembered and skips others', async () =
     assert.equal(summary.failed, 0);
     assert.ok(withPin.client_access.published_at);
 });
+
+test('_githubApiError explains PAT missing TBFS-Connected access', () => {
+    const msg = ClientStatus._githubApiError(
+        'publish',
+        403,
+        '{"message":"Resource not accessible by PAT","documentation_url":"https://docs.github.com/rest/repos/contents#create-or-update-file-contents"}'
+    );
+    assert.match(msg, /TBFS-Connected/);
+    assert.match(msg, /TBFS-Data-Backup/);
+    assert.match(msg, /Contents: Read and write/);
+    assert.match(msg, /403/);
+});

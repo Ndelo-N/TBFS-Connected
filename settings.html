@@ -275,7 +275,7 @@
                 <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 15px;">
                     <div>
                         <p style="margin: 0; color: #636e72; font-size: 14px;">Current Version</p>
-                        <p style="margin: 5px 0 0 0; font-size: 24px; font-weight: bold; color: #2c3e50;" id="currentVersion">v1.7.15</p>
+                        <p style="margin: 5px 0 0 0; font-size: 24px; font-weight: bold; color: #2c3e50;" id="currentVersion">v1.7.16</p>
                         <p style="margin: 5px 0 0 0; font-size: 12px; color: #636e72;" id="updateStatus">Checking for updates...</p>
                     </div>
                     <button class="btn" onclick="checkForUpdates()" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 12px 24px;">
@@ -317,7 +317,9 @@
                 Clients check status at <code>client-portal.html</code>
                 (current loan landing + loan history of the last 6 loans).
                 Workflow: Clients → set PIN (publishes in the same step) → share the portal link and PIN.
-                Unlock Cloud Backup for remote packs. After you publish once in this browser session,
+                Unlock Cloud Backup for remote packs — your GitHub token must include
+                <code>TBFS-Connected</code> (Contents: Read and write), not only the backup repo.
+                After you publish once in this browser session,
                 the PIN is remembered until you close the browser — payments and loan adjustments
                 auto-refresh that client’s pack. Use <strong>Refresh all portals</strong> on Clients
                 to batch-update everyone with a remembered PIN.
@@ -423,10 +425,19 @@
                 <ol style="margin: 10px 0 0 20px; color: #856404;">
                     <li>Go to: <code>github.com/settings/tokens</code></li>
                     <li>Click "Generate new token" → "Fine-grained token"</li>
-                    <li>Give access ONLY to <code>TBFS-Data-Backup</code> repo</li>
-                    <li>Enable "Contents: Read and write" permission</li>
+                    <li>Under Repository access, select <strong>Only select repositories</strong> and add <strong>both</strong>:
+                        <ul style="margin: 6px 0 0 18px;">
+                            <li><code>TBFS-Data-Backup</code> — private cloud backup</li>
+                            <li><code>TBFS-Connected</code> — client portal status publish (GitHub Pages)</li>
+                        </ul>
+                    </li>
+                    <li>For each selected repo, enable <strong>Contents: Read and write</strong></li>
                     <li>Copy token and paste above</li>
                 </ol>
+                <p style="margin: 10px 0 0; color: #856404; font-size: 13px;">
+                    A token limited to the backup repo alone causes
+                    <code>403 Resource not accessible by PAT</code> when publishing client portals.
+                </p>
             </div>
 
             <div style="margin-top: 20px;">
@@ -479,16 +490,16 @@
     </main>
 
     <!-- Shared Scripts -->
-    <script src="shared/sanitize.js?v=73"></script>
-    <script src="shared/app-state.js?v=73"></script>
-    <script src="shared/calculations.js?v=73"></script>
-    <script src="shared/cloud-backup.js?v=73"></script>
-    <script src="shared/navigation.js?v=73"></script>
+    <script src="shared/sanitize.js?v=74"></script>
+    <script src="shared/app-state.js?v=74"></script>
+    <script src="shared/calculations.js?v=74"></script>
+    <script src="shared/cloud-backup.js?v=74"></script>
+    <script src="shared/navigation.js?v=74"></script>
 
     <script>
         // App Version — bump when shipping loan-engine / PWA-visible fixes
-        const APP_VERSION = '1.7.15';
-        const CACHE_NAME = 'tbfs-loan-manager-v73';
+        const APP_VERSION = '1.7.16';
+        const CACHE_NAME = 'tbfs-loan-manager-v74';
         
         // Global state
         let AppState = {};
@@ -1168,6 +1179,6 @@
         document.addEventListener('DOMContentLoaded', init);
     </script>
     <!-- Service Worker Registration -->
-    <script src="shared/sw-register.js?v=73"></script>
+    <script src="shared/sw-register.js?v=74"></script>
 </body>
 </html>
