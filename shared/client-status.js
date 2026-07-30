@@ -20,6 +20,34 @@ const ClientStatus = {
     statusRepoName: 'TBFS-Connected',
     statusPathPrefix: 'client-status/',
 
+    /**
+     * Turn GitHub Contents API failures into actionable operator guidance.
+     * Fine-grained PATs scoped only to TBFS-Data-Backup cannot write here.
+     */
+    _githubApiError(action, status, bodyText) {
+        const body = String(bodyText || '');
+        const short = body.slice(0, 180);
+        const repo = this.statusRepoOwner + '/' + this.statusRepoName;
+        const inaccessible = status === 403 && /Resource not accessible by PAT/i.test(body);
+        if (inaccessible) {
+            return 'GitHub ' + action + ' failed: 403 — your token cannot write to '
+                + repo + '.\n\n'
+                + 'Fix: create/edit a fine-grained PAT that includes BOTH repositories:\n'
+                + '• TBFS-Data-Backup — Contents: Read and write (cloud backup)\n'
+                + '• TBFS-Connected — Contents: Read and write (client portal publish)\n\n'
+                + 'Then Settings → remove token → save the new token and unlock cloud backup.\n'
+                + 'Docs: https://docs.github.com/en/rest/repos/contents#create-or-update-file-contents';
+        }
+        if (status === 403) {
+            return 'GitHub ' + action + ' failed: 403 Access denied on ' + repo
+                + '. Token needs Contents: Read and write. ' + short;
+        }
+        if (status === 401) {
+            return 'GitHub ' + action + ' failed: 401 Unauthorized. Re-save your GitHub token in Settings.';
+        }
+        return 'GitHub ' + action + ' failed: ' + status + (short ? (' ' + short) : '');
+    },
+
     _sessionStore() {
         try {
             if (typeof sessionStorage !== 'undefined') return sessionStorage;
@@ -250,7 +278,8 @@ const ClientStatus = {
                 return result;
             }
             if (!getRes.ok) {
-                throw new Error('GitHub read failed: ' + getRes.status);
+                const body = await getRes.text().catch(() => '');
+                throw new Error(this._githubApiError('read', getRes.status, body));
             }
             const existing = await getRes.json();
             const delRes = await fetch(apiBase, {
@@ -267,9 +296,7 @@ const ClientStatus = {
             });
             if (!delRes.ok) {
                 const body = await delRes.text();
-                throw new Error(
-                    'GitHub delete failed: ' + delRes.status + ' ' + body.slice(0, 180)
-                );
+                throw new Error(this._githubApiError('delete', delRes.status, body));
             }
             result.remote = true;
             dbg('Revoked client status', path);
@@ -428,7 +455,8 @@ const ClientStatus = {
             const existing = await getRes.json();
             sha = existing.sha;
         } else if (getRes.status !== 404) {
-            throw new Error('GitHub read failed: ' + getRes.status);
+            const body = await getRes.text().catch(() => '');
+            throw new Error(this._githubApiError('read', getRes.status, body));
         }
 
         const content = this._b64(new TextEncoder().encode(JSON.stringify(envelope, null, 2)));
@@ -447,7 +475,7 @@ const ClientStatus = {
         });
         if (!putRes.ok) {
             const body = await putRes.text();
-            throw new Error('GitHub publish failed: ' + putRes.status + ' ' + body.slice(0, 180));
+            throw new Error(this._githubApiError('publish', putRes.status, body));
         }
 
         this.saveLocalEnvelope(envelope);
