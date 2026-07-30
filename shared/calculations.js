@@ -297,9 +297,9 @@ const Calculations = {
         const remainingPrincipal = loan.remaining_principal || loan.principal_amount;
         const interestPeriod = loan.interest_calculation_months || this.calculateInterestPeriod(loan.term_months).interestMonths;
         // Waived initiation is intentionally 0 — use nullish check, not `||`.
-        const totalInitiationFee = (loan.total_initiation_fee != null)
-            ? Math.max(0, Number(loan.total_initiation_fee) || 0)
-            : (originalPrincipal * RATES.INITIATION_FEE_RATE);
+        const totalInitiationFee = this.resolveInitiationFeeForLoan(
+            loan, originalPrincipal, loan.total_contributions || 0
+        );
         const initiationFeePaid = loan.initiation_fee_paid || 0;
         const interestPaid = loan.interest_paid || 0;
         
@@ -568,9 +568,7 @@ const Calculations = {
             };
         }
 
-        const initiationFee = p <= startSavings
-            ? 0
-            : (p - startSavings) * RATES.INITIATION_FEE_RATE;
+        const initiationFee = this.calculateStockvelInitiationFee(p, startSavings);
         const plan = this.buildStockvelRepaymentPlan({
             remainingPrincipal: p,
             remainingMonths: t,
@@ -728,13 +726,46 @@ const Calculations = {
     },
 
     /**
+     * Canonical stockvel initiation fee: waived up to contributions,
+     * 12% on the excess only. Never use `fee || principal*12%` — a waived
+     * 0 must stay 0, and over-contribution loans must use excess (not full
+     * principal).
+     */
+    calculateStockvelInitiationFee(principal, totalContributions) {
+        const p = Math.max(0, Number(principal) || 0);
+        const c = Math.max(0, Number(totalContributions) || 0);
+        if (p <= c) return 0;
+        return (p - c) * RATES.INITIATION_FEE_RATE;
+    },
+
+    /**
+     * Resolve initiation for adjustments / payoff.
+     * Stockvel always follows the waiver rule from principal vs contributions
+     * (repairs corrupted stored values like loan #89's R420).
+     * Standard keeps a stored fee when present (including 0), else principal×12%.
+     */
+    resolveInitiationFeeForLoan(loan, principal, contributions) {
+        const isStockvel = !!(loan && (loan.loan_type === 'stockvel' || loan.isStockvelLoan));
+        const p = Math.max(0, Number(principal) || 0);
+        if (isStockvel) {
+            return this.calculateStockvelInitiationFee(p, contributions);
+        }
+        if (loan && loan.total_initiation_fee != null && loan.total_initiation_fee !== '') {
+            return Math.max(0, Number(loan.total_initiation_fee) || 0);
+        }
+        return p * RATES.INITIATION_FEE_RATE;
+    },
+
+    /**
      * Price one stockvel repayment month from outstanding balance.
      *
-     * Canonical rules (TBFS business rules / STOCKVEL-30K breakdown):
+     * Canonical rules (TBFS business rules / STOCKVEL fee structure):
      * - Tiered interest is calculated on the outstanding balance (no principal scaling)
-     * - 10% minimum = outstandingBalance × STOCKVEL_MIN_MONTHLY_RATE
-     * - When the minimum applies, admin fee is the standard R60
-     * - Otherwise admin = R60 × (1 - tiers1to4 effective rate)
+     * - 10% minimum interest = outstandingBalance × STOCKVEL_MIN_MONTHLY_RATE
+     * - Admin is ALWAYS the stockvel variable fee from tiers 1-4 effective rate:
+     *     admin = R60 × (1 - tiers1to4Interest / tier1to4Amount)
+     *   Do NOT fall back to flat R60 just because the interest minimum applied —
+     *   that made nearly all in-tier loans look like standard/basic admin.
      */
     priceStockvelMonth(outstandingBalance, currentSavings) {
         const balance = Math.max(0, Number(outstandingBalance) || 0);
@@ -743,7 +774,7 @@ const Calculations = {
         if (balance <= 0) {
             return {
                 interest: 0,
-                adminFee: 0,
+                adminFee: RATES.ADMIN_FEE_STANDARD,
                 tieredInterest: 0,
                 minimumInterest: 0,
                 usedMinimum: false,
@@ -758,9 +789,9 @@ const Calculations = {
         const usedMinimum = tieredInterest < minimumInterest;
         const interest = Math.max(tieredInterest, minimumInterest);
 
-        let adminFee = RATES.ADMIN_FEE_STANDARD;
         let effectiveRate = 0;
-        if (!usedMinimum && tieredResult && tieredResult.tier1to4Amount > 0) {
+        let adminFee = RATES.ADMIN_FEE_STANDARD;
+        if (tieredResult && tieredResult.tier1to4Amount > 0) {
             effectiveRate = tieredInterest / tieredResult.tier1to4Amount;
             adminFee = Math.max(0, RATES.ADMIN_FEE_STANDARD * (1 - effectiveRate));
         }
@@ -1261,13 +1292,26 @@ const Calculations = {
      */
     getMonthlyAdminFeeForLoan(loan) {
         if (!loan) return RATES.ADMIN_FEE_STANDARD;
+        // Prefer the schedule's stockvel variable admin when present.
+        const schedule = Array.isArray(loan.schedule) ? loan.schedule : [];
+        const open = schedule.find(p =>
+            p && (p.status === 'pending' || p.status === 'partial'));
+        const fromOpen = open && Number(open.admin_fee);
+        if (Number.isFinite(fromOpen) && fromOpen > 0) return fromOpen;
+        const fromFirst = schedule[0] && Number(schedule[0].admin_fee);
+        if (Number.isFinite(fromFirst) && fromFirst > 0) return fromFirst;
+
         const isStockvel = loan.loan_type === 'stockvel' || loan.isStockvelLoan;
         if (isStockvel) {
-            return this.getAdminFeeForContributions(
-                loan.total_contributions || loan.totalContributions || 0);
+            const balance = Number(loan.remaining_principal) ||
+                Number(loan.principal_amount) || Number(loan.principal) || 0;
+            const savings = Number(loan.total_contributions) ||
+                Number(loan.totalContributions) || 0;
+            if (balance > 0) {
+                return this.priceStockvelMonth(balance, savings).adminFee;
+            }
+            return this.getAdminFeeForContributions(savings);
         }
-        const fromSchedule = loan.schedule && loan.schedule[0] && Number(loan.schedule[0].admin_fee);
-        if (Number.isFinite(fromSchedule) && fromSchedule > 0) return fromSchedule;
         return RATES.ADMIN_FEE_STANDARD;
     },
 

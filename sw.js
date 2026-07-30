@@ -1,4 +1,4 @@
-const CACHE_NAME = 'tbfs-loan-manager-v70'; // manageLoanClientPortal keeps account-priority resolve
+const CACHE_NAME = 'tbfs-loan-manager-v72'; // manageLoanClientPortal keeps account-priority resolve
 const urlsToCache = [
   './',
   './index.html',                    // manageLoanClientPortal keeps account-priority resolve
@@ -13,15 +13,15 @@ const urlsToCache = [
   './settings.html',                 // manageLoanClientPortal keeps account-priority resolve
   './offline.html',                  // manageLoanClientPortal keeps account-priority resolve
   './splash.html',                   // manageLoanClientPortal keeps account-priority resolve
-  './shared/app-state.js?v=70',      // manageLoanClientPortal keeps account-priority resolve
-  './shared/navigation.js?v=70',     // manageLoanClientPortal keeps account-priority resolve
-  './shared/calculations.js?v=70',   // manageLoanClientPortal keeps account-priority resolve
+  './shared/app-state.js?v=72',      // manageLoanClientPortal keeps account-priority resolve
+  './shared/navigation.js?v=72',     // manageLoanClientPortal keeps account-priority resolve
+  './shared/calculations.js?v=72',   // manageLoanClientPortal keeps account-priority resolve
   './shared/styles.css',             // manageLoanClientPortal keeps account-priority resolve
-  './shared/sw-register.js?v=70',    // manageLoanClientPortal keeps account-priority resolve
-  './shared/sanitize.js?v=70',       // manageLoanClientPortal keeps account-priority resolve
-  './shared/cloud-backup.js?v=70',   // manageLoanClientPortal keeps account-priority resolve
-  './shared/client-status.js?v=70',  // manageLoanClientPortal keeps account-priority resolve
-  './shared/loan-statement-pdf.js?v=70', // manageLoanClientPortal keeps account-priority resolve
+  './shared/sw-register.js?v=72',    // manageLoanClientPortal keeps account-priority resolve
+  './shared/sanitize.js?v=72',       // manageLoanClientPortal keeps account-priority resolve
+  './shared/cloud-backup.js?v=72',   // manageLoanClientPortal keeps account-priority resolve
+  './shared/client-status.js?v=72',  // manageLoanClientPortal keeps account-priority resolve
+  './shared/loan-statement-pdf.js?v=72', // manageLoanClientPortal keeps account-priority resolve
   './manifest.json',                 // manageLoanClientPortal keeps account-priority resolve
   './vendor/jspdf.umd.min.js',       // manageLoanClientPortal keeps account-priority resolve
   './vendor/xlsx.full.min.js',       // manageLoanClientPortal keeps account-priority resolve

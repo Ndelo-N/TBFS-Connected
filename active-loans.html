@@ -254,13 +254,13 @@
     </main>
     
     <!-- Shared Modules -->
-    <script src="shared/sanitize.js?v=70"></script>
-    <script src="shared/app-state.js?v=70"></script>
-    <script src="shared/calculations.js?v=70"></script>
-    <script src="shared/cloud-backup.js?v=70"></script>
-    <script src="shared/client-status.js?v=70"></script>
-    <script src="shared/loan-statement-pdf.js?v=70"></script>
-    <script src="shared/navigation.js?v=70"></script>
+    <script src="shared/sanitize.js?v=72"></script>
+    <script src="shared/app-state.js?v=72"></script>
+    <script src="shared/calculations.js?v=72"></script>
+    <script src="shared/cloud-backup.js?v=72"></script>
+    <script src="shared/client-status.js?v=72"></script>
+    <script src="shared/loan-statement-pdf.js?v=72"></script>
+    <script src="shared/navigation.js?v=72"></script>
     
     <!-- Page Logic -->
     <script>
@@ -324,9 +324,9 @@
                     // STOCKVEL LOAN: shared month-level pricing (full term)
                     const totalContributions = loan.total_contributions || 0;
                     const monthlyContribution = loan.monthly_contribution || 0;
-                    const totalInitiationFee = principal <= totalContributions
-                        ? 0
-                        : (principal - totalContributions) * Calculations.RATES.INITIATION_FEE_RATE;
+                    const totalInitiationFee = Calculations.calculateStockvelInitiationFee(
+                        principal, totalContributions
+                    );
                     const plan = Calculations.buildStockvelRepaymentPlan({
                         remainingPrincipal: principal,
                         remainingMonths: term,
@@ -433,9 +433,9 @@
          * Calculate total interest for a stockvel loan using tiered rules.
          */
         function calculateStockvelTotalInterest(principal, term, totalContributions, monthlyContribution) {
-            const initiationFee = principal <= (totalContributions || 0)
-                ? 0
-                : (principal - (totalContributions || 0)) * Calculations.RATES.INITIATION_FEE_RATE;
+            const initiationFee = Calculations.calculateStockvelInitiationFee(
+                principal, totalContributions || 0
+            );
             const plan = Calculations.buildStockvelRepaymentPlan({
                 remainingPrincipal: principal,
                 remainingMonths: term,
@@ -1570,9 +1570,10 @@ Click "OK" to process payment or "Cancel" to go back.
             if (loan.total_initiation_fee === undefined || loan.total_initiation_fee === null || isNaN(Number(loan.total_initiation_fee))) {
                 const principal = loan.principal_amount || loan.principal || 0;
                 if (loan.loan_type === 'stockvel' && loan.total_contributions) {
-                    // Stockvel Rule: 0% initiation fee if principal <= total contributions
-                    // 12% initiation fee on the excess amount above contributions
-                    loan.total_initiation_fee = principal <= loan.total_contributions ? 0 : (principal - loan.total_contributions) * Calculations.RATES.INITIATION_FEE_RATE;
+                    // Stockvel Rule: waived up to contributions, 12% on excess
+                    loan.total_initiation_fee = Calculations.calculateStockvelInitiationFee(
+                        principal, loan.total_contributions
+                    );
                 } else {
                     // Standard Rule: 12% of principal
                     loan.total_initiation_fee = principal * Calculations.RATES.INITIATION_FEE_RATE;
@@ -2716,25 +2717,16 @@ Click "OK" to process payment or "Cancel" to go back.
         }
 
         /**
-         * Resolve initiation fee for adjustments.
-         * Waived stockvel initiation is stored as 0 — never use `value || fallback`
-         * (that treats 0 as missing and invents principal×12%, as on loan #89).
-         * When principal is still within contributions, waiver always wins so a
-         * previously corrupted fee (e.g. R420 on loan #89) is corrected.
+         * Resolve initiation fee for adjustments via shared waiver rules.
          */
         function resolveStoredOrDefaultInitiationFee(loan, principal, contributions, isStockvel) {
-            const p = Number(principal) || 0;
-            const c = Number(contributions) || 0;
-            if (isStockvel && p <= c) {
-                return 0;
+            // Prefer the loan's own type flags when present; caller hint is fallback.
+            const typed = loan ? Object.assign({}, loan) : {};
+            if (isStockvel && typed.loan_type !== 'stockvel' && !typed.isStockvelLoan) {
+                typed.loan_type = 'stockvel';
+                typed.isStockvelLoan = true;
             }
-            if (loan && loan.total_initiation_fee != null && loan.total_initiation_fee !== '') {
-                return Math.max(0, Number(loan.total_initiation_fee) || 0);
-            }
-            if (isStockvel) {
-                return (p - c) * Calculations.RATES.INITIATION_FEE_RATE;
-            }
-            return p * Calculations.RATES.INITIATION_FEE_RATE;
+            return Calculations.resolveInitiationFeeForLoan(typed, principal, contributions);
         }
 
         /**
@@ -3583,10 +3575,13 @@ TBFS - Transparent, Fair, Simple
             regenPrincipal = Math.max(0, newRemainingPrincipal - unpaidPartial.principal);
 
             if (isStockvel && totalContributions) {
-                newTotalInitiationFee = newPrincipal <= totalContributions
-                    ? 0
-                    : (newPrincipal - totalContributions) * Calculations.RATES.INITIATION_FEE_RATE;
-                additionalInitiationFee = newTotalInitiationFee - (loan.total_initiation_fee || 0);
+                newTotalInitiationFee = Calculations.calculateStockvelInitiationFee(
+                    newPrincipal, totalContributions
+                );
+                const previousInitiationFee = (loan.total_initiation_fee != null)
+                    ? Math.max(0, Number(loan.total_initiation_fee) || 0)
+                    : 0;
+                additionalInitiationFee = newTotalInitiationFee - previousInitiationFee;
                 const remainingInitiationFeeGross = Math.max(
                     0, newTotalInitiationFee - (loan.initiation_fee_paid || 0)
                 );
@@ -3609,7 +3604,10 @@ TBFS - Transparent, Fair, Simple
                 newTotalInitiationFee = newPrincipal * Calculations.RATES.INITIATION_FEE_RATE;
                 const fullInterest = calculateStandardTotalInterest(newPrincipal, currentTerm);
                 recalculatedInterest = Math.max(fullInterest, interestAlreadyPaid);
-                additionalInitiationFee = newTotalInitiationFee - (loan.total_initiation_fee || 0);
+                const previousInitiationFee = (loan.total_initiation_fee != null)
+                    ? Math.max(0, Number(loan.total_initiation_fee) || 0)
+                    : 0;
+                additionalInitiationFee = newTotalInitiationFee - previousInitiationFee;
                 const remainingInterestGross = Math.max(0, recalculatedInterest - interestAlreadyPaid);
                 const remainingInitiationFeeGross = Math.max(
                     0, newTotalInitiationFee - (loan.initiation_fee_paid || 0)
@@ -4120,6 +4118,6 @@ TBFS - Transparent, Fair, Simple
     </div>
 
     <!-- Service Worker Registration -->
-    <script src="shared/sw-register.js?v=70"></script>
+    <script src="shared/sw-register.js?v=72"></script>
 </body>
 </html>
