@@ -337,7 +337,7 @@
                         <div>
                             <strong style="color: #667eea;">✅ GitHub Token Configured</strong>
                             <p style="margin: 5px 0 0 0; font-size: 14px; color: #2c3e50;">
-                                You can now restore from cloud
+                                Unlock, then Test connection / Backup Now before Restore
                             </p>
                         </div>
                         <button class="btn btn-danger" onclick="removeToken()">Remove Token</button>
@@ -375,6 +375,15 @@
                         Last sync: <span id="lastSyncTime">Never</span>
                     </p>
                 </div>
+
+                <div style="display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 10px;">
+                    <button class="btn btn-primary" type="button" onclick="backupNow()">☁️ Backup Now</button>
+                    <button class="btn btn-secondary" type="button" onclick="testCloudConnection()">🔍 Test cloud connection</button>
+                </div>
+                <p style="font-size: 12px; color: #636e72; margin: 0 0 10px 0;">
+                    Unlock first, then Backup Now creates <code>latest.json</code> in
+                    <code>TBFS-Data-Backup</code>. Restore from Cloud only works after that file exists.
+                </p>
             </div>
 
             <!-- Token Setup Form -->
@@ -423,6 +432,7 @@
             <div class="info-box warning" style="margin-top: 30px;">
                 <strong style="color: #856404;">🔑 How to Get Your Token:</strong>
                 <ol style="margin: 10px 0 0 20px; color: #856404;">
+                    <li>Create a <strong>private</strong> repo named <code>TBFS-Data-Backup</code> under <code>Ndelo-N</code> if it does not exist yet</li>
                     <li>Go to: <code>github.com/settings/tokens</code></li>
                     <li>Click "Generate new token" → "Fine-grained token"</li>
                     <li>Under Repository access, select <strong>Only select repositories</strong> and add <strong>both</strong>:
@@ -433,10 +443,13 @@
                     </li>
                     <li>For each selected repo, enable <strong>Contents: Read and write</strong></li>
                     <li>Copy token and paste above</li>
+                    <li>After unlock, click <strong>Test cloud connection</strong>, then <strong>Backup Now</strong> before Restore</li>
                 </ol>
                 <p style="margin: 10px 0 0; color: #856404; font-size: 13px;">
                     A token limited to the backup repo alone causes
                     <code>403 Resource not accessible by PAT</code> when publishing client portals.
+                    A token that cannot see the private backup repo often looks like
+                    <code>404 No cloud backup found</code> on Restore.
                 </p>
             </div>
 
@@ -1055,17 +1068,33 @@
         /**
          * Restore from cloud
          */
-                async function restoreFromCloud() {
+        async function restoreFromCloud() {
             if (!CloudBackup.hasToken()) {
                 alert('Please configure your GitHub token first in Settings');
                 return;
             }
-            
+
             if (confirm('This will restore data from your cloud backup and overwrite local data. Continue?')) {
                 await CloudBackup.restore();
             }
         }
-        
+
+        async function backupNow() {
+            if (!CloudBackup.hasToken()) {
+                alert('Please configure your GitHub token first in Settings');
+                return;
+            }
+            if (!CloudBackup.isUnlocked()) {
+                alert('🔒 Unlock cloud backup with your passphrase first.');
+                return;
+            }
+            await CloudBackup.backup({ manual: true });
+        }
+
+        async function testCloudConnection() {
+            await CloudBackup.testConnection();
+        }
+
         /**
          * Backup data to local file
          */

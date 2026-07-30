@@ -211,6 +211,69 @@ const CloudBackup = {
     },
 
     /* =================== GitHub contents API =================== */
+    repoFullName() {
+        return this.repoOwner + '/' + this.repoName;
+    },
+
+    /**
+     * GitHub returns 404 (not always 403) for private repos the PAT cannot see.
+     * Probe the repo itself so we do not mis-report "no backup found".
+     */
+    async probeRepoAccess() {
+        const url = `https://api.github.com/repos/${this.repoOwner}/${this.repoName}`;
+        const res = await fetch(url, {
+            headers: {
+                'Authorization': `Bearer ${this._token}`,
+                'Accept': 'application/vnd.github.v3+json'
+            }
+        });
+        if (res.status === 200) {
+            const data = await res.json();
+            return {
+                ok: true,
+                status: 200,
+                private: !!data.private,
+                full_name: data.full_name || this.repoFullName(),
+                default_branch: data.default_branch || 'main'
+            };
+        }
+        const body = await res.text().catch(() => '');
+        return { ok: false, status: res.status, body: body.slice(0, 240) };
+    },
+
+    repoAccessHelp(status) {
+        const repo = this.repoFullName();
+        const code = status || 'unknown';
+        return 'Cannot access private repo ' + repo + ' (HTTP ' + code + ').\n\n'
+            + 'GitHub often returns 404 (not 403) when a fine-grained PAT lacks access '
+            + 'to a private repository.\n\n'
+            + 'Check:\n'
+            + '1. The repo exists at https://github.com/' + repo
+            + ' (create it as PRIVATE under ' + this.repoOwner + ' if missing)\n'
+            + '2. Your fine-grained PAT includes ' + this.repoName
+            + ' with Contents: Read and write\n'
+            + '3. Settings → remove token → save the new token → unlock passphrase\n'
+            + '4. Click Backup Now to create the first latest.json, then Restore from Cloud';
+    },
+
+    _githubWriteError(status, bodyText) {
+        const body = String(bodyText || '');
+        if (status === 404 || (status === 403 && /Resource not accessible by PAT/i.test(body))) {
+            return this.repoAccessHelp(status);
+        }
+        if (status === 401) {
+            return 'Authentication failed (401). Re-save your GitHub token in Settings.';
+        }
+        if (status === 403) {
+            return 'Access denied (403) writing to ' + this.repoFullName()
+                + '. Token needs Contents: Read and write on ' + this.repoName + '.';
+        }
+        if (status === 409) {
+            return 'GitHub conflict (409) updating the backup file. Unlock cloud backup and try Backup Now again.';
+        }
+        return 'GitHub API error: ' + status + (body ? (' ' + body.slice(0, 160)) : '');
+    },
+
     async _getRemote(path) {
         const url = `https://api.github.com/repos/${this.repoOwner}/${this.repoName}/contents/${path}`;
         const res = await fetch(url, {
@@ -220,7 +283,10 @@ const CloudBackup = {
             }
         });
         if (res.status === 404) return { status: 404 };
-        if (!res.ok) return { status: res.status };
+        if (!res.ok) {
+            const body = await res.text().catch(() => '');
+            return { status: res.status, body: body.slice(0, 240) };
+        }
         const fileData = await res.json();
         let parsed = null;
         try {
@@ -245,7 +311,53 @@ const CloudBackup = {
                 sha: sha || undefined
             })
         });
-        if (!res.ok) throw new Error(`GitHub API error: ${res.status} ${res.statusText}`);
+        if (!res.ok) {
+            const body = await res.text().catch(() => '');
+            throw new Error(this._githubWriteError(res.status, body));
+        }
+    },
+
+    /**
+     * Operator diagnostic: repo access + whether latest.json exists.
+     */
+    async testConnection() {
+        if (!this.hasToken()) {
+            alert('Configure your GitHub token first.');
+            return { ok: false, reason: 'no_token' };
+        }
+        if (!this.isUnlocked()) {
+            alert('🔒 Unlock cloud backup with your passphrase first.');
+            return { ok: false, reason: 'locked' };
+        }
+        try {
+            const repo = await this.probeRepoAccess();
+            if (!repo.ok) {
+                alert('❌ ' + this.repoAccessHelp(repo.status));
+                return { ok: false, reason: 'repo', status: repo.status };
+            }
+            const remote = await this._getRemote('latest.json');
+            if (remote.status === 200) {
+                alert('✅ Connected to ' + this.repoFullName() + '.\n\n'
+                    + 'Cloud backup file latest.json was found'
+                    + (remote.payload && remote.payload.updatedAt
+                        ? (' (updated ' + remote.payload.updatedAt + ').')
+                        : '.')
+                    + '\n\nYou can use Restore from Cloud.');
+                return { ok: true, reason: 'ready', hasBackup: true };
+            }
+            if (remote.status === 404) {
+                alert('✅ Repo ' + this.repoFullName() + ' is reachable, but there is no latest.json yet.\n\n'
+                    + 'Click Backup Now (or enable Auto-Backup) to create the first cloud backup, '
+                    + 'then Restore from Cloud will work.');
+                return { ok: true, reason: 'empty', hasBackup: false };
+            }
+            alert('❌ Repo is reachable, but reading latest.json failed (HTTP '
+                + remote.status + ').');
+            return { ok: false, reason: 'file', status: remote.status };
+        } catch (error) {
+            alert('❌ Cloud connection test failed: ' + (error.message || error));
+            return { ok: false, reason: 'error', error: error };
+        }
     },
 
     /* =================== backup =================== */
@@ -314,6 +426,10 @@ const CloudBackup = {
             localStorage.removeItem(this.KEY_PENDING);
             this.updateSyncTime();
             dbg('✅ Cloud backup successful');
+            if (manual) {
+                alert('✅ Cloud backup saved to ' + this.repoFullName()
+                    + '.\n\nFile: latest.json');
+            }
             return true;
         } catch (error) {
             console.error('Cloud backup failed:', error);
@@ -346,13 +462,22 @@ const CloudBackup = {
         try {
             const remote = await this._getRemote('latest.json');
             if (remote.status === 404) {
-                alert('📥 No cloud backup found yet.\n\n' +
-                      'Enable Auto-Backup or use "Backup Now" to create the first one.');
+                // Distinguish "empty repo" from "PAT cannot see private repo"
+                // (GitHub commonly returns 404 for both).
+                const repo = await this.probeRepoAccess();
+                if (!repo.ok) {
+                    alert('❌ ' + this.repoAccessHelp(repo.status));
+                    return;
+                }
+                alert('📥 No cloud backup found yet in ' + this.repoFullName() + '.\n\n'
+                    + 'The repository is reachable, but latest.json does not exist.\n'
+                    + 'Click Backup Now (or enable Auto-Backup) to create the first backup, '
+                    + 'then try Restore from Cloud again.');
                 return;
             }
             if (remote.status === 401) throw new Error('Authentication failed. Check your GitHub token.');
-            if (remote.status === 403) throw new Error('Access denied. The token needs "Contents: Read and write" on the backup repository.');
-            if (remote.status !== 200) throw new Error(`Unable to access cloud backup (Error ${remote.status}).`);
+            if (remote.status === 403) throw new Error(this.repoAccessHelp(403));
+            if (remote.status !== 200) throw new Error(this._githubWriteError(remote.status, remote.body));
             if (!remote.payload) throw new Error('Cloud backup file is unreadable.');
 
             let stateJson;
