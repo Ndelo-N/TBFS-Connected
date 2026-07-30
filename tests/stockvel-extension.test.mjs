@@ -31,8 +31,10 @@ test('priceStockvelMonth uses balance × 10% minimum (not principal/term)', () =
     assert.equal(C.round(priced.minimumInterest), 350); // 3500 × 10%
     assert.equal(priced.usedMinimum, true);
     assert.equal(C.round(priced.interest), 350);
-    // When minimum applies, admin is standard R60
-    assert.equal(priced.adminFee, C.RATES.ADMIN_FEE_STANDARD);
+    // Admin stays variable from tiered rate even when interest uses the 10% floor
+    // 205/3500 = 5.857% → 60 × (1 - 0.05857) ≈ 56.49
+    assert.equal(C.round(priced.adminFee), 56.49);
+    assert.ok(priced.adminFee < C.RATES.ADMIN_FEE_STANDARD);
 });
 
 test('1-month stockvel at R1500 / R5000 contributions charges R150 min', () => {
@@ -57,7 +59,7 @@ test('top-up to R3500 for remaining 1 month keeps balance × 10% interest', () =
         monthlyContribution: 0
     });
     assert.equal(C.round(plan.totalInterestRaw), 350);
-    assert.equal(C.round(plan.breakdown[0].admin_fee), 60);
+    assert.equal(C.round(plan.breakdown[0].admin_fee), 56.49);
 });
 
 test('extend unpaid R3500 loan from 1→2 months does not drop month-1 below R350', () => {
@@ -76,21 +78,22 @@ test('extend unpaid R3500 loan from 1→2 months does not drop month-1 below R35
     const m1 = plan.breakdown[0];
     const m2 = plan.breakdown[1];
 
-    // Month 1 still priced on full R3500 outstanding → R350 minimum (NOT R205)
+    // Month 1 still priced on full R3500 outstanding → R350 minimum interest
     assert.equal(C.round(m1.interest_payment), 350);
     assert.equal(m1.used_minimum, true);
-    assert.equal(C.round(m1.admin_fee), 60);
+    // Variable stockvel admin from tiered rate (not flat R60)
+    assert.equal(C.round(m1.admin_fee), 56.49);
 
-    // Month 2 on R1750: tiered ~65, min 175 → R175; minimum applies → admin R60
+    // Month 2 on R1750: tiered ~65, min 175 → R175; admin from ~3.71% rate
     assert.equal(C.round(m2.interest_payment), 175);
     assert.equal(m2.used_minimum, true);
-    assert.equal(C.round(m2.admin_fee), 60);
+    assert.equal(C.round(m2.admin_fee), 57.77);
 
     // Total interest R525 — the old (principal/term)×10% path only charged R380
     assert.equal(C.round(plan.totalInterestRaw), 525);
 
-    // Equal monthly installment = (3500 + 525 + 120) / 2
-    assert.equal(C.round(plan.equalMonthlyPaymentRaw), 2072.5);
+    // Equal monthly installment = (3500 + 525 + 56.49 + 57.77) / 2
+    assert.equal(C.round(plan.equalMonthlyPaymentRaw), 2069.63);
 });
 
 test('extension plan matches originating a fresh R3500 / 2-month loan', () => {
