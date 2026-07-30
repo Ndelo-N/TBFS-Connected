@@ -108,6 +108,34 @@ test('extension plan matches originating a fresh R3500 / 2-month loan', () => {
     assert.equal(viaOrigination.monthlyPayment, C.round(viaExtension.equalMonthlyPaymentRaw));
 });
 
+test('loan #89 style: extension must not invent initiation when waived', () => {
+    // After top-up: principal 3500 <= contributions 5000 → initiation 0.
+    // Broken term-change used `total_initiation_fee || principal*12%` → R420.
+    const principal = 3500;
+    const contributions = 5000;
+    const waived = 0;
+    const brokenFallback = waived || (principal * 0.12);
+    assert.equal(brokenFallback, 420);
+
+    const initiation = principal <= contributions
+        ? 0
+        : (principal - contributions) * C.RATES.INITIATION_FEE_RATE;
+    assert.equal(initiation, 0);
+
+    const plan = C.buildStockvelRepaymentPlan({
+        remainingPrincipal: principal,
+        remainingMonths: 2,
+        remainingInitiationFee: initiation,
+        startingContributions: contributions,
+        monthlyContribution: 500
+    });
+    // Month 2 savings rise by R500; interest still balance×10% floor.
+    assert.equal(C.round(plan.breakdown[0].interest_payment), 350);
+    assert.equal(C.round(plan.breakdown[0].initiation_fee), 0);
+    assert.equal(C.round(plan.breakdown[1].initiation_fee), 0);
+    assert.equal(C.round(plan.totalInterestRaw), 525);
+});
+
 test('old wrong formula undercharges vs canonical plan (guards against regression)', () => {
     // Reproduce the broken calculator/term-change math for documentation/guard.
     const principal = TOTAL_PRINCIPAL;

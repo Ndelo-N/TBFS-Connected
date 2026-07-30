@@ -2716,6 +2716,28 @@ Click "OK" to process payment or "Cancel" to go back.
         }
 
         /**
+         * Resolve initiation fee for adjustments.
+         * Waived stockvel initiation is stored as 0 — never use `value || fallback`
+         * (that treats 0 as missing and invents principal×12%, as on loan #89).
+         * When principal is still within contributions, waiver always wins so a
+         * previously corrupted fee (e.g. R420 on loan #89) is corrected.
+         */
+        function resolveStoredOrDefaultInitiationFee(loan, principal, contributions, isStockvel) {
+            const p = Number(principal) || 0;
+            const c = Number(contributions) || 0;
+            if (isStockvel && p <= c) {
+                return 0;
+            }
+            if (loan && loan.total_initiation_fee != null && loan.total_initiation_fee !== '') {
+                return Math.max(0, Number(loan.total_initiation_fee) || 0);
+            }
+            if (isStockvel) {
+                return (p - c) * Calculations.RATES.INITIATION_FEE_RATE;
+            }
+            return p * Calculations.RATES.INITIATION_FEE_RATE;
+        }
+
+        /**
          * Persist a loan adjustment event in:
          * - loan.adjustment_history (loan-local, best for statements)
          * - AppState.transactions (legacy history merged in at load)
@@ -3254,7 +3276,11 @@ TBFS - Transparent, Fair, Simple
             const isStockvel = loan.loan_type === 'stockvel' || loan.isStockvelLoan;
             const originalPrincipal = loan.original_principal || loan.principal_amount || remainingPrincipal;
             const totalContributions = loan.total_contributions || 0;
-            const totalInitiationFee = loan.total_initiation_fee || (originalPrincipal * Calculations.RATES.INITIATION_FEE_RATE);
+            // IMPORTANT: waived initiation is 0 — must not use `||` (treats 0 as missing
+            // and invents principal×12%, which is exactly what corrupted loan #89).
+            const totalInitiationFee = resolveStoredOrDefaultInitiationFee(
+                loan, originalPrincipal, totalContributions, isStockvel
+            );
             const initiationFeePaid = loan.initiation_fee_paid || 0;
             const interestAlreadyPaid = loan.interest_paid || 0;
 

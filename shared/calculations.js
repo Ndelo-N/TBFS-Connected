@@ -296,7 +296,10 @@ const Calculations = {
         const originalPrincipal = loan.original_principal || loan.principal_amount;
         const remainingPrincipal = loan.remaining_principal || loan.principal_amount;
         const interestPeriod = loan.interest_calculation_months || this.calculateInterestPeriod(loan.term_months).interestMonths;
-        const totalInitiationFee = loan.total_initiation_fee || (originalPrincipal * RATES.INITIATION_FEE_RATE);
+        // Waived initiation is intentionally 0 — use nullish check, not `||`.
+        const totalInitiationFee = (loan.total_initiation_fee != null)
+            ? Math.max(0, Number(loan.total_initiation_fee) || 0)
+            : (originalPrincipal * RATES.INITIATION_FEE_RATE);
         const initiationFeePaid = loan.initiation_fee_paid || 0;
         const interestPaid = loan.interest_paid || 0;
         
