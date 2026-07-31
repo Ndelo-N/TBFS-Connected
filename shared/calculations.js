@@ -286,20 +286,29 @@ const Calculations = {
 
     /**
      * Collectible interest ceiling.
-     * Prefers the stored max_interest_allowed (set to 2× original period
-     * interest at origination). Falls back to 2× original period interest.
+     * Default / legacy loans: at least 2× original period interest so
+     * delinquency interest has headroom on read paths (preview/allocation).
+     * Overpayment recalculation (interest_recalculated) keeps its lowered cap.
      */
     getMaxInterestAllowed(loan) {
         const existing = Number(loan && loan.max_interest_allowed);
-        if (Number.isFinite(existing) && existing >= 0) return this.round(existing);
-        return this.round(this.getOriginalPeriodInterest(loan) * 2);
+        const target = this.round(this.getOriginalPeriodInterest(loan) * 2);
+        if (loan && loan.interest_recalculated && Number.isFinite(existing) && existing >= 0) {
+            return this.round(existing);
+        }
+        if (Number.isFinite(existing) && existing > target) return this.round(existing);
+        return target;
     },
 
     /**
      * Ensure max_interest_allowed is at least 2× original period interest.
+     * Does not undo overpayment interest reductions.
      */
     ensureMaxInterestAllowed(loan) {
         if (!loan) return 0;
+        if (loan.interest_recalculated) {
+            return Number(loan.max_interest_allowed) || 0;
+        }
         const target = this.round(this.getOriginalPeriodInterest(loan) * 2);
         const existing = Number(loan.max_interest_allowed);
         if (!Number.isFinite(existing) || existing < target) {

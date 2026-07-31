@@ -132,6 +132,18 @@ test('max interest allowed is 2× original period interest', () => {
 
     const loan = eligibleLoan();
     assert.equal(C.getMaxInterestAllowed(loan), 7920);
+
+    // Legacy 1× ceiling is lifted on read so preview/allocation have headroom
+    const legacy = eligibleLoan({ max_interest_allowed: 3960 });
+    assert.equal(C.getMaxInterestAllowed(legacy), 7920);
+
+    // Overpayment recalc keeps a deliberately lowered cap
+    const recalced = eligibleLoan({
+        max_interest_allowed: 2000,
+        interest_recalculated: true
+    });
+    assert.equal(C.getMaxInterestAllowed(recalced), 2000);
+    assert.equal(C.ensureMaxInterestAllowed(recalced), 2000);
 });
 
 test('effective interest due includes extra_interest_assessed', () => {
