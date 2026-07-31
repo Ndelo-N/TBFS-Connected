@@ -498,7 +498,7 @@
         /**
          * Build a schedule that respects previously paid months and recalculated totals.
          * Fully paid rows and an open partial installment (paid_breakdown /
-         * late_penalty_assessed / extra_admin_assessed) are preserved; only
+         * late_penalty_assessed / extra_admin_assessed / extra_interest_assessed) are preserved; only
          * later months are regenerated.
          */
         function buildAdjustedSchedule(loan, options) {
@@ -558,6 +558,9 @@
                 }
                 if (existing.extra_admin_assessed != null) {
                     entry.extra_admin_assessed = existing.extra_admin_assessed;
+                }
+                if (existing.extra_interest_assessed != null) {
+                    entry.extra_interest_assessed = existing.extra_interest_assessed;
                 }
                 if (status === 'partial') {
                     entry.partial_payment = true;
@@ -1632,6 +1635,8 @@ Click "OK" to process payment or "Cancel" to go back.
             const extraAdminDue = feeAssess.extraAdminDue;
             const extraAdminMonths = feeAssess.extraAdminMonths;
             const extraAdminAssessedCandidate = feeAssess.extraAdminAssessedCandidate;
+            const extraInterestDue = feeAssess.extraInterestDue || 0;
+            const extraInterestAssessedCandidate = feeAssess.extraInterestAssessedCandidate || 0;
 
             Calculations.updateLoanPaymentSignals(loan, gracePeriodDays, todayDate);
             
@@ -1648,6 +1653,7 @@ Click "OK" to process payment or "Cancel" to go back.
                 expectedPayment, remainingPrincipal, remainingInterest,
                 remainingInitiationFee, latePenalty, latePenaltyAssessedCandidate,
                 extraAdminDue, extraAdminMonths, extraAdminAssessedCandidate,
+                extraInterestDue, extraInterestAssessedCandidate,
                 daysLate, isPaymentLate,
                 gracePeriodDays, nextDueDate,
                 paymentsMade: loan.payments_made || 0
@@ -1683,7 +1689,9 @@ Click "OK" to process payment or "Cancel" to go back.
                 isPaymentLate: false,
                 extraAdminDue: 0,
                 extraAdminMonths: 0,
-                extraAdminAssessedCandidate: 0
+                extraAdminAssessedCandidate: 0,
+                extraInterestDue: 0,
+                extraInterestAssessedCandidate: 0
             };
             if (!loan || !nextDueDate || !Calculations.isLateFeesEligible(loan)) return result;
             const asOf = asOfDate instanceof Date ? asOfDate : new Date(asOfDate);
@@ -1691,27 +1699,22 @@ Click "OK" to process payment or "Cancel" to go back.
             const due = nextDueDate instanceof Date ? nextDueDate : new Date(nextDueDate);
             if (isNaN(due.getTime())) return result;
 
-            const graceCutoff = new Date(due.getTime());
-            graceCutoff.setDate(graceCutoff.getDate() + gracePeriodDays);
-            if (asOf > graceCutoff) {
-                result.daysLate = Math.floor((asOf - due) / (1000 * 60 * 60 * 24));
-                const assessed = Calculations.calculateLatePenalty(
-                    result.daysLate - gracePeriodDays, loan.remaining_principal);
-                const priorAssessed = Number(openEntry && openEntry.late_penalty_assessed) || 0;
-                result.latePenaltyAssessedCandidate = Math.max(priorAssessed, assessed);
-                const alreadyPaid = Number(
-                    (openEntry && openEntry.paid_breakdown || {}).late_penalty
-                ) || 0;
-                result.latePenalty = Math.max(
-                    0, result.latePenaltyAssessedCandidate - alreadyPaid);
-                result.isPaymentLate = result.latePenalty > 0.01 || assessed > 0;
-            }
+            const entry = openEntry
+                ? Object.assign({}, openEntry, {
+                    due_date: openEntry.due_date || due.toISOString()
+                })
+                : { due_date: due.toISOString(), status: 'pending' };
+            const delinquency = Calculations.calculateDelinquencyCharges
+                ? Calculations.calculateDelinquencyCharges(
+                    loan, entry, asOf, gracePeriodDays)
+                : null;
+            if (!delinquency || !delinquency.months) return result;
 
-            const extra = Calculations.calculateExtraAdminDue(
-                loan, openEntry, asOf, gracePeriodDays);
-            const priorExtra = Number(openEntry && openEntry.extra_admin_assessed) || 0;
-            result.extraAdminAssessedCandidate = Math.max(priorExtra, extra.amount);
-            result.extraAdminMonths = extra.months;
+            result.daysLate = Math.floor((asOf - due) / (1000 * 60 * 60 * 24));
+            result.extraAdminMonths = delinquency.months;
+            result.extraAdminAssessedCandidate = Math.max(
+                Number(openEntry && openEntry.extra_admin_assessed) || 0,
+                delinquency.extraAdmin);
             const baseAdmin = Number(openEntry && openEntry.admin_fee) || 0;
             const paidAdmin = Number(
                 (openEntry && openEntry.paid_breakdown || {}).admin
@@ -1720,6 +1723,27 @@ Click "OK" to process payment or "Cancel" to go back.
             const unpaidAdmin = Math.max(0, totalAdminOwed - paidAdmin);
             const unpaidBase = Math.max(0, baseAdmin - Math.min(paidAdmin, baseAdmin));
             result.extraAdminDue = Math.max(0, unpaidAdmin - unpaidBase);
+
+            result.latePenaltyAssessedCandidate = Math.max(
+                Number(openEntry && openEntry.late_penalty_assessed) || 0,
+                delinquency.latePenalty);
+            const alreadyPaid = Number(
+                (openEntry && openEntry.paid_breakdown || {}).late_penalty
+            ) || 0;
+            result.latePenalty = Math.max(
+                0, result.latePenaltyAssessedCandidate - alreadyPaid);
+            result.isPaymentLate = result.latePenalty > 0.01 || delinquency.months > 0;
+
+            result.extraInterestAssessedCandidate = Math.max(
+                Number(openEntry && openEntry.extra_interest_assessed) || 0,
+                delinquency.extraInterest);
+            const paidInterest = Number(
+                (openEntry && openEntry.paid_breakdown || {}).interest
+            ) || 0;
+            const scheduledInterest = Number(openEntry && openEntry.interest_payment) || 0;
+            const interestPaidTowardExtra = Math.max(0, paidInterest - scheduledInterest);
+            result.extraInterestDue = Math.max(
+                0, result.extraInterestAssessedCandidate - interestPaidTowardExtra);
             return result;
         }
 
@@ -1732,16 +1756,26 @@ Click "OK" to process payment or "Cancel" to go back.
                 Number(entry && entry.extra_admin_assessed) || 0,
                 Number(opts && opts.extraAdminAssessedCandidate) || 0
             );
+            const extraInterestAssessed = Math.max(
+                Number(entry && entry.extra_interest_assessed) || 0,
+                Number(opts && opts.extraInterestAssessedCandidate) || 0
+            );
             const adminDue = (Number(entry && entry.admin_fee) || 0) + extraAssessed;
+            const interestDue = (Number(entry && entry.interest_payment) || 0) +
+                extraInterestAssessed;
             return {
                 initiation_fee: eff(entry.initiation_fee, paid.initiation),
                 admin_fee: eff(adminDue, paid.admin),
-                interest_payment: eff(entry.interest_payment, paid.interest),
+                interest_payment: eff(interestDue, paid.interest),
                 principal_payment: eff(entry.principal_payment, paid.principal)
             };
         }
 
         function interestCapRemainingFor(loan) {
+            if (typeof Calculations.getMaxInterestAllowed === 'function') {
+                const maxAllowed = Calculations.getMaxInterestAllowed(loan);
+                return Math.max(0, maxAllowed - (loan.interest_paid || 0));
+            }
             return Number.isFinite(loan.max_interest_allowed)
                 ? Math.max(0, loan.max_interest_allowed - (loan.interest_paid || 0))
                 : Infinity;
@@ -1764,7 +1798,13 @@ Click "OK" to process payment or "Cancel" to go back.
                         '):</span><strong>' + esc(Calculations.formatCurrency(ctx.extraAdminDue)) + '</strong></div>'
                     : '') +
                 (ctx.latePenalty > 0
-                    ? '<div class="info-row"><span>\u26A0\uFE0F Late penalty (' + esc(ctx.daysLate) + ' days late, ' + esc(ctx.gracePeriodDays) + '-day grace):</span><strong>' + esc(Calculations.formatCurrency(ctx.latePenalty)) + '</strong></div>'
+                    ? '<div class="info-row"><span>\u26A0\uFE0F Late penalty (' + esc(ctx.daysLate) + ' days late, ' + esc(ctx.gracePeriodDays) + '-day grace' +
+                        (ctx.extraAdminMonths > 1 ? ', ' + esc(ctx.extraAdminMonths) + ' months' : '') +
+                        '):</span><strong>' + esc(Calculations.formatCurrency(ctx.latePenalty)) + '</strong></div>'
+                    : '') +
+                (ctx.extraInterestDue > 0
+                    ? '<div class="info-row"><span>\u26A0\uFE0F Delinquency interest (30% income cap, excl. initiation):</span><strong>' +
+                        esc(Calculations.formatCurrency(ctx.extraInterestDue)) + '</strong></div>'
                     : '') +
                 '<div class="info-row"><span>Payments made:</span><strong>' + esc(ctx.paymentsMade) + '/' + esc(loan.term_months) + '</strong></div>';
             const amountInput = document.getElementById('pmAmount');
@@ -1809,7 +1849,8 @@ Click "OK" to process payment or "Cancel" to go back.
                 loan, entry, due, asOf, paymentModalCtx.gracePeriodDays || 3);
             const alloc = Calculations.allocateScheduledPayment(amount, {
                 entry: getEntryEffectiveDues(entry, {
-                    extraAdminAssessedCandidate: fees.extraAdminAssessedCandidate
+                    extraAdminAssessedCandidate: fees.extraAdminAssessedCandidate,
+                    extraInterestAssessedCandidate: fees.extraInterestAssessedCandidate
                 }),
                 latePenaltyDue: fees.latePenalty,
                 interestCapRemaining: interestCapRemainingFor(loan),
@@ -1822,7 +1863,7 @@ Click "OK" to process payment or "Cancel" to go back.
                 line('Initiation fee', alloc.initiationPaid) +
                 line('Admin fee (incl. post-grace)', alloc.adminPaid) +
                 line('Late penalty', alloc.penaltyPaid) +
-                line('Interest', alloc.interestPaid) +
+                line('Interest (incl. delinquency)', alloc.interestPaid) +
                 line('Principal', alloc.principalPaid) +
                 (alloc.unallocated > 0
                     ? '<div class="info-row"><span>Extra (overpayment):</span><strong>' + esc(Calculations.formatCurrency(alloc.unallocated)) + '</strong></div>'
@@ -1953,6 +1994,16 @@ Click "OK" to process payment or "Cancel" to go back.
                 // candidate that was never persisted on the entry.
                 // (Already-persisted assessments from prior confirms stay.)
             }
+
+            if (nextPayment && feeAssess.extraInterestAssessedCandidate > 0) {
+                nextPayment.extra_interest_assessed = Math.max(
+                    Number(nextPayment.extra_interest_assessed) || 0,
+                    feeAssess.extraInterestAssessedCandidate
+                );
+                if (typeof Calculations.syncDelinquencyInterestTracking === 'function') {
+                    Calculations.syncDelinquencyInterestTracking(loan);
+                }
+            }
             
             // STEP 11: ALLOCATE VIA THE SHARED WATERFALL (F-02/F-16)
             // initiation → admin → late penalty → interest → principal,
@@ -1960,7 +2011,8 @@ Click "OK" to process payment or "Cancel" to go back.
             // entry's EFFECTIVE dues (net of prior partial payments).
             const alloc = Calculations.allocateScheduledPayment(remainingAmount, {
                 entry: getEntryEffectiveDues(nextPayment, {
-                    extraAdminAssessedCandidate: nextPayment.extra_admin_assessed
+                    extraAdminAssessedCandidate: nextPayment.extra_admin_assessed,
+                    extraInterestAssessedCandidate: nextPayment.extra_interest_assessed
                 }),
                 latePenaltyDue: latePenalty,
                 interestCapRemaining: interestCapRemainingFor(loan),
@@ -2475,21 +2527,30 @@ Click "OK" to process payment or "Cancel" to go back.
                 Number(entry.extra_admin_assessed) || 0,
                 Number(opts && opts.extraAdminAssessedCandidate) || 0
             );
+            const extraInterestAssessed = Math.max(
+                Number(entry.extra_interest_assessed) || 0,
+                Number(opts && opts.extraInterestAssessedCandidate) || 0
+            );
             const unpaidAdminTotal = Math.max(
                 0,
                 Calculations.round(baseAdmin + extraAssessed - (Number(paid.admin) || 0))
             );
             const unpaidBaseAdmin = eff(baseAdmin, paid.admin);
             const unpaidExtraAdmin = Math.max(0, unpaidAdminTotal - unpaidBaseAdmin);
+            const latePenaltyAssessed = Math.max(
+                Number(entry.late_penalty_assessed) || 0,
+                Number(opts && opts.latePenaltyAssessedCandidate) || 0
+            );
             const latePenalty = Math.max(
                 0,
-                (Number(entry.late_penalty_assessed) || 0) - (Number(paid.late_penalty) || 0)
+                latePenaltyAssessed - (Number(paid.late_penalty) || 0)
             );
+            const interestDue = (Number(entry.interest_payment) || 0) + extraInterestAssessed;
 
             if (entry.status === 'pending') {
                 return {
                     principal: 0,
-                    interest: 0,
+                    interest: eff(interestDue, paid.interest),
                     initiation: 0,
                     admin: unpaidAdminTotal,
                     latePenalty,
@@ -2499,7 +2560,7 @@ Click "OK" to process payment or "Cancel" to go back.
 
             return {
                 principal: eff(entry.principal_payment, paid.principal),
-                interest: eff(entry.interest_payment, paid.interest),
+                interest: eff(interestDue, paid.interest),
                 initiation: eff(entry.initiation_fee, paid.initiation),
                 admin: unpaidAdminTotal,
                 latePenalty,
@@ -3091,8 +3152,9 @@ TOTAL REMAINING:        ${money(p.total_remaining)}
                 model.schedule.forEach(row => {
                     statement += `\n#${row.index} Due ${fmtDate(row.due_date)} [${String(row.status || '').toUpperCase()}]\n`;
                     statement += `  P ${money(row.principal)} | I ${money(row.interest)} | Init ${money(row.initiation_fee)} | Admin ${money(row.admin_fee)}\n`;
-                    if (Number(row.extra_admin_assessed) > 0 || Number(row.late_penalty_assessed) > 0) {
-                        statement += `  Assessed extra admin ${money(row.extra_admin_assessed)} | late penalty ${money(row.late_penalty_assessed)}\n`;
+                    if (Number(row.extra_admin_assessed) > 0 || Number(row.late_penalty_assessed) > 0 ||
+                        Number(row.extra_interest_assessed) > 0) {
+                        statement += `  Assessed extra admin ${money(row.extra_admin_assessed)} | late penalty ${money(row.late_penalty_assessed)} | delinquency interest ${money(row.extra_interest_assessed)}\n`;
                     }
                     if (Number(row.amount_paid) > 0) {
                         statement += `  Paid ${money(row.amount_paid)}${row.payment_date ? ' on ' + fmtDate(row.payment_date) : ''}\n`;
@@ -3364,8 +3426,16 @@ TBFS - Transparent, Fair, Simple
             loan.total_interest = totalInterest;
             loan.total_initiation_fee = totalInitiationFee;
             loan.interest_calculation_months = preserveThrough + remainingInterestPeriod;
-            // Cap = calculated interest for the interest period (matches schedule).
-            loan.max_interest_allowed = Number(loan.total_interest) || 0;
+            // Cap = 2 × original period interest (delinquency headroom).
+            if (!Number.isFinite(Number(loan.original_period_interest))) {
+                loan.original_period_interest = Number(oldTotalInterest) || totalInterest;
+            }
+            if (typeof Calculations.ensureMaxInterestAllowed === 'function') {
+                Calculations.ensureMaxInterestAllowed(loan);
+            } else {
+                loan.max_interest_allowed =
+                    (Number(loan.original_period_interest) || totalInterest) * 2;
+            }
             loan.expected_monthly_interest = repaymentBreakdown.interestPerMonthRaw;
             
             // STEP 2: UPDATE MONTHLY PAYMENT
@@ -3674,7 +3744,15 @@ TBFS - Transparent, Fair, Simple
             loan.interest_calculation_months = stockvelPlan
                 ? (preserveThrough + remainingMonths)
                 : Calculations.calculateInterestPeriod(currentTerm).interestMonths;
-            loan.max_interest_allowed = Number(recalculatedInterest) || 0;
+            // Top-up refreshes the origination interest base for the 2× cap.
+            loan.original_period_interest = Number(recalculatedInterest) || 0;
+            if (typeof Calculations.ensureMaxInterestAllowed === 'function') {
+                loan.max_interest_allowed = 0; // force recompute from new original
+                Calculations.ensureMaxInterestAllowed(loan);
+            } else {
+                loan.max_interest_allowed =
+                    (Number(loan.original_period_interest) || 0) * 2;
+            }
             loan.expected_monthly_interest = stockvelPlan
                 ? stockvelPlan.averageInterestRaw
                 : (remainingInterest / remainingMonths);

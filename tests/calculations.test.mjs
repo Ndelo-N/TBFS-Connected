@@ -22,6 +22,7 @@ test('canonical rates are exactly as documented', () => {
     assert.equal(C.RATES.STOCKVEL_MIN_MONTHLY_RATE, 0.10);
     assert.equal(C.RATES.LATE_PENALTY_DAILY_RATE, 0.001);
     assert.equal(C.RATES.LATE_PENALTY_MAX_DAYS, 7);
+    assert.equal(C.RATES.LATE_PENALTY_MIN_PRINCIPAL, 100);
 });
 
 test('interest period: ceil(term/2), floor of 3, capped at term', () => {
@@ -39,15 +40,15 @@ test('reference standard loan: R10,000 over 10 months', () => {
     assert.equal(Math.round(r.totalAdminFees), 600);        // 60 × 10
     assert.equal(Math.round(r.totalCost), 22900);           // 10000 + 11100 + 1200 + 600
     assert.equal(Math.round(r.monthlyPayment), 2290);       // 22900 / 10
-    // Cap = calculated interest (may exceed principal); not min(interest, principal)
-    assert.equal(r.maxInterestAllowed, r.totalInterest);
+    // Cap = 2× calculated period interest (delinquency headroom)
+    assert.equal(r.maxInterestAllowed, C.round(r.totalInterest * 2));
     assert.ok(r.maxInterestAllowed > 10000);
 });
 
 test('6-month standard loan uses 3-month interest period (income table)', () => {
     const r = C.calculateStandardLoan(5000, 6);
     assert.equal(r.interestMonths, 3);
-    assert.equal(r.maxInterestAllowed, r.totalInterest);
+    assert.equal(r.maxInterestAllowed, C.round(r.totalInterest * 2));
     // Full-term 30% roll would overstate; period total must be below that path
     let fullTermInterest = 0;
     let bal = 5000;

@@ -135,7 +135,8 @@ test('addInterestCapFields uses calculated interest (not principal ceiling)', ()
         totalInterest: r.totalInterest
     });
     assert.equal(caps.interest_calculation_months, 5);
-    assert.equal(caps.max_interest_allowed, r.totalInterest);
+    assert.equal(caps.original_period_interest, r.totalInterest);
+    assert.equal(caps.max_interest_allowed, C.round(r.totalInterest * 2));
 });
 
 test('buildLoanStatementModel early payoff pulls tx fee detail', () => {
@@ -290,9 +291,11 @@ test('buildLoanStatementModel includes live late/extra admin before persist', ()
     assert.ok(open);
     assert.ok(open.late_penalty_assessed > 0, 'live late penalty should be assessed');
     assert.ok(open.extra_admin_assessed > 0, 'live extra admin should be assessed');
+    assert.ok(open.extra_interest_assessed > 0, 'live delinquency interest should be assessed');
     assert.ok(open.amount_due > open.principal + open.interest + open.initiation_fee + open.admin_fee);
     assert.ok(model.financials.late_penalties_assessed >= open.late_penalty_assessed);
     assert.ok(model.financials.admin_extra_assessed >= open.extra_admin_assessed);
+    assert.ok(model.financials.interest_extra_assessed >= open.extra_interest_assessed);
     assert.equal(model.position.installment_amount_due, open.amount_due);
 });
 
