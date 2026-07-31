@@ -1156,12 +1156,23 @@ Click "OK" to process payment or "Cancel" to go back.
                 });
                 const partialPenalty = unpaidPartial.latePenalty || 0;
                 const partialExtraAdmin = unpaidPartial.extraAdmin || 0;
-                // Delinquency interest still unpaid, clamped to interest cap.
+                // Delinquency interest still unpaid, clamped to interest cap
+                // AFTER reserving room for prorated payoff interest (applied below).
                 // Do not mutate the loan until the operator confirms add-ons.
-                const capRemaining = interestCapRemainingFor(loan);
+                const maxInterestAllowed = typeof Calculations.getMaxInterestAllowed === 'function'
+                    ? Calculations.getMaxInterestAllowed(loan)
+                    : (Number(loan.max_interest_allowed) || Infinity);
+                const capAfterPayoffInterest = Math.max(
+                    0,
+                    Calculations.round(
+                        maxInterestAllowed
+                        - (Number(loan.interest_paid) || 0)
+                        - (Number(payoffData.interestOwed) || 0)
+                    )
+                );
                 const partialExtraInterest = Math.min(
                     Math.max(0, Number(feeAssess.extraInterestDue) || 0),
-                    capRemaining
+                    capAfterPayoffInterest
                 );
                 const addOnFees = Calculations.round(
                     partialPenalty + partialExtraAdmin + partialExtraInterest
@@ -1198,8 +1209,14 @@ Click "OK" to process payment or "Cancel" to go back.
                 loan.completion_date = new Date().toISOString();
                 loan.remaining_principal = 0; // Loan fully paid
                 
-                // Update interest paid (add prorated interest for payoff month)
-                loan.interest_paid = (loan.interest_paid || 0) + payoffData.interestOwed;
+                // Update interest paid (prorated payoff interest + claimable delinquency).
+                // Combined total must not exceed the collectible cap.
+                loan.interest_paid = Calculations.round(Math.min(
+                    maxInterestAllowed,
+                    (Number(loan.interest_paid) || 0)
+                    + (Number(payoffData.interestOwed) || 0)
+                    + partialExtraInterest
+                ));
                 
                 // Initiation fee must be paid in full for early payoff
                 loan.initiation_fee_paid = loan.total_initiation_fee || 0;
@@ -1262,11 +1279,7 @@ Click "OK" to process payment or "Cancel" to go back.
                                         Number(payment.late_penalty_assessed) || 0
                                     ));
                             }
-                            if (partialExtraInterest > 0) {
-                                loan.interest_paid = Calculations.round(
-                                    (loan.interest_paid || 0) + partialExtraInterest
-                                );
-                            }
+                            // partialExtraInterest already included in loan.interest_paid above
                         }
                         payment.status = 'paid';
                         payment.partial_payment = false;
@@ -3704,6 +3717,8 @@ TBFS - Transparent, Fair, Simple
             let remainingInterest = 0;
             let remainingInitiationFee = 0;
             let regenPrincipal = 0;
+            // Period-interest base for the 2× collectible cap (not lifetime paid+remaining).
+            let periodInterestBase = Number(loan.original_period_interest) || 0;
 
             const unpaidPartial = unpaidOnPartialEntry(getNextPendingScheduleEntry(loan));
             // Top-up principal goes onto remaining balance; keep unpaid partial
@@ -3735,10 +3750,14 @@ TBFS - Transparent, Fair, Simple
                 remainingInterest = stockvelPlan.totalInterestRaw;
                 adminFee = stockvelPlan.averageAdminFeeRaw;
                 recalculatedInterest = interestAlreadyPaid + unpaidPartial.interest + remainingInterest;
+                // Cap base = new outstanding schedule interest (not paid+remaining lifetime).
+                periodInterestBase = Calculations.round(Number(stockvelPlan.totalInterestRaw) || 0);
                 newMonthlyPayment = stockvelPlan.equalMonthlyPaymentRaw;
             } else {
                 newTotalInitiationFee = newPrincipal * Calculations.RATES.INITIATION_FEE_RATE;
                 const fullInterest = calculateStandardTotalInterest(newPrincipal, currentTerm);
+                // Cap base = income-table period interest on the new principal/term.
+                periodInterestBase = Calculations.round(Number(fullInterest) || 0);
                 recalculatedInterest = Math.max(fullInterest, interestAlreadyPaid);
                 const previousInitiationFee = (loan.total_initiation_fee != null)
                     ? Math.max(0, Number(loan.total_initiation_fee) || 0)
@@ -3810,15 +3829,14 @@ TBFS - Transparent, Fair, Simple
             loan.interest_calculation_months = stockvelPlan
                 ? (preserveThrough + remainingMonths)
                 : Calculations.calculateInterestPeriod(currentTerm).interestMonths;
-            // Top-up refreshes the origination interest base for the 2× cap.
-            loan.original_period_interest = Number(recalculatedInterest) || 0;
-            if (typeof Calculations.ensureMaxInterestAllowed === 'function') {
-                loan.max_interest_allowed = 0; // force recompute from new original
-                Calculations.ensureMaxInterestAllowed(loan);
-            } else {
-                loan.max_interest_allowed =
-                    (Number(loan.original_period_interest) || 0) * 2;
-            }
+            // Cap base = new period interest only (not paid+remaining lifetime).
+            // Ceiling is at least 2× that base and at least scheduled total interest.
+            loan.original_period_interest = Number(periodInterestBase) || 0;
+            loan.max_interest_allowed = Calculations.round(Math.max(
+                (Number(loan.original_period_interest) || 0) * 2,
+                Number(recalculatedInterest) || 0,
+                Number(interestAlreadyPaid) || 0
+            ));
             loan.expected_monthly_interest = stockvelPlan
                 ? stockvelPlan.averageInterestRaw
                 : (remainingInterest / remainingMonths);

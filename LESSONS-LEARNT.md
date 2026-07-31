@@ -4,6 +4,22 @@ Branch-scoped findings from Bugbot / review loops. Newest entries at the top.
 
 ---
 
+## 2026-07-31 — `cursor/delinquency-monthly-interest-a923` (Bugbot round 2)
+
+### LL-DELQ-004 — Early payoff could exceed interest cap
+- **Severity:** high
+- **Symptom:** Delinquency interest was clamped with `interestCapRemainingFor` before prorated `payoffData.interestOwed` was applied, then both were added to `interest_paid`, exceeding 2×.
+- **Fix:** Reserve cap room for payoff interest first (`capAfterPayoffInterest`), clamp delinquency to the remainder, and set `interest_paid = min(maxAllowed, paid + payoffInterest + extraInterest)` once.
+- **Lesson:** When multiple interest components settle in one flow, allocate the cap in order and write `interest_paid` once.
+
+### LL-DELQ-005 — Top-up used lifetime interest as `original_period_interest`
+- **Severity:** medium
+- **Symptom:** Top-up set `original_period_interest = recalculatedInterest` (`max(fullInterest, paid)` or paid+remaining), so 2× cap was based on the wrong base and could inflate.
+- **Fix:** Store period interest only (`fullInterest` / stockvel plan totalInterestRaw); set `max_interest_allowed = max(2×period, recalculatedInterest, paid)`.
+- **Lesson:** `original_period_interest` is the income-table period figure for the current contract, never a lifetime paid+remaining total.
+
+---
+
 ## 2026-07-31 — `cursor/delinquency-monthly-interest-a923` (Bugbot round 1)
 
 ### LL-DELQ-001 — Early payoff skipped live delinquency charges
