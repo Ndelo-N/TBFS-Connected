@@ -325,6 +325,7 @@
     <script src="shared/app-state.js?v=75"></script>
     <script src="shared/calculations.js?v=75"></script>
     <script src="shared/cloud-backup.js?v=75"></script>
+    <script src="shared/portal-api.js?v=1"></script>
     <script src="shared/client-status.js?v=75"></script>
     <script src="shared/navigation.js?v=75"></script>
     
@@ -1063,7 +1064,13 @@
             );
             if (!choice) return;
             if (choice.trim() === '1') {
-                const pin = prompt('Enter a PIN for this client (min 4 characters).\nShare it securely with the client.');
+                const useApi = (typeof PortalAPI !== 'undefined' && PortalAPI.isConfigured());
+                const suggested = useApi ? PortalAPI.generateCode(8) : '';
+                const pin = prompt(
+                    useApi
+                        ? 'Access code for this client (min 8 chars). A strong code has been suggested \u2014 share it securely.'
+                        : 'Enter a PIN for this client (min 4 characters).\nShare it securely with the client.',
+                    suggested);
                 if (!pin) return;
                 try {
                     const result = await ClientStatus.enableAndPublish(client, AppState, pin);

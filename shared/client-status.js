@@ -236,6 +236,20 @@ const ClientStatus = {
         const result = { local: false, remote: false, path: null };
         if (!client) return result;
         const account = client.account_number || client.accountNumber;
+
+        // API mode: delete the private KV record. Nothing to remove from git.
+        if (typeof PortalAPI !== 'undefined' && PortalAPI.isConfigured()) {
+            try {
+                await PortalAPI.revoke(account);
+                result.remote = true;
+                result.api = true;
+            } catch (e) {
+                if (options && options.requireRemote) throw e;
+                result.error = (e && e.message) || String(e);
+            }
+            return result;
+        }
+
         let hash = client.client_access && client.client_access.publish_id;
         if (!hash && account) {
             try { hash = await this.accountHash(account); } catch (e) { hash = null; }
@@ -535,11 +549,27 @@ const ClientStatus = {
         const account = client.account_number || client.accountNumber;
         // Build pack at execution time so queued jobs see the latest AppState.
         const pack = Calculations.buildClientStatusPack(client, state, opts);
+
+        // API mode (preferred): store the statement in private Cloudflare KV
+        // behind a rate-limited login. No client data is written to git.
+        if (typeof PortalAPI !== 'undefined' && PortalAPI.isConfigured()) {
+            const apiRes = await PortalAPI.publish(account, resolvedPin, pack);
+            client.client_access.published_at = (apiRes && apiRes.updatedAt) || new Date().toISOString();
+            client.client_access.publish_id = null;   // no public file exists in API mode
+            client.client_access.transport = 'api';
+            this.rememberPin(account, resolvedPin);
+            return { pack, pub: { api: true, remote: true, updatedAt: client.client_access.published_at } };
+        }
+
+        // Legacy mode (deprecated): encrypt with the PIN and commit a public
+        // client-status/<hash>.json file. Retire once API mode is live —
+        // see DEPLOY-API-AND-PORTAL.md step 9 (delete + purge from history).
         const envelope = await this.encryptPack(
             pack, resolvedPin, client.client_access.pin_salt);
         const pub = await this.publishEnvelope(envelope, opts);
         client.client_access.published_at = envelope.updatedAt;
         client.client_access.publish_id = envelope.accountHash;
+        client.client_access.transport = 'legacy';
         this.rememberPin(account, resolvedPin);
         return { pack, envelope, pub };
     },

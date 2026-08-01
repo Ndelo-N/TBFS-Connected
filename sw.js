@@ -20,6 +20,7 @@ const urlsToCache = [
   './shared/sw-register.js?v=75',    // manageLoanClientPortal keeps account-priority resolve
   './shared/sanitize.js?v=75',       // manageLoanClientPortal keeps account-priority resolve
   './shared/cloud-backup.js?v=75',   // manageLoanClientPortal keeps account-priority resolve
+  './shared/portal-api.js?v=1',      // operator publishes to the private API (F-portal)
   './shared/client-status.js?v=75',  // manageLoanClientPortal keeps account-priority resolve
   './shared/loan-statement-pdf.js?v=75', // manageLoanClientPortal keeps account-priority resolve
   './manifest.json',                 // manageLoanClientPortal keeps account-priority resolve

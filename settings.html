@@ -310,6 +310,26 @@
             </div>
         </div>
         
+        <!-- Client Portal API Settings -->
+        <div class="card" style="margin-bottom: 20px;">
+            <h3 style="color: #2c3e50; margin-bottom: 6px;">🔗 Client Portal API</h3>
+            <p style="color:#636e72; font-size:14px; margin:0 0 14px;">
+                When set, client statuses publish to your private TBFS API (Cloudflare)
+                instead of the public repo. The token is held for this session only.
+            </p>
+            <label style="font-weight:600; font-size:14px;">API base URL</label>
+            <input type="text" id="portalApiBase" placeholder="https://api.mytbfs.co.za"
+                   style="width:100%; padding:10px; margin:6px 0 12px; border:1.5px solid #dfe6e9; border-radius:8px; font-size:15px;">
+            <label style="font-weight:600; font-size:14px;">Operator token (session only)</label>
+            <input type="password" id="portalApiToken" placeholder="Paste OPERATOR_TOKEN"
+                   style="width:100%; padding:10px; margin:6px 0 12px; border:1.5px solid #dfe6e9; border-radius:8px; font-size:15px;">
+            <div style="display:flex; gap:10px; flex-wrap:wrap;">
+                <button class="btn btn-primary" type="button" onclick="savePortalApi()">Save &amp; unlock</button>
+                <button class="btn" type="button" onclick="testPortalApi()">Test connection</button>
+            </div>
+            <p id="portalApiMsg" style="font-size:13px; min-height:16px; margin:10px 0 0;"></p>
+        </div>
+
         <!-- Cloud Backup Settings -->
         <div class="form-section">
             <h3 style="color: #2c3e50; margin-bottom: 15px;">Client loan portal</h3>
@@ -507,6 +527,7 @@
     <script src="shared/app-state.js?v=74"></script>
     <script src="shared/calculations.js?v=74"></script>
     <script src="shared/cloud-backup.js?v=74"></script>
+    <script src="shared/portal-api.js?v=1"></script>
     <script src="shared/navigation.js?v=74"></script>
 
     <script>
@@ -1208,6 +1229,46 @@
         document.addEventListener('DOMContentLoaded', init);
     </script>
     <!-- Service Worker Registration -->
-    <script src="shared/sw-register.js?v=74"></script>
+    <script src="shared/sw-register.js?v=74">
+        /* ---- Client Portal API config (session token, persisted base URL) ---- */
+        function savePortalApi() {
+            const base = document.getElementById('portalApiBase').value.trim();
+            const token = document.getElementById('portalApiToken').value.trim();
+            const msg = document.getElementById('portalApiMsg');
+            if (typeof PortalAPI === 'undefined') { msg.style.color = '#c0392b'; msg.textContent = 'Portal API module not loaded.'; return; }
+            if (base) PortalAPI.setBaseUrl(base);
+            PortalAPI.setToken(token || null);
+            document.getElementById('portalApiToken').value = '';
+            msg.style.color = '#137a63';
+            msg.textContent = PortalAPI.isConfigured()
+                ? '\u2705 Saved. Publishing will use the API this session.'
+                : 'Base URL saved. Enter the operator token to enable publishing.';
+        }
+        async function testPortalApi() {
+            const base = document.getElementById('portalApiBase').value.trim();
+            const msg = document.getElementById('portalApiMsg');
+            if (base) PortalAPI.setBaseUrl(base);
+            msg.style.color = '#636e72'; msg.textContent = 'Testing\u2026';
+            try {
+                const h = await PortalAPI.health();
+                msg.style.color = '#137a63';
+                msg.textContent = (h && h.ok) ? '\u2705 API reachable.' : 'Unexpected response.';
+            } catch (e) {
+                msg.style.color = '#c0392b';
+                msg.textContent = '\u274c ' + (e.message || e);
+            }
+        }
+        (function initPortalApiFields(){
+            document.addEventListener('DOMContentLoaded', function(){
+                try {
+                    if (typeof PortalAPI !== 'undefined') {
+                        const el = document.getElementById('portalApiBase');
+                        if (el) el.value = PortalAPI.baseUrl();
+                    }
+                } catch (e) {}
+            });
+        })();
+
+    </script>
 </body>
 </html>
