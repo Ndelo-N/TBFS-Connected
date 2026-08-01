@@ -3101,11 +3101,10 @@ const Calculations = {
         const interestTotalWithExtra = this.round(
             Math.max(totalInterest, originalPeriodInterest + interestExtraAssessed));
         // Match payment allocation: never show more interest still owed than
-        // max_interest_allowed − interest_paid (2× original period interest).
+        // getMaxInterestAllowed − interest_paid (lifts legacy 1× caps to 2×;
+        // preserves overpayment-recalculated ceilings).
         let interestRemaining = Math.max(0, this.round(interestTotalWithExtra - interestPaid));
-        const maxInterestAllowed = Number.isFinite(Number(loan.max_interest_allowed))
-            ? this.round(Number(loan.max_interest_allowed))
-            : this.getMaxInterestAllowed(loan);
+        const maxInterestAllowed = this.getMaxInterestAllowed(loan);
         const interestCapRemaining = Number.isFinite(maxInterestAllowed)
             ? Math.max(0, this.round(maxInterestAllowed - interestPaid))
             : null;

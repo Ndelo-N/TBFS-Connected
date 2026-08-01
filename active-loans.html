@@ -1288,7 +1288,11 @@ Click "OK" to process payment or "Cancel" to go back.
                 
                 // STEP 3: UPDATE APPSTATE (GLOBAL FINANCIAL TRACKING)
                 AppState.capital = (AppState.capital || 0) + totalCollected;
-                AppState.totalInterestEarned = (AppState.totalInterestEarned || 0) + payoffData.interestOwed;
+                const payoffInterestCollected = Calculations.round(
+                    (Number(payoffData.interestOwed) || 0) + partialExtraInterest
+                );
+                AppState.totalInterestEarned =
+                    (AppState.totalInterestEarned || 0) + payoffInterestCollected;
                 AppState.totalFeesEarned = (AppState.totalFeesEarned || 0) +
                     payoffData.initiationFeeOwed + payoffData.adminFeesOwed + partialExtraAdmin;
                 if (partialPenalty > 0) {
@@ -1315,8 +1319,10 @@ Click "OK" to process payment or "Cancel" to go back.
                         payoffAmount: totalCollected,
                         latePenaltyPaid: partialPenalty,
                         extraAdminPaid: partialExtraAdmin,
+                        delinquencyInterestPaid: partialExtraInterest,
                         remainingPrincipal: payoffData.remainingPrincipal,
-                        interestOwed: payoffData.interestOwed,
+                        interestOwed: payoffInterestCollected,
+                        scheduledInterestOwed: payoffData.interestOwed,
                         initiationFeeOwed: payoffData.initiationFeeOwed,
                         adminFeesOwed: Calculations.round(
                             (payoffData.adminFeesOwed || 0) + partialExtraAdmin),
@@ -3383,7 +3389,41 @@ TBFS - Transparent, Fair, Simple
             
             // Months regenerated after preserved paid/partial prefix (must match buildAdjustedSchedule)
             const remainingMonthsNew = newTerm - preserveThrough;
-            const unpaidPartial = unpaidOnPartialEntry(getNextPendingScheduleEntry(loan));
+            const termChangeOpen = getNextPendingScheduleEntry(loan);
+            const termChangeGrace = AppState.gracePeriodDays || 3;
+            const termChangeFees = assessOpenInstallmentFees(
+                loan, termChangeOpen,
+                termChangeOpen && termChangeOpen.due_date
+                    ? new Date(termChangeOpen.due_date)
+                    : new Date(),
+                new Date(),
+                termChangeGrace
+            );
+            if (termChangeOpen) {
+                if (termChangeFees.extraAdminAssessedCandidate > 0) {
+                    termChangeOpen.extra_admin_assessed = Math.max(
+                        Number(termChangeOpen.extra_admin_assessed) || 0,
+                        termChangeFees.extraAdminAssessedCandidate
+                    );
+                }
+                if (termChangeFees.latePenaltyAssessedCandidate > 0) {
+                    termChangeOpen.late_penalty_assessed = Math.max(
+                        Number(termChangeOpen.late_penalty_assessed) || 0,
+                        termChangeFees.latePenaltyAssessedCandidate
+                    );
+                }
+                if (termChangeFees.extraInterestAssessedCandidate > 0) {
+                    termChangeOpen.extra_interest_assessed = Math.max(
+                        Number(termChangeOpen.extra_interest_assessed) || 0,
+                        termChangeFees.extraInterestAssessedCandidate
+                    );
+                }
+            }
+            const unpaidPartial = unpaidOnPartialEntry(termChangeOpen, {
+                extraAdminAssessedCandidate: termChangeFees.extraAdminAssessedCandidate,
+                latePenaltyAssessedCandidate: termChangeFees.latePenaltyAssessedCandidate,
+                extraInterestAssessedCandidate: termChangeFees.extraInterestAssessedCandidate
+            });
             const regenPrincipal = Math.max(0, remainingPrincipal - unpaidPartial.principal);
             
             // Get reason for adjustment
@@ -3531,6 +3571,13 @@ TBFS - Transparent, Fair, Simple
                 customRemainingBreakdown: stockvelPlan ? stockvelPlan.breakdown : null,
                 monthlyPaymentOverride: newMonthlyPayment
             });
+            if (typeof Calculations.syncDelinquencyInterestTracking === 'function') {
+                Calculations.syncDelinquencyInterestTracking(loan);
+                loan.total_interest = Math.max(
+                    Number(loan.total_interest) || 0,
+                    interestAlreadyPaid + unpaidPartial.interest + remainingInterest
+                );
+            }
             
             // STEP 4: LOG ADJUSTMENT (loan-local + global transactions)
             const afterSnapshot = snapshotLoanAdjustmentState(loan);
@@ -3720,7 +3767,43 @@ TBFS - Transparent, Fair, Simple
             // Period-interest base for the 2× collectible cap (not lifetime paid+remaining).
             let periodInterestBase = Number(loan.original_period_interest) || 0;
 
-            const unpaidPartial = unpaidOnPartialEntry(getNextPendingScheduleEntry(loan));
+            // Live-assess delinquency on the open row so unpaidPartial.interest
+            // includes extra interest (not only previously persisted values).
+            const topUpOpenEntry = getNextPendingScheduleEntry(loan);
+            const topUpGrace = AppState.gracePeriodDays || 3;
+            const topUpFeeAssess = assessOpenInstallmentFees(
+                loan, topUpOpenEntry,
+                topUpOpenEntry && topUpOpenEntry.due_date
+                    ? new Date(topUpOpenEntry.due_date)
+                    : new Date(),
+                new Date(),
+                topUpGrace
+            );
+            if (topUpOpenEntry) {
+                if (topUpFeeAssess.extraAdminAssessedCandidate > 0) {
+                    topUpOpenEntry.extra_admin_assessed = Math.max(
+                        Number(topUpOpenEntry.extra_admin_assessed) || 0,
+                        topUpFeeAssess.extraAdminAssessedCandidate
+                    );
+                }
+                if (topUpFeeAssess.latePenaltyAssessedCandidate > 0) {
+                    topUpOpenEntry.late_penalty_assessed = Math.max(
+                        Number(topUpOpenEntry.late_penalty_assessed) || 0,
+                        topUpFeeAssess.latePenaltyAssessedCandidate
+                    );
+                }
+                if (topUpFeeAssess.extraInterestAssessedCandidate > 0) {
+                    topUpOpenEntry.extra_interest_assessed = Math.max(
+                        Number(topUpOpenEntry.extra_interest_assessed) || 0,
+                        topUpFeeAssess.extraInterestAssessedCandidate
+                    );
+                }
+            }
+            const unpaidPartial = unpaidOnPartialEntry(topUpOpenEntry, {
+                extraAdminAssessedCandidate: topUpFeeAssess.extraAdminAssessedCandidate,
+                latePenaltyAssessedCandidate: topUpFeeAssess.latePenaltyAssessedCandidate,
+                extraInterestAssessedCandidate: topUpFeeAssess.extraInterestAssessedCandidate
+            });
             // Top-up principal goes onto remaining balance; keep unpaid partial
             // components on that row and spread only the rest across later months.
             regenPrincipal = Math.max(0, newRemainingPrincipal - unpaidPartial.principal);
@@ -3758,17 +3841,20 @@ TBFS - Transparent, Fair, Simple
                 const fullInterest = calculateStandardTotalInterest(newPrincipal, currentTerm);
                 // Cap base = income-table period interest on the new principal/term.
                 periodInterestBase = Calculations.round(Number(fullInterest) || 0);
-                recalculatedInterest = Math.max(fullInterest, interestAlreadyPaid);
                 const previousInitiationFee = (loan.total_initiation_fee != null)
                     ? Math.max(0, Number(loan.total_initiation_fee) || 0)
                     : 0;
                 additionalInitiationFee = newTotalInitiationFee - previousInitiationFee;
-                const remainingInterestGross = Math.max(0, recalculatedInterest - interestAlreadyPaid);
+                const baseInterest = Math.max(fullInterest, interestAlreadyPaid);
+                const remainingInterestGross = Math.max(0, baseInterest - interestAlreadyPaid);
                 const remainingInitiationFeeGross = Math.max(
                     0, newTotalInitiationFee - (loan.initiation_fee_paid || 0)
                 );
+                // Leave open-row interest (incl. delinquency) off the regen equalized
+                // months, but keep it in total — same identity as stockvel/term-change.
                 remainingInterest = Math.max(0, remainingInterestGross - unpaidPartial.interest);
                 remainingInitiationFee = Math.max(0, remainingInitiationFeeGross - unpaidPartial.initiation);
+                recalculatedInterest = interestAlreadyPaid + unpaidPartial.interest + remainingInterest;
                 const principalPerMonth = regenPrincipal / remainingMonths;
                 const interestPerMonth = remainingInterest / remainingMonths;
                 const initiationFeePerMonth = remainingInitiationFee / remainingMonths;
@@ -3859,6 +3945,13 @@ TBFS - Transparent, Fair, Simple
                 customRemainingBreakdown: stockvelPlan ? stockvelPlan.breakdown : null,
                 monthlyPaymentOverride: newMonthlyPayment
             });
+            if (typeof Calculations.syncDelinquencyInterestTracking === 'function') {
+                Calculations.syncDelinquencyInterestTracking(loan);
+                recalculatedInterest = Math.max(
+                    recalculatedInterest, Number(loan.total_interest) || 0
+                );
+                loan.total_interest = recalculatedInterest;
+            }
             
             // STEP 7: LOG ADJUSTMENT (loan-local + global transactions)
             const afterSnapshot = snapshotLoanAdjustmentState(loan);

@@ -4,6 +4,28 @@ Branch-scoped findings from Bugbot / review loops. Newest entries at the top.
 
 ---
 
+## 2026-08-01 — `cursor/delinquency-monthly-interest-a923` (Bugbot round 3)
+
+### LL-DELQ-006 — Standard top-up dropped delinquency interest from totals
+- **Severity:** high
+- **Symptom:** Standard top-up subtracted `unpaidPartial.interest` from regen interest but set `total_interest = max(fullInterest, paid)` without adding delinquency back. Live extras were also not assessed before `unpaidOnPartialEntry`.
+- **Fix:** Use `recalculatedInterest = paid + unpaidPartial.interest + remainingInterest`; live-assess fees before unpaid breakdown; `syncDelinquencyInterestTracking` after schedule regen.
+- **Lesson:** Top-up and term-change must share the same interest identity; always live-assess before reading unpaid open-row components.
+
+### LL-DELQ-007 — Early payoff omitted delinquency interest from revenue/tx details
+- **Severity:** medium
+- **Symptom:** `AppState.totalInterestEarned` and transaction `interestOwed` only included prorated `payoffData.interestOwed`, not `partialExtraInterest`.
+- **Fix:** Add delinquency interest into `totalInterestEarned` and tx details (`delinquencyInterestPaid`, combined `interestOwed`).
+- **Lesson:** Global revenue counters must track every interest component collected in a flow, not only the scheduled/prorated piece.
+
+### LL-DELQ-008 — Statement used stale stored 1× interest cap
+- **Severity:** medium
+- **Symptom:** `buildLoanStatementModel` preferred finite `loan.max_interest_allowed` over `getMaxInterestAllowed`, understating claimable interest on legacy 1× loans.
+- **Fix:** Always use `getMaxInterestAllowed(loan)` in the statement model (respects overpayment recalc via `interest_recalculated`).
+- **Lesson:** Statement/PDF claimable interest must use the same cap helper as payment allocation.
+
+---
+
 ## 2026-07-31 — `cursor/delinquency-monthly-interest-a923` (Bugbot round 2)
 
 ### LL-DELQ-004 — Early payoff could exceed interest cap
