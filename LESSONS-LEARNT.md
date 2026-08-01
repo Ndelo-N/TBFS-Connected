@@ -4,6 +4,16 @@ Branch-scoped findings from Bugbot / review loops. Newest entries at the top.
 
 ---
 
+## 2026-08-01 — `cursor/delinquency-monthly-interest-a923` (Bugbot loop B round 5)
+
+### LL-DELQ-017 — Early payoff inflated total_interest past the interest cap
+- **Severity:** medium
+- **Symptom:** Settlement called `applyExtraInterestAssessment` with the full live candidate while collection was clamped by `partialExtraInterest` / cap room, so `total_interest` could jump by the uncapped assessment.
+- **Fix:** Delta-bump total only by `prevExtra + partialExtraInterest`; still stamp the full candidate on the row for audit.
+- **Lesson:** Assessment display amount and total_interest delta must follow the same cap as collection.
+
+---
+
 ## 2026-08-01 — `cursor/delinquency-monthly-interest-a923` (Bugbot loop B round 4)
 
 ### LL-DELQ-015 — Installment stayed partial when interest cap was exhausted

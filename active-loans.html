@@ -1248,18 +1248,24 @@ Click "OK" to process payment or "Cancel" to go back.
                                     latePenaltyAssessedCandidate
                                 );
                             }
-                            if (extraInterestAssessedCandidate > 0) {
-                                // Delta-bump total_interest for newly assessed
-                                // delinquency (first live assessment at payoff).
-                                if (typeof Calculations.applyExtraInterestAssessment === 'function') {
+                            if (extraInterestAssessedCandidate > 0 || partialExtraInterest > 0) {
+                                // Only delta-bump total_interest by claimable
+                                // delinquency collected under the cap — not the
+                                // full live assessment (LL-DELQ-017).
+                                const prevExtra = Number(payment.extra_interest_assessed) || 0;
+                                if (partialExtraInterest > 0 &&
+                                    typeof Calculations.applyExtraInterestAssessment === 'function') {
                                     Calculations.applyExtraInterestAssessment(
-                                        loan, payment, extraInterestAssessedCandidate
+                                        loan, payment, prevExtra + partialExtraInterest
                                     );
-                                } else {
-                                    payment.extra_interest_assessed = Math.max(
-                                        Number(payment.extra_interest_assessed) || 0,
-                                        extraInterestAssessedCandidate
-                                    );
+                                }
+                                // Keep full assessment on the row for audit.
+                                payment.extra_interest_assessed = Math.max(
+                                    Number(payment.extra_interest_assessed) || 0,
+                                    extraInterestAssessedCandidate
+                                );
+                                if (typeof Calculations.syncDelinquencyInterestTracking === 'function') {
+                                    Calculations.syncDelinquencyInterestTracking(loan);
                                 }
                             }
                             pb.initiation = Calculations.round(
