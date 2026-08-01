@@ -1289,12 +1289,17 @@ Click "OK" to process payment or "Cancel" to go back.
                                     pb.admin || 0,
                                     baseAdmin + (Number(payment.extra_admin_assessed) || 0)
                                 ));
-                            // Scheduled interest + claimable delinquency interest
+                            // Add unpaid scheduled + claimable delinquency on
+                            // top of interest already recorded on the partial.
+                            const prevPaidInterest = Number(pb.interest) || 0;
+                            const scheduledInterest = Number(payment.interest_payment) || 0;
+                            const unpaidScheduledInterest = Math.max(
+                                0,
+                                scheduledInterest - Math.min(prevPaidInterest, scheduledInterest)
+                            );
                             pb.interest = Calculations.round(
-                                Math.max(
-                                    pb.interest || 0,
-                                    (Number(payment.interest_payment) || 0) + partialExtraInterest
-                                ));
+                                prevPaidInterest + unpaidScheduledInterest + partialExtraInterest
+                            );
                             pb.principal = Calculations.round(
                                 Math.max(pb.principal || 0, Number(payment.principal_payment) || 0));
                             if (partialPenalty > 0 || latePenaltyAssessedCandidate > 0) {
@@ -3673,6 +3678,11 @@ TBFS - Transparent, Fair, Simple
                     Math.max(0, Number(priorPeriodInterest) || 0)
                 );
             }
+            // Schedule/period rebuilt from outstanding balances — clear any
+            // overpayment freeze so getMaxInterestAllowed uses statutory 2×
+            // of the new period (overpayment benefit already sits in lower
+            // remaining principal / remainingInterest).
+            loan.interest_recalculated = false;
             loan.max_interest_allowed = Calculations.round(
                 (Number(loan.original_period_interest) || 0) * 2
             );
@@ -4143,7 +4153,9 @@ TBFS - Transparent, Fair, Simple
                 : Calculations.calculateInterestPeriod(currentTerm).interestMonths;
             // Cap base = new period interest only (not paid+remaining lifetime).
             // Collectible ceiling is statutory 2× period (not delinquency totals).
+            // Clear overpayment freeze — contract interest was rebuilt.
             loan.original_period_interest = Number(periodInterestBase) || 0;
+            loan.interest_recalculated = false;
             loan.max_interest_allowed = Calculations.round(
                 (Number(loan.original_period_interest) || 0) * 2
             );

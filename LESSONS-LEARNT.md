@@ -4,6 +4,22 @@ Branch-scoped findings from Bugbot / review loops. Newest entries at the top.
 
 ---
 
+## 2026-08-01 — `cursor/delinquency-monthly-interest-a923` (Bugbot loop C round 10)
+
+### LL-DELQ-035 — Term change/top-up restored full 2× over an overpayment freeze
+- **Severity:** high
+- **Symptom:** Adjustments wrote `max_interest_allowed = 2× period` while leaving `interest_recalculated` true, so `getMaxInterestAllowed` could treat the new store as a freeze base and/or effectively undo the lowered overpayment ceiling relative to the old contract intent.
+- **Fix:** Clear `interest_recalculated` when term-change/top-up rebuilds period interest; set statutory 2× on the new period (overpayment benefit remains in lower outstanding principal/interest).
+- **Lesson:** Rebuilding the contract period must reset the overpayment freeze flag; do not keep `interest_recalculated` while replacing `max_interest_allowed` with a fresh 2×.
+
+### LL-DELQ-036 — Early payoff understated partial paid_breakdown.interest
+- **Severity:** medium
+- **Symptom:** Payoff set `paid_breakdown.interest = max(existing, scheduled + partialExtra)` which ignores delinquency already in `existing` above scheduled, so the row total could lag `loan.interest_paid`.
+- **Fix:** `pb.interest = prevPaid + unpaidScheduled + partialExtraInterest`.
+- **Lesson:** Settlement of a partial must accumulate on the existing paid interest, not replace it with scheduled+new-extra alone.
+
+---
+
 ## 2026-08-01 — `cursor/delinquency-monthly-interest-a923` (Bugbot loop C round 9)
 
 ### LL-DELQ-034 — Overpayment recalc reclassified paid scheduled as delinquency
