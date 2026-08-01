@@ -4,6 +4,22 @@ Branch-scoped findings from Bugbot / review loops. Newest entries at the top.
 
 ---
 
+## 2026-08-01 — `cursor/delinquency-monthly-interest-a923` (Bugbot loop B round 3)
+
+### LL-DELQ-013 — Standard top-up cancelled pending delinquency out of total_interest
+- **Severity:** high
+- **Symptom:** Pending `unpaidPartial.interest` is delinquency-only; subtracting it from `remainingInterestGross` then adding it back cancelled extras. Regen schedule was also understated by that amount.
+- **Fix:** Subtract only scheduled unpaid interest on preserved partials from regen gross; keep delinquency additive in `recalculatedInterest = paid + unpaidPartial.interest + remainingInterest`.
+- **Lesson:** Never subtract delinquency-only pending interest from period remaining — it is not part of that gross.
+
+### LL-DELQ-014 — Early payoff skipped total_interest delta for new delinquency
+- **Severity:** medium
+- **Symptom:** Payoff wrote `extra_interest_assessed` manually + sync (cap only), so first-time delinquency at payoff never raised `total_interest` while `interest_paid` included it.
+- **Fix:** Use `applyExtraInterestAssessment` on payoff settle so total bumps by the assessment delta.
+- **Lesson:** Any path that first persists `extra_interest_assessed` must go through the delta helper (or equivalent).
+
+---
+
 ## 2026-08-01 — `cursor/delinquency-monthly-interest-a923` (Bugbot loop B round 2)
 
 ### LL-DELQ-012 — Pending regen dropped delinquency fields (double-bump risk)

@@ -1249,17 +1249,12 @@ Click "OK" to process payment or "Cancel" to go back.
                                 );
                             }
                             if (extraInterestAssessedCandidate > 0) {
+                                // Delta-bump total_interest for newly assessed
+                                // delinquency (first live assessment at payoff).
                                 if (typeof Calculations.applyExtraInterestAssessment === 'function') {
-                                    // total_interest already includes claimable
-                                    // delinquency via interest_paid path; only
-                                    // persist the assessed field without re-bumping.
-                                    payment.extra_interest_assessed = Math.max(
-                                        Number(payment.extra_interest_assessed) || 0,
-                                        extraInterestAssessedCandidate
+                                    Calculations.applyExtraInterestAssessment(
+                                        loan, payment, extraInterestAssessedCandidate
                                     );
-                                    if (typeof Calculations.syncDelinquencyInterestTracking === 'function') {
-                                        Calculations.syncDelinquencyInterestTracking(loan);
-                                    }
                                 } else {
                                     payment.extra_interest_assessed = Math.max(
                                         Number(payment.extra_interest_assessed) || 0,
@@ -3872,10 +3867,22 @@ TBFS - Transparent, Fair, Simple
                 const remainingInitiationFeeGross = Math.max(
                     0, newTotalInitiationFee - (loan.initiation_fee_paid || 0)
                 );
-                // Leave open-row interest (incl. delinquency) off the regen equalized
-                // months, but keep it in total — same identity as stockvel/term-change.
-                remainingInterest = Math.max(0, remainingInterestGross - unpaidPartial.interest);
+                // Only subtract SCHEDULED unpaid interest that stays on a preserved
+                // partial. Pending open rows return delinquency-only interest —
+                // subtracting that cancelled extras out of total_interest (LL-DELQ-013).
+                const openIsPartial = !!(topUpOpenEntry && topUpOpenEntry.status === 'partial');
+                const paidInterestOnOpen = Number(
+                    (topUpOpenEntry && topUpOpenEntry.paid_breakdown || {}).interest
+                ) || 0;
+                const scheduledUnpaidOnOpen = openIsPartial
+                    ? Math.max(
+                        0,
+                        (Number(topUpOpenEntry.interest_payment) || 0) - paidInterestOnOpen
+                    )
+                    : 0;
+                remainingInterest = Math.max(0, remainingInterestGross - scheduledUnpaidOnOpen);
                 remainingInitiationFee = Math.max(0, remainingInitiationFeeGross - unpaidPartial.initiation);
+                // Delinquency on the open row is additive on top of period remaining.
                 recalculatedInterest = interestAlreadyPaid + unpaidPartial.interest + remainingInterest;
                 const principalPerMonth = regenPrincipal / remainingMonths;
                 const interestPerMonth = remainingInterest / remainingMonths;
