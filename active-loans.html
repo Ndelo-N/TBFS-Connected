@@ -1186,8 +1186,14 @@ Click "OK" to process payment or "Cancel" to go back.
                         - (Number(payoffData.interestOwed) || 0)
                     )
                 );
+                // Only the gap not already billed in prorated interestOwed
+                // (avoids double-charging the same scheduled interest).
+                const unpaidScheduledGap = Math.max(
+                    0,
+                    unpaidScheduledOnOpen - (Number(payoffData.interestOwed) || 0)
+                );
                 const claimableUnpaidScheduled = Math.min(
-                    unpaidScheduledOnOpen,
+                    unpaidScheduledGap,
                     capAfterPayoffInterest
                 );
                 const capAfterScheduled = Math.max(
@@ -1313,11 +1319,12 @@ Click "OK" to process payment or "Cancel" to go back.
                                     pb.admin || 0,
                                     baseAdmin + (Number(payment.extra_admin_assessed) || 0)
                                 ));
-                            // Add claimable unpaid scheduled + delinquency on
-                            // top of interest already recorded on the partial.
+                            // Settle remaining scheduled on the row (may already
+                            // be cash-collected via interestOwed and/or the
+                            // scheduled add-on gap) plus claimable delinquency.
                             const prevPaidInterest = Number(pb.interest) || 0;
                             pb.interest = Calculations.round(
-                                prevPaidInterest + claimableUnpaidScheduled + partialExtraInterest
+                                prevPaidInterest + unpaidScheduledOnOpen + partialExtraInterest
                             );
                             pb.principal = Calculations.round(
                                 Math.max(pb.principal || 0, Number(payment.principal_payment) || 0));

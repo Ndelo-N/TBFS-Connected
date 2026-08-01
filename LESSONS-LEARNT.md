@@ -4,6 +4,16 @@ Branch-scoped findings from Bugbot / review loops. Newest entries at the top.
 
 ---
 
+## 2026-08-01 — `cursor/delinquency-monthly-interest-a923` (Bugbot loop C round 12)
+
+### LL-DELQ-038 — Early payoff double-charged scheduled interest with add-on
+- **Severity:** high
+- **Symptom:** After LL-DELQ-037, `claimableUnpaidScheduled` added the full open-row unpaid scheduled amount even when `interestOwed` already billed that scheduled interest inside `totalPayoff`.
+- **Fix:** Add-on only the gap `max(0, unpaidScheduledOnOpen − interestOwed)` (then cap). Row `paid_breakdown` still settles the full unpaid scheduled amount.
+- **Lesson:** Payoff add-ons for open-row scheduled interest must net against prorated `interestOwed` already in the base payoff.
+
+---
+
 ## 2026-08-01 — `cursor/delinquency-monthly-interest-a923` (Bugbot loop C round 11)
 
 ### LL-DELQ-037 — Early payoff skipped unpaid scheduled interest on open partial
