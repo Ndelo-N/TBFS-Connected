@@ -272,13 +272,21 @@ const Calculations = {
     },
 
     /**
-     * Sum extra_interest_assessed across the schedule.
+     * Sum delinquency interest already folded into total_interest.
+     * Prefers extra_interest_in_total when present; otherwise assessed
+     * (legacy rows always counted the full assessment in the total).
      */
     sumScheduleExtraInterest(loan) {
         if (!loan || !Array.isArray(loan.schedule)) return 0;
         let extras = 0;
         loan.schedule.forEach(entry => {
-            if (entry) extras += Number(entry.extra_interest_assessed) || 0;
+            if (!entry) return;
+            const inTotal = Number(entry.extra_interest_in_total);
+            if (Number.isFinite(inTotal) && inTotal >= 0) {
+                extras += inTotal;
+            } else {
+                extras += Number(entry.extra_interest_assessed) || 0;
+            }
         });
         return this.round(extras);
     },
@@ -1752,10 +1760,16 @@ const Calculations = {
     },
 
     /**
-     * Persist a new extra_interest_assessed on an open entry and bump
-     * total_interest by the delta only (no double-count).
+     * Persist extra_interest_assessed on an open entry and bump total_interest
+     * by the claimable-in-total delta only (no double-count).
+     *
+     * @param {number} assessedCandidate full audit/dues assessment on the row
+     * @param {number} [totalInTotalCandidate] how much of that assessment should
+     *        be folded into total_interest (defaults to full assessed). Use a
+     *        lower value when the interest cap cannot yet absorb the full
+     *        assessment — later calls can raise this as headroom frees up.
      */
-    applyExtraInterestAssessment(loan, entry, assessedCandidate) {
+    applyExtraInterestAssessment(loan, entry, assessedCandidate, totalInTotalCandidate) {
         if (!loan || !entry) return 0;
         // Freeze period base BEFORE total_interest grows with delinquency
         // so legacy loans do not adopt inflated total as original_period_interest.
@@ -1766,10 +1780,22 @@ const Calculations = {
                 Math.max(0, totalBefore - extrasBefore)
             );
         }
-        const prev = Number(entry.extra_interest_assessed) || 0;
-        const next = Math.max(prev, Number(assessedCandidate) || 0);
-        const delta = this.round(next - prev);
-        entry.extra_interest_assessed = next;
+        const prevAssessed = Number(entry.extra_interest_assessed) || 0;
+        const nextAssessed = Math.max(prevAssessed, Number(assessedCandidate) || 0);
+        entry.extra_interest_assessed = nextAssessed;
+
+        const prevInTotal = Number.isFinite(Number(entry.extra_interest_in_total))
+            ? Math.max(0, Number(entry.extra_interest_in_total))
+            : prevAssessed;
+        const requestedInTotal = totalInTotalCandidate != null && Number.isFinite(Number(totalInTotalCandidate))
+            ? Math.max(0, Number(totalInTotalCandidate))
+            : nextAssessed;
+        const nextInTotal = Math.min(
+            nextAssessed,
+            Math.max(prevInTotal, this.round(requestedInTotal))
+        );
+        const delta = this.round(nextInTotal - prevInTotal);
+        entry.extra_interest_in_total = nextInTotal;
         if (delta > 0) {
             loan.total_interest = this.round((Number(loan.total_interest) || 0) + delta);
         }

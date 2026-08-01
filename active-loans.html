@@ -562,6 +562,9 @@
                 if (existing.extra_interest_assessed != null) {
                     entry.extra_interest_assessed = existing.extra_interest_assessed;
                 }
+                if (existing.extra_interest_in_total != null) {
+                    entry.extra_interest_in_total = existing.extra_interest_in_total;
+                }
                 if (status === 'partial') {
                     entry.partial_payment = true;
                 }
@@ -1249,23 +1252,31 @@ Click "OK" to process payment or "Cancel" to go back.
                                 );
                             }
                             if (extraInterestAssessedCandidate > 0 || partialExtraInterest > 0) {
-                                // Only delta-bump total_interest by claimable
-                                // delinquency collected under the cap — not the
-                                // full live assessment (LL-DELQ-017).
-                                const prevExtra = Number(payment.extra_interest_assessed) || 0;
-                                if (partialExtraInterest > 0 &&
-                                    typeof Calculations.applyExtraInterestAssessment === 'function') {
+                                // Full assessment on the row; total_interest only
+                                // by claimable delinquency under the cap.
+                                const prevInTotal = Number.isFinite(Number(payment.extra_interest_in_total))
+                                    ? Number(payment.extra_interest_in_total)
+                                    : (Number(payment.extra_interest_assessed) || 0);
+                                const claimableInTotal = prevInTotal + Math.max(0, partialExtraInterest);
+                                if (typeof Calculations.applyExtraInterestAssessment === 'function') {
                                     Calculations.applyExtraInterestAssessment(
-                                        loan, payment, prevExtra + partialExtraInterest
+                                        loan,
+                                        payment,
+                                        Math.max(
+                                            extraInterestAssessedCandidate,
+                                            claimableInTotal
+                                        ),
+                                        claimableInTotal
                                     );
-                                }
-                                // Keep full assessment on the row for audit.
-                                payment.extra_interest_assessed = Math.max(
-                                    Number(payment.extra_interest_assessed) || 0,
-                                    extraInterestAssessedCandidate
-                                );
-                                if (typeof Calculations.syncDelinquencyInterestTracking === 'function') {
-                                    Calculations.syncDelinquencyInterestTracking(loan);
+                                } else {
+                                    payment.extra_interest_assessed = Math.max(
+                                        Number(payment.extra_interest_assessed) || 0,
+                                        extraInterestAssessedCandidate
+                                    );
+                                    payment.extra_interest_in_total = Math.max(
+                                        prevInTotal,
+                                        claimableInTotal
+                                    );
                                 }
                             }
                             pb.initiation = Calculations.round(
@@ -2082,11 +2093,11 @@ Click "OK" to process payment or "Cancel" to go back.
             }
 
             if (nextPayment && feeAssess.extraInterestAssessedCandidate > 0) {
-                // Stamp full assessment on the row for dues/audit, but only
-                // delta-bump total_interest by the claimable amount under the
-                // interest cap after reserving unpaid scheduled interest
-                // (same idea as early-payoff LL-DELQ-017).
-                const prevExtra = Number(nextPayment.extra_interest_assessed) || 0;
+                // Full assessment on the row for dues/audit; fold only the
+                // currently claimable amount into total_interest (cap after
+                // reserving unpaid scheduled interest). Tracked via
+                // extra_interest_in_total so later confirms can raise the
+                // total as more headroom becomes claimable.
                 const fullCandidate = feeAssess.extraInterestAssessedCandidate;
                 const paidInterest = Number(
                     (nextPayment.paid_breakdown || {}).interest
@@ -2096,27 +2107,27 @@ Click "OK" to process payment or "Cancel" to go back.
                     0,
                     scheduledInterest - Math.min(paidInterest, scheduledInterest)
                 );
+                const paidTowardExtra = Math.max(
+                    0,
+                    paidInterest - Math.min(paidInterest, scheduledInterest)
+                );
                 const capForExtra = Math.max(
                     0,
                     interestCapRemainingFor(loan) - unpaidScheduledInterest
                 );
-                const totalInterestBumpTarget = Math.min(
+                const claimableInTotal = Math.min(
                     fullCandidate,
-                    prevExtra + capForExtra
+                    paidTowardExtra + capForExtra
                 );
                 if (typeof Calculations.applyExtraInterestAssessment === 'function') {
-                    if (totalInterestBumpTarget > prevExtra) {
-                        Calculations.applyExtraInterestAssessment(
-                            loan, nextPayment, totalInterestBumpTarget
-                        );
-                    }
-                }
-                nextPayment.extra_interest_assessed = Math.max(
-                    Number(nextPayment.extra_interest_assessed) || 0,
-                    fullCandidate
-                );
-                if (typeof Calculations.syncDelinquencyInterestTracking === 'function') {
-                    Calculations.syncDelinquencyInterestTracking(loan);
+                    Calculations.applyExtraInterestAssessment(
+                        loan, nextPayment, fullCandidate, claimableInTotal
+                    );
+                } else {
+                    nextPayment.extra_interest_assessed = Math.max(
+                        Number(nextPayment.extra_interest_assessed) || 0,
+                        fullCandidate
+                    );
                 }
             }
             
@@ -3647,6 +3658,11 @@ TBFS - Transparent, Fair, Simple
                         Number(termChangeOpen.extra_interest_assessed) || 0,
                         termChangeFees.extraInterestAssessedCandidate
                     );
+                    // Delinquency is folded into totalInterestCommit — keep in_total in sync.
+                    termChangeOpen.extra_interest_in_total = Math.max(
+                        Number(termChangeOpen.extra_interest_in_total) || 0,
+                        Number(termChangeOpen.extra_interest_assessed) || 0
+                    );
                 }
             }
             loan.schedule = buildAdjustedSchedule(loan, {
@@ -3679,6 +3695,10 @@ TBFS - Transparent, Fair, Simple
                     termChangeOpenAfter.extra_interest_assessed = Math.max(
                         Number(termChangeOpenAfter.extra_interest_assessed) || 0,
                         termChangeFees.extraInterestAssessedCandidate
+                    );
+                    termChangeOpenAfter.extra_interest_in_total = Math.max(
+                        Number(termChangeOpenAfter.extra_interest_in_total) || 0,
+                        Number(termChangeOpenAfter.extra_interest_assessed) || 0
                     );
                 }
             }
@@ -4071,6 +4091,10 @@ TBFS - Transparent, Fair, Simple
                         Number(topUpOpenEntry.extra_interest_assessed) || 0,
                         topUpFeeAssess.extraInterestAssessedCandidate
                     );
+                    topUpOpenEntry.extra_interest_in_total = Math.max(
+                        Number(topUpOpenEntry.extra_interest_in_total) || 0,
+                        Number(topUpOpenEntry.extra_interest_assessed) || 0
+                    );
                 }
             }
             
@@ -4112,6 +4136,10 @@ TBFS - Transparent, Fair, Simple
                     topUpOpenAfter.extra_interest_assessed = Math.max(
                         Number(topUpOpenAfter.extra_interest_assessed) || 0,
                         topUpFeeAssess.extraInterestAssessedCandidate
+                    );
+                    topUpOpenAfter.extra_interest_in_total = Math.max(
+                        Number(topUpOpenAfter.extra_interest_in_total) || 0,
+                        Number(topUpOpenAfter.extra_interest_assessed) || 0
                     );
                 }
             }

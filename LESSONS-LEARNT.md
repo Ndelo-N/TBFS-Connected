@@ -4,6 +4,16 @@ Branch-scoped findings from Bugbot / review loops. Newest entries at the top.
 
 ---
 
+## 2026-08-01 — `cursor/delinquency-monthly-interest-a923` (Bugbot loop C round 3)
+
+### LL-DELQ-023 — Full stamp after capped total bump blocked later total increases
+- **Severity:** medium
+- **Symptom:** Payment confirm capped the `total_interest` delta then stamped `extra_interest_assessed` to the full candidate. Later confirms saw `prevExtra === full` so `applyExtraInterestAssessment` delta was 0, while the waterfall could still collect more delinquency under the cap — `interest_paid` could exceed `total_interest`.
+- **Fix:** Track `extra_interest_in_total` separately from the full row assessment; `applyExtraInterestAssessment(loan, entry, full, claimableInTotal)` can raise the total as headroom grows. Term-change/top-up set `in_total` when folding extras into committed totals.
+- **Lesson:** Audit/dues assessment and the amount folded into `total_interest` are different fields when the interest cap binds.
+
+---
+
 ## 2026-08-01 — `cursor/delinquency-monthly-interest-a923` (Bugbot loop C round 2)
 
 ### LL-DELQ-021 — Payment confirmation bumped total_interest by uncapped assessment

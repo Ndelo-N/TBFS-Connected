@@ -189,6 +189,7 @@ test('applyExtraInterestAssessment bumps total_interest by delta only', () => {
         due_date: '2026-06-30',
         status: 'partial',
         extra_interest_assessed: 100,
+        extra_interest_in_total: 100,
         admin_fee: 60
     };
     const loan = eligibleLoan({
@@ -198,10 +199,31 @@ test('applyExtraInterestAssessment bumps total_interest by delta only', () => {
     const delta = C.applyExtraInterestAssessment(loan, entry, 819);
     assert.equal(delta, 719);
     assert.equal(entry.extra_interest_assessed, 819);
+    assert.equal(entry.extra_interest_in_total, 819);
     assert.equal(loan.total_interest, 3960 + 719);
     // Second apply with same candidate is a no-op
     assert.equal(C.applyExtraInterestAssessment(loan, entry, 819), 0);
     assert.equal(loan.total_interest, 3960 + 719);
+});
+
+test('applyExtraInterestAssessment can stamp full assessment with partial total', () => {
+    const entry = {
+        due_date: '2026-06-30',
+        status: 'partial',
+        admin_fee: 60
+    };
+    const loan = eligibleLoan({
+        total_interest: 3960,
+        schedule: [entry]
+    });
+    assert.equal(C.applyExtraInterestAssessment(loan, entry, 819, 200), 200);
+    assert.equal(entry.extra_interest_assessed, 819);
+    assert.equal(entry.extra_interest_in_total, 200);
+    assert.equal(loan.total_interest, 4160);
+    // Later headroom can raise total without re-counting
+    assert.equal(C.applyExtraInterestAssessment(loan, entry, 819, 500), 300);
+    assert.equal(entry.extra_interest_in_total, 500);
+    assert.equal(loan.total_interest, 4460);
 });
 
 test('unpaidScheduleExtraInterest ignores paid scheduled then extras', () => {
