@@ -4,6 +4,16 @@ Branch-scoped findings from Bugbot / review loops. Newest entries at the top.
 
 ---
 
+## 2026-08-01 — `cursor/delinquency-monthly-interest-a923` (Bugbot round 4)
+
+### LL-DELQ-009 — Term change left stale 2× interest cap base
+- **Severity:** high
+- **Symptom:** `changeRepaymentPeriod` updated `total_interest` but kept origination `original_period_interest` and only called `ensureMaxInterestAllowed` (2× stale base). Longer terms could schedule more interest than the collectible cap.
+- **Fix:** Refresh `original_period_interest` to remaining + open unpaid interest; set `max_interest_allowed = max(2×period, totalInterest, interestAlreadyPaid)` (aligned with top-up).
+- **Lesson:** Any adjustment that recalculates schedule interest must also refresh the period-interest cap base, not only `total_interest`.
+
+---
+
 ## 2026-08-01 — `cursor/delinquency-monthly-interest-a923` (Bugbot round 3)
 
 ### LL-DELQ-006 — Standard top-up dropped delinquency interest from totals

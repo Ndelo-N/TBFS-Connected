@@ -3545,16 +3545,22 @@ TBFS - Transparent, Fair, Simple
             loan.total_interest = totalInterest;
             loan.total_initiation_fee = totalInitiationFee;
             loan.interest_calculation_months = preserveThrough + remainingInterestPeriod;
-            // Cap = 2 × original period interest (delinquency headroom).
-            if (!Number.isFinite(Number(loan.original_period_interest))) {
-                loan.original_period_interest = Number(oldTotalInterest) || totalInterest;
+            // Refresh period-interest base for the adjusted outstanding schedule
+            // (regen months + open-row unpaid interest). Cap = max(2×period,
+            // new total interest, interest already paid) — same as top-up.
+            loan.original_period_interest = Calculations.round(
+                (Number(remainingInterest) || 0) + (Number(unpaidPartial.interest) || 0)
+            );
+            if (!(loan.original_period_interest > 0)) {
+                loan.original_period_interest = Calculations.round(
+                    Number(oldTotalInterest) || totalInterest || 0
+                );
             }
-            if (typeof Calculations.ensureMaxInterestAllowed === 'function') {
-                Calculations.ensureMaxInterestAllowed(loan);
-            } else {
-                loan.max_interest_allowed =
-                    (Number(loan.original_period_interest) || totalInterest) * 2;
-            }
+            loan.max_interest_allowed = Calculations.round(Math.max(
+                (Number(loan.original_period_interest) || 0) * 2,
+                Number(totalInterest) || 0,
+                Number(interestAlreadyPaid) || 0
+            ));
             loan.expected_monthly_interest = repaymentBreakdown.interestPerMonthRaw;
             
             // STEP 2: UPDATE MONTHLY PAYMENT
