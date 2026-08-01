@@ -336,10 +336,22 @@ rep(
 
 /* ---- T11: propagate recalculated interest into the schedule ------------ */
 rep(
-`                    loan.max_interest_allowed = newMaxInterest;
+`                    const previousMaxInterest = loan.max_interest_allowed || 0;
+                    const newMaxInterest = loan.interest_paid + newInterestCalculation;
+                    loan.max_interest_allowed = newMaxInterest;
                     loan.expected_monthly_interest = newMaxInterest / loan.term_months;`,
-`                    loan.max_interest_allowed = newMaxInterest;
-                    loan.expected_monthly_interest = newMaxInterest / loan.term_months;
+`                    const previousMaxInterest = loan.max_interest_allowed || 0;
+                    const unpaidDelinquencyInterest = typeof Calculations.unpaidScheduleExtraInterest === 'function'
+                        ? Calculations.unpaidScheduleExtraInterest(loan)
+                        : 0;
+                    const scheduledMaxInterest = Calculations.round(
+                        (Number(loan.interest_paid) || 0) + newInterestCalculation
+                    );
+                    const newMaxInterest = Calculations.round(
+                        scheduledMaxInterest + (Number(unpaidDelinquencyInterest) || 0)
+                    );
+                    loan.max_interest_allowed = newMaxInterest;
+                    loan.expected_monthly_interest = scheduledMaxInterest / loan.term_months;
 
                     // Propagate the recalculated interest into the remaining
                     // schedule entries so future allocations and displays use

@@ -284,6 +284,26 @@ const Calculations = {
     },
 
     /**
+     * Unpaid delinquency interest still sitting on open schedule rows.
+     * Scheduled interest is treated as paid first; remainder of paid_breakdown
+     * interest counts toward extra_interest_assessed.
+     */
+    unpaidScheduleExtraInterest(loan) {
+        if (!loan || !Array.isArray(loan.schedule)) return 0;
+        let unpaid = 0;
+        loan.schedule.forEach(entry => {
+            if (!entry || entry.status === 'paid') return;
+            const scheduled = Number(entry.interest_payment) || 0;
+            const extra = Number(entry.extra_interest_assessed) || 0;
+            if (!(extra > 0)) return;
+            const paid = Number(entry.paid_breakdown && entry.paid_breakdown.interest) || 0;
+            const paidTowardExtra = Math.max(0, paid - scheduled);
+            unpaid += Math.max(0, extra - paidTowardExtra);
+        });
+        return this.round(unpaid);
+    },
+
+    /**
      * Resolve original period interest for the 2× collectible cap.
      * Prefers the stored origination value. For legacy loans, derives
      * period base as total_interest − schedule extras so delinquency

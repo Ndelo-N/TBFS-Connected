@@ -191,6 +191,33 @@ test('applyExtraInterestAssessment bumps total_interest by delta only', () => {
     assert.equal(loan.total_interest, 3960 + 719);
 });
 
+test('unpaidScheduleExtraInterest ignores paid scheduled then extras', () => {
+    const loan = eligibleLoan({
+        schedule: [
+            {
+                status: 'partial',
+                interest_payment: 100,
+                extra_interest_assessed: 50,
+                paid_breakdown: { interest: 120 } // 100 scheduled + 20 of extra
+            },
+            {
+                status: 'pending',
+                interest_payment: 200,
+                extra_interest_assessed: 80,
+                paid_breakdown: { interest: 0 }
+            },
+            {
+                status: 'paid',
+                interest_payment: 100,
+                extra_interest_assessed: 40,
+                paid_breakdown: { interest: 140 }
+            }
+        ]
+    });
+    // partial: 30 unpaid extra; pending: 80; paid ignored
+    assert.equal(C.unpaidScheduleExtraInterest(loan), 110);
+});
+
 test('legacy applyExtraInterestAssessment does not poison period base', () => {
     const entry = {
         due_date: '2026-06-30',

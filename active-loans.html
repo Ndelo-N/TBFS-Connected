@@ -2307,11 +2307,21 @@ Click "OK" to process payment or "Cancel" to go back.
                         }
                     }
                     
-                    // Update interest tracking
+                    // Update interest tracking. Cap must still cover unpaid
+                    // delinquency interest on open rows (extra_interest_assessed);
+                    // interest_paid already includes any extras collected here.
                     const previousMaxInterest = loan.max_interest_allowed || 0;
-                    const newMaxInterest = loan.interest_paid + newInterestCalculation;
+                    const unpaidDelinquencyInterest = typeof Calculations.unpaidScheduleExtraInterest === 'function'
+                        ? Calculations.unpaidScheduleExtraInterest(loan)
+                        : 0;
+                    const scheduledMaxInterest = Calculations.round(
+                        (Number(loan.interest_paid) || 0) + newInterestCalculation
+                    );
+                    const newMaxInterest = Calculations.round(
+                        scheduledMaxInterest + (Number(unpaidDelinquencyInterest) || 0)
+                    );
                     loan.max_interest_allowed = newMaxInterest;
-                    loan.expected_monthly_interest = newMaxInterest / loan.term_months;
+                    loan.expected_monthly_interest = scheduledMaxInterest / loan.term_months;
 
                     // Propagate the recalculated interest into the remaining
                     // schedule entries so future allocations and displays use
@@ -3571,10 +3581,16 @@ TBFS - Transparent, Fair, Simple
             loan.interest_calculation_months = preserveThrough + remainingInterestPeriod;
             // Period base = regen remaining interest only (not open-row extras).
             // Cap covers 2× period, new total, and interest already paid.
+            const priorPeriodInterest = typeof Calculations.getOriginalPeriodInterest === 'function'
+                ? Calculations.getOriginalPeriodInterest(loan)
+                : (Number(loan.original_period_interest) || 0);
             loan.original_period_interest = Calculations.round(Number(remainingInterest) || 0);
             if (!(loan.original_period_interest > 0)) {
+                // Zero regen interest: keep prior period base. Never fall back
+                // to oldTotalInterest / totalInterestCommit — those can already
+                // include delinquency folded into total_interest.
                 loan.original_period_interest = Calculations.round(
-                    Number(oldTotalInterest) || totalInterestCommit || 0
+                    Math.max(0, Number(priorPeriodInterest) || 0)
                 );
             }
             loan.max_interest_allowed = Calculations.round(Math.max(

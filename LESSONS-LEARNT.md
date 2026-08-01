@@ -4,6 +4,22 @@ Branch-scoped findings from Bugbot / review loops. Newest entries at the top.
 
 ---
 
+## 2026-08-01 — `cursor/delinquency-monthly-interest-a923` (Bugbot loop C round 1)
+
+### LL-DELQ-019 — Overpayment recalc froze cap without unpaid delinquency room
+- **Severity:** high
+- **Symptom:** First-half overpayment set `max_interest_allowed = interest_paid + recomputed scheduled interest` and flagged `interest_recalculated`, so `getMaxInterestAllowed` froze that lowered cap with no headroom for unpaid `extra_interest_assessed` on open rows.
+- **Fix:** Add unpaid open-row delinquency interest into the frozen cap (`unpaidScheduleExtraInterest`); keep `expected_monthly_interest` on the scheduled (non-delinquency) base.
+- **Lesson:** Any path that freezes `max_interest_allowed` via `interest_recalculated` must reserve room for still-unpaid delinquency interest.
+
+### LL-DELQ-020 — Term-change zero-interest fallback poisoned period base
+- **Severity:** medium
+- **Symptom:** When regen `remainingInterest` was 0, term change set `original_period_interest` from `oldTotalInterest` / `totalInterestCommit`, which can already include delinquency.
+- **Fix:** Capture prior period via `getOriginalPeriodInterest` before overwrite; on zero regen interest, keep that prior base (never delinquency-inflated totals).
+- **Lesson:** Fallbacks for `original_period_interest` must use a period-only source, never `total_interest` that may include extras.
+
+---
+
 ## 2026-08-01 — `cursor/delinquency-monthly-interest-a923` (Bugbot loop B round 6)
 
 ### LL-DELQ-018 — Legacy sync poisoned original_period_interest from inflated total
