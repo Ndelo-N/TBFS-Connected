@@ -4,6 +4,16 @@ Branch-scoped findings from Bugbot / review loops. Newest entries at the top.
 
 ---
 
+## 2026-08-01 — `cursor/delinquency-monthly-interest-a923` (Bugbot loop B round 2)
+
+### LL-DELQ-012 — Pending regen dropped delinquency fields (double-bump risk)
+- **Severity:** high
+- **Symptom:** Term-change/top-up stamped fees on a pending open row before `buildAdjustedSchedule`, but regenerated pending rows are new objects and lost those fields. `total_interest` still included the extras, so the next payment’s `applyExtraInterestAssessment` saw prior=0 and bumped the full amount again.
+- **Fix:** Stamp fees onto preserved partials before regen; after regen, re-stamp onto the new open row without delta-bumping totals.
+- **Lesson:** Anything folded into `total_interest` via unpaidPartial must remain on the post-regen open schedule row, or the next assessment will double-count.
+
+---
+
 ## 2026-08-01 — `cursor/delinquency-monthly-interest-a923` (Bugbot loop B round 1)
 
 ### LL-DELQ-010 — syncDelinquencyInterestTracking inflated total_interest

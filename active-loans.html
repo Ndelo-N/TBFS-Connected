@@ -3554,9 +3554,15 @@ TBFS - Transparent, Fair, Simple
             ));
             loan.expected_monthly_interest = repaymentBreakdown.interestPerMonthRaw;
 
-            // Persist live delinquency assessments only after confirm so cancel
-            // does not leave fees on the in-memory loan.
-            if (termChangeOpen) {
+            // STEP 2: UPDATE MONTHLY PAYMENT
+            loan.monthly_payment = newMonthlyPayment;
+            
+            // STEP 3: REGENERATE PAYMENT SCHEDULE (RESPECT PRIOR PAYMENTS)
+            dbg(`🔄 Regenerating schedule for Loan #${loanId} with new term: ${newTerm} months`);
+            // For preserved partials, stamp fees onto the open row before regen
+            // so clonePreservedEntry copies them. Pending opens are rebuilt —
+            // stamp onto the new open row after regen (below).
+            if (termChangeOpen && termChangeOpen.status === 'partial') {
                 if (termChangeFees.extraAdminAssessedCandidate > 0) {
                     termChangeOpen.extra_admin_assessed = Math.max(
                         Number(termChangeOpen.extra_admin_assessed) || 0,
@@ -3576,12 +3582,6 @@ TBFS - Transparent, Fair, Simple
                     );
                 }
             }
-            
-            // STEP 2: UPDATE MONTHLY PAYMENT
-            loan.monthly_payment = newMonthlyPayment;
-            
-            // STEP 3: REGENERATE PAYMENT SCHEDULE (RESPECT PRIOR PAYMENTS)
-            dbg(`🔄 Regenerating schedule for Loan #${loanId} with new term: ${newTerm} months`);
             loan.schedule = buildAdjustedSchedule(loan, {
                 remainingPrincipal: regenPrincipal,
                 remainingInterest: remainingInterest,
@@ -3591,6 +3591,30 @@ TBFS - Transparent, Fair, Simple
                 customRemainingBreakdown: stockvelPlan ? stockvelPlan.breakdown : null,
                 monthlyPaymentOverride: newMonthlyPayment
             });
+            // Pending rows are fresh objects — re-apply delinquency fields so
+            // the next payment does not treat them as brand-new assessments
+            // (which would delta-bump total_interest again).
+            const termChangeOpenAfter = getNextPendingScheduleEntry(loan);
+            if (termChangeOpenAfter) {
+                if (termChangeFees.extraAdminAssessedCandidate > 0) {
+                    termChangeOpenAfter.extra_admin_assessed = Math.max(
+                        Number(termChangeOpenAfter.extra_admin_assessed) || 0,
+                        termChangeFees.extraAdminAssessedCandidate
+                    );
+                }
+                if (termChangeFees.latePenaltyAssessedCandidate > 0) {
+                    termChangeOpenAfter.late_penalty_assessed = Math.max(
+                        Number(termChangeOpenAfter.late_penalty_assessed) || 0,
+                        termChangeFees.latePenaltyAssessedCandidate
+                    );
+                }
+                if (termChangeFees.extraInterestAssessedCandidate > 0) {
+                    termChangeOpenAfter.extra_interest_assessed = Math.max(
+                        Number(termChangeOpenAfter.extra_interest_assessed) || 0,
+                        termChangeFees.extraInterestAssessedCandidate
+                    );
+                }
+            }
             if (typeof Calculations.syncDelinquencyInterestTracking === 'function') {
                 Calculations.syncDelinquencyInterestTracking(loan);
             }
@@ -3925,8 +3949,8 @@ TBFS - Transparent, Fair, Simple
                 ? stockvelPlan.averageInterestRaw
                 : (remainingInterest / remainingMonths);
 
-            // Persist live delinquency assessments only after confirm.
-            if (topUpOpenEntry) {
+            // Stamp fees onto preserved partial before regen so clone keeps them.
+            if (topUpOpenEntry && topUpOpenEntry.status === 'partial') {
                 if (topUpFeeAssess.extraAdminAssessedCandidate > 0) {
                     topUpOpenEntry.extra_admin_assessed = Math.max(
                         Number(topUpOpenEntry.extra_admin_assessed) || 0,
@@ -3965,6 +3989,29 @@ TBFS - Transparent, Fair, Simple
                 customRemainingBreakdown: stockvelPlan ? stockvelPlan.breakdown : null,
                 monthlyPaymentOverride: newMonthlyPayment
             });
+            // Re-stamp onto new open pending rows (not cloned) without
+            // delta-bumping total_interest again.
+            const topUpOpenAfter = getNextPendingScheduleEntry(loan);
+            if (topUpOpenAfter) {
+                if (topUpFeeAssess.extraAdminAssessedCandidate > 0) {
+                    topUpOpenAfter.extra_admin_assessed = Math.max(
+                        Number(topUpOpenAfter.extra_admin_assessed) || 0,
+                        topUpFeeAssess.extraAdminAssessedCandidate
+                    );
+                }
+                if (topUpFeeAssess.latePenaltyAssessedCandidate > 0) {
+                    topUpOpenAfter.late_penalty_assessed = Math.max(
+                        Number(topUpOpenAfter.late_penalty_assessed) || 0,
+                        topUpFeeAssess.latePenaltyAssessedCandidate
+                    );
+                }
+                if (topUpFeeAssess.extraInterestAssessedCandidate > 0) {
+                    topUpOpenAfter.extra_interest_assessed = Math.max(
+                        Number(topUpOpenAfter.extra_interest_assessed) || 0,
+                        topUpFeeAssess.extraInterestAssessedCandidate
+                    );
+                }
+            }
             if (typeof Calculations.syncDelinquencyInterestTracking === 'function') {
                 Calculations.syncDelinquencyInterestTracking(loan);
             }
