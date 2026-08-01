@@ -2178,8 +2178,12 @@ Click "OK" to process payment or "Cancel" to go back.
             nextPayment.payment_date = paymentDate;
             nextPayment.amount_paid = Calculations.round((nextPayment.amount_paid || 0) + amount);
             const duesLeft = getEntryEffectiveDues(nextPayment);
-            // Interest owed on the entry is only claimable up to the cap.
-            const claimableInterestLeft = Math.min(duesLeft.interest_payment, interestCapRemainingFor(loan));
+            // Interest owed on the entry is only claimable up to the cap AFTER
+            // this payment's interest is applied (loan.interest_paid is updated later).
+            const claimableInterestLeft = Math.min(
+                duesLeft.interest_payment,
+                Math.max(0, interestCapRemainingFor(loan) - interestPaid)
+            );
             const latePenaltyLeft = Math.max(
                 0,
                 (Number(nextPayment.late_penalty_assessed) || 0) - (pb.late_penalty || 0)
@@ -3529,9 +3533,34 @@ TBFS - Transparent, Fair, Simple
                 return;
             }
 
+            // Re-assess delinquency at commit (fees may have accrued during prompts).
+            const termChangeFeesCommit = assessOpenInstallmentFees(
+                loan, termChangeOpen,
+                termChangeOpen && termChangeOpen.due_date
+                    ? new Date(termChangeOpen.due_date)
+                    : new Date(),
+                new Date(),
+                termChangeGrace
+            );
+            const unpaidPartialCommit = unpaidOnPartialEntry(termChangeOpen, {
+                extraAdminAssessedCandidate: termChangeFeesCommit.extraAdminAssessedCandidate,
+                latePenaltyAssessedCandidate: termChangeFeesCommit.latePenaltyAssessedCandidate,
+                extraInterestAssessedCandidate: termChangeFeesCommit.extraInterestAssessedCandidate
+            });
+            const delinquencyInterestDelta = Math.max(
+                0,
+                Calculations.round(
+                    (Number(unpaidPartialCommit.interest) || 0) -
+                    (Number(unpaidPartial.interest) || 0)
+                )
+            );
+            // Use commit-time fee candidates for stamping below.
+            Object.assign(termChangeFees, termChangeFeesCommit);
+            const totalInterestCommit = Calculations.round(totalInterest + delinquencyInterestDelta);
+
             // STEP 1: COMMIT TERM + INTEREST TRACKING (only after confirm)
             loan.term_months = newTerm;
-            loan.total_interest = totalInterest;
+            loan.total_interest = totalInterestCommit;
             loan.total_initiation_fee = totalInitiationFee;
             loan.interest_calculation_months = preserveThrough + remainingInterestPeriod;
             // Period base = regen remaining interest only (not open-row extras).
@@ -3539,12 +3568,12 @@ TBFS - Transparent, Fair, Simple
             loan.original_period_interest = Calculations.round(Number(remainingInterest) || 0);
             if (!(loan.original_period_interest > 0)) {
                 loan.original_period_interest = Calculations.round(
-                    Number(oldTotalInterest) || totalInterest || 0
+                    Number(oldTotalInterest) || totalInterestCommit || 0
                 );
             }
             loan.max_interest_allowed = Calculations.round(Math.max(
                 (Number(loan.original_period_interest) || 0) * 2,
-                Number(totalInterest) || 0,
+                Number(totalInterestCommit) || 0,
                 Number(interestAlreadyPaid) || 0
             ));
             loan.expected_monthly_interest = repaymentBreakdown.interestPerMonthRaw;
@@ -3613,9 +3642,7 @@ TBFS - Transparent, Fair, Simple
             if (typeof Calculations.syncDelinquencyInterestTracking === 'function') {
                 Calculations.syncDelinquencyInterestTracking(loan);
             }
-            loan.total_interest = Calculations.round(
-                interestAlreadyPaid + unpaidPartial.interest + remainingInterest
-            );
+            loan.total_interest = totalInterestCommit;
             
             // STEP 4: LOG ADJUSTMENT (loan-local + global transactions)
             const afterSnapshot = snapshotLoanAdjustmentState(loan);
@@ -3926,6 +3953,32 @@ TBFS - Transparent, Fair, Simple
                 alert('⏸️ Adjustment cancelled.');
                 return;
             }
+
+            // Re-assess delinquency at commit (fees may have accrued during prompts).
+            const topUpFeesCommit = assessOpenInstallmentFees(
+                loan, topUpOpenEntry,
+                topUpOpenEntry && topUpOpenEntry.due_date
+                    ? new Date(topUpOpenEntry.due_date)
+                    : new Date(),
+                new Date(),
+                topUpGrace
+            );
+            const unpaidPartialCommit = unpaidOnPartialEntry(topUpOpenEntry, {
+                extraAdminAssessedCandidate: topUpFeesCommit.extraAdminAssessedCandidate,
+                latePenaltyAssessedCandidate: topUpFeesCommit.latePenaltyAssessedCandidate,
+                extraInterestAssessedCandidate: topUpFeesCommit.extraInterestAssessedCandidate
+            });
+            const topUpDelinquencyDelta = Math.max(
+                0,
+                Calculations.round(
+                    (Number(unpaidPartialCommit.interest) || 0) -
+                    (Number(unpaidPartial.interest) || 0)
+                )
+            );
+            Object.assign(topUpFeeAssess, topUpFeesCommit);
+            recalculatedInterest = Calculations.round(
+                recalculatedInterest + topUpDelinquencyDelta
+            );
 
             // Snapshot before applying changes (for audit trail / statements)
             const beforeSnapshot = snapshotLoanAdjustmentState(loan);

@@ -4,6 +4,22 @@ Branch-scoped findings from Bugbot / review loops. Newest entries at the top.
 
 ---
 
+## 2026-08-01 — `cursor/delinquency-monthly-interest-a923` (Bugbot loop B round 4)
+
+### LL-DELQ-015 — Installment stayed partial when interest cap was exhausted
+- **Severity:** high
+- **Symptom:** `entryCovered` used pre-payment `interestCapRemainingFor` after `paid_breakdown` already included this payment’s interest, so claimable interest looked non-zero and the row stayed `partial`.
+- **Fix:** Compute claimable interest with `max(0, capRemaining - interestPaid)` for this payment.
+- **Lesson:** Coverage checks must use post-payment cap room when dues are already net of this payment.
+
+### LL-DELQ-016 — Term change/top-up used stale fee assessment at commit
+- **Severity:** medium
+- **Symptom:** Fees assessed once at flow start; accrual during reason/preview prompts was omitted from totals and stamps.
+- **Fix:** Re-assess at commit; add delinquency interest delta into committed `total_interest`; stamp commit-time candidates.
+- **Lesson:** Long adjustment prompts need a commit-time re-assess, same idea as payment-date re-assess.
+
+---
+
 ## 2026-08-01 — `cursor/delinquency-monthly-interest-a923` (Bugbot loop B round 3)
 
 ### LL-DELQ-013 — Standard top-up cancelled pending delinquency out of total_interest
