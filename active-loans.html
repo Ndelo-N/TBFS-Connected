@@ -3975,8 +3975,31 @@ TBFS - Transparent, Fair, Simple
                 remainingInterest = stockvelPlan.totalInterestRaw;
                 adminFee = stockvelPlan.averageAdminFeeRaw;
                 recalculatedInterest = interestAlreadyPaid + unpaidPartial.interest + remainingInterest;
-                // Cap base = new outstanding schedule interest (not paid+remaining lifetime).
-                periodInterestBase = Calculations.round(Number(stockvelPlan.totalInterestRaw) || 0);
+                // Cap base = scheduled paid + unpaid scheduled on partial + regen
+                // remaining (exclude delinquency), so mid-loan top-ups cannot
+                // shrink 2× below interest already paid.
+                const stockvelDelinquencyPaid = typeof Calculations.paidScheduleExtraInterest === 'function'
+                    ? Calculations.paidScheduleExtraInterest(loan)
+                    : 0;
+                const stockvelScheduledPaid = Math.max(
+                    0,
+                    (Number(interestAlreadyPaid) || 0) - (Number(stockvelDelinquencyPaid) || 0)
+                );
+                let stockvelUnpaidScheduledOnPartial = 0;
+                if (topUpOpenEntry && topUpOpenEntry.status === 'partial') {
+                    const scheduledOnOpen = Number(topUpOpenEntry.interest_payment) || 0;
+                    const paidOnOpen = Number(
+                        (topUpOpenEntry.paid_breakdown || {}).interest
+                    ) || 0;
+                    stockvelUnpaidScheduledOnPartial = Math.max(
+                        0,
+                        scheduledOnOpen - Math.min(paidOnOpen, scheduledOnOpen)
+                    );
+                }
+                periodInterestBase = Calculations.round(
+                    stockvelScheduledPaid + stockvelUnpaidScheduledOnPartial +
+                    (Number(stockvelPlan.totalInterestRaw) || 0)
+                );
                 newMonthlyPayment = stockvelPlan.equalMonthlyPaymentRaw;
             } else {
                 newTotalInitiationFee = newPrincipal * Calculations.RATES.INITIATION_FEE_RATE;
