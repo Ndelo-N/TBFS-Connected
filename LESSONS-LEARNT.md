@@ -4,6 +4,16 @@ Branch-scoped findings from Bugbot / review loops. Newest entries at the top.
 
 ---
 
+## 2026-08-01 — `cursor/delinquency-monthly-interest-a923` (Bugbot loop C round 9)
+
+### LL-DELQ-034 — Overpayment recalc reclassified paid scheduled as delinquency
+- **Severity:** high
+- **Symptom:** Recalc overwrote open-row `interest_payment` with a lower per-entry figure even on partials with `paid_breakdown.interest`. Helpers that treat `paid − interest_payment` as delinquency then reclassified already-collected scheduled interest as extras, skewing the 2× freeze/cap and waterfall.
+- **Fix:** When propagating, `interest_payment = max(perEntry, paidTowardScheduled)` so scheduled interest already collected is never lowered beneath that floor.
+- **Lesson:** Never reduce a row’s scheduled `interest_payment` below interest already applied to that scheduled floor while delinquency extras are tracked as `paid − scheduled`.
+
+---
+
 ## 2026-08-01 — `cursor/delinquency-monthly-interest-a923` (Bugbot loop C round 8)
 
 ### LL-DELQ-033 — Standard top-up fullInterest-only period base could zero cap

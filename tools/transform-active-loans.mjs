@@ -362,10 +362,18 @@ rep(
                     if (openEntries.length > 0) {
                         const perEntry = Calculations.round(newInterestCalculation / openEntries.length);
                         openEntries.forEach(p => {
-                            p.interest_payment = perEntry;
+                            const paidInterest = Number(
+                                (p.paid_breakdown || {}).interest
+                            ) || 0;
+                            const prevScheduled = Number(p.interest_payment) || 0;
+                            const paidTowardScheduled = Math.min(paidInterest, prevScheduled);
+                            const nextScheduled = Calculations.round(
+                                Math.max(perEntry, paidTowardScheduled)
+                            );
+                            p.interest_payment = nextScheduled;
                             p.monthly_payment = Calculations.round(
                                 (p.principal_payment || 0) + (p.admin_fee || 0) +
-                                (p.initiation_fee || 0) + perEntry);
+                                (p.initiation_fee || 0) + nextScheduled);
                         });
                         loan.monthly_payment = openEntries[0].monthly_payment;
                     }`,
