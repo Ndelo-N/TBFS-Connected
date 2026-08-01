@@ -1159,9 +1159,19 @@ Click "OK" to process payment or "Cancel" to go back.
                 });
                 const partialPenalty = unpaidPartial.latePenalty || 0;
                 const partialExtraAdmin = unpaidPartial.extraAdmin || 0;
-                // Delinquency interest still unpaid, clamped to interest cap
-                // AFTER reserving room for prorated payoff interest (applied below).
-                // Do not mutate the loan until the operator confirms add-ons.
+                // Unpaid scheduled interest on the open partial (not covered by
+                // calculateEarlyPayoff when interest_paid already includes
+                // delinquency above the prorated scheduled figure).
+                const openScheduledInterest = Number(openEntry && openEntry.interest_payment) || 0;
+                const openPaidInterest = Number(
+                    (openEntry && openEntry.paid_breakdown || {}).interest
+                ) || 0;
+                const unpaidScheduledOnOpen = Math.max(
+                    0,
+                    openScheduledInterest - Math.min(openPaidInterest, openScheduledInterest)
+                );
+                // Cap order: prorated payoff interest, then unpaid scheduled on
+                // the open row, then delinquency interest.
                 const maxInterestAllowed = typeof Calculations.getMaxInterestAllowed === 'function'
                     ? Calculations.getMaxInterestAllowed(loan, {
                         openEntry,
@@ -1176,12 +1186,21 @@ Click "OK" to process payment or "Cancel" to go back.
                         - (Number(payoffData.interestOwed) || 0)
                     )
                 );
-                const partialExtraInterest = Math.min(
-                    Math.max(0, Number(feeAssess.extraInterestDue) || 0),
+                const claimableUnpaidScheduled = Math.min(
+                    unpaidScheduledOnOpen,
                     capAfterPayoffInterest
                 );
+                const capAfterScheduled = Math.max(
+                    0,
+                    Calculations.round(capAfterPayoffInterest - claimableUnpaidScheduled)
+                );
+                const partialExtraInterest = Math.min(
+                    Math.max(0, Number(feeAssess.extraInterestDue) || 0),
+                    capAfterScheduled
+                );
                 const addOnFees = Calculations.round(
-                    partialPenalty + partialExtraAdmin + partialExtraInterest
+                    partialPenalty + partialExtraAdmin +
+                    claimableUnpaidScheduled + partialExtraInterest
                 );
                 if (addOnFees > 0.01) {
                     const feeLines = [];
@@ -1192,6 +1211,10 @@ Click "OK" to process payment or "Cancel" to go back.
                     if (partialExtraAdmin > 0.01) {
                         feeLines.push(
                             `• Extra admin (post-grace): ${Calculations.formatCurrency(partialExtraAdmin)}`);
+                    }
+                    if (claimableUnpaidScheduled > 0.01) {
+                        feeLines.push(
+                            `• Unpaid scheduled interest: ${Calculations.formatCurrency(claimableUnpaidScheduled)}`);
                     }
                     if (partialExtraInterest > 0.01) {
                         feeLines.push(
@@ -1215,12 +1238,13 @@ Click "OK" to process payment or "Cancel" to go back.
                 loan.completion_date = new Date().toISOString();
                 loan.remaining_principal = 0; // Loan fully paid
                 
-                // Update interest paid (prorated payoff interest + claimable delinquency).
-                // Combined total must not exceed the collectible cap.
+                // Update interest paid (prorated + unpaid scheduled on open +
+                // claimable delinquency). Combined total must not exceed the cap.
                 loan.interest_paid = Calculations.round(Math.min(
                     maxInterestAllowed,
                     (Number(loan.interest_paid) || 0)
                     + (Number(payoffData.interestOwed) || 0)
+                    + claimableUnpaidScheduled
                     + partialExtraInterest
                 ));
                 
@@ -1289,16 +1313,11 @@ Click "OK" to process payment or "Cancel" to go back.
                                     pb.admin || 0,
                                     baseAdmin + (Number(payment.extra_admin_assessed) || 0)
                                 ));
-                            // Add unpaid scheduled + claimable delinquency on
+                            // Add claimable unpaid scheduled + delinquency on
                             // top of interest already recorded on the partial.
                             const prevPaidInterest = Number(pb.interest) || 0;
-                            const scheduledInterest = Number(payment.interest_payment) || 0;
-                            const unpaidScheduledInterest = Math.max(
-                                0,
-                                scheduledInterest - Math.min(prevPaidInterest, scheduledInterest)
-                            );
                             pb.interest = Calculations.round(
-                                prevPaidInterest + unpaidScheduledInterest + partialExtraInterest
+                                prevPaidInterest + claimableUnpaidScheduled + partialExtraInterest
                             );
                             pb.principal = Calculations.round(
                                 Math.max(pb.principal || 0, Number(payment.principal_payment) || 0));
@@ -1319,7 +1338,9 @@ Click "OK" to process payment or "Cancel" to go back.
                 // STEP 3: UPDATE APPSTATE (GLOBAL FINANCIAL TRACKING)
                 AppState.capital = (AppState.capital || 0) + totalCollected;
                 const payoffInterestCollected = Calculations.round(
-                    (Number(payoffData.interestOwed) || 0) + partialExtraInterest
+                    (Number(payoffData.interestOwed) || 0) +
+                    claimableUnpaidScheduled +
+                    partialExtraInterest
                 );
                 AppState.totalInterestEarned =
                     (AppState.totalInterestEarned || 0) + payoffInterestCollected;
@@ -1350,6 +1371,7 @@ Click "OK" to process payment or "Cancel" to go back.
                         latePenaltyPaid: partialPenalty,
                         extraAdminPaid: partialExtraAdmin,
                         delinquencyInterestPaid: partialExtraInterest,
+                        unpaidScheduledInterestPaid: claimableUnpaidScheduled,
                         remainingPrincipal: payoffData.remainingPrincipal,
                         interestOwed: payoffInterestCollected,
                         scheduledInterestOwed: payoffData.interestOwed,

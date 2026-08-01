@@ -4,6 +4,16 @@ Branch-scoped findings from Bugbot / review loops. Newest entries at the top.
 
 ---
 
+## 2026-08-01 — `cursor/delinquency-monthly-interest-a923` (Bugbot loop C round 11)
+
+### LL-DELQ-037 — Early payoff skipped unpaid scheduled interest on open partial
+- **Severity:** high
+- **Symptom:** `calculateEarlyPayoff` sets `interestOwed = max(0, prorated − interest_paid)`. When delinquency already inside `interest_paid` exceeded prorated scheduled interest, `interestOwed` was 0 while the open partial still had unpaid scheduled interest — add-ons only collected delinquency, so cash collected understated while `paid_breakdown` could still credit the scheduled piece.
+- **Fix:** Add claimable unpaid scheduled interest on the open row into payoff add-ons (after reserving prorated `interestOwed`, before delinquency), and include it in `interest_paid` / revenue.
+- **Lesson:** Lifetime `interest_paid` that includes delinquency must not hide unpaid scheduled interest still sitting on the open installment at payoff.
+
+---
+
 ## 2026-08-01 — `cursor/delinquency-monthly-interest-a923` (Bugbot loop C round 10)
 
 ### LL-DELQ-035 — Term change/top-up restored full 2× over an overpayment freeze
