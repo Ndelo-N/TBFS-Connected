@@ -35,8 +35,18 @@ test('late penalty principal floor: <=100 skips late penalty', () => {
     const low = C.calculateDelinquencyMonthIncome(100, 60, { latePenaltyDays: 7 });
     assert.equal(low.latePenalty, 0);
     assert.equal(low.latePenaltyApplied, false);
-    // Cap = 30; admin 60 → interest squeezed to 0
+    // Cap = 30; admin requested 60 → admin squeezed to cap, interest 0
+    assert.equal(low.incomeCap, 30);
+    assert.equal(low.admin, 30);
     assert.equal(low.interest, 0);
+    assert.equal(low.monthIncome, 30);
+});
+
+test('delinquency month income never exceeds 30% cap', () => {
+    const month = C.calculateDelinquencyMonthIncome(150, 60, { latePenaltyDays: 7 });
+    assert.equal(month.incomeCap, 45);
+    assert.ok(month.admin + month.latePenalty + month.interest <= month.incomeCap + 0.001);
+    assert.equal(month.monthIncome, month.incomeCap);
 });
 
 test('month income: admin + late penalty + interest = 30% outstanding', () => {
@@ -157,6 +167,39 @@ test('max interest allowed is 2× original period interest', () => {
         }]
     });
     assert.equal(C.getMaxInterestAllowed(recalcedWithExtra), 2250);
+
+    // Unpaid extras must not push a near-2× freeze above the statutory ceiling
+    const nearCap = eligibleLoan({
+        original_period_interest: 3960,
+        max_interest_allowed: 7800,
+        interest_recalculated: true,
+        schedule: [{
+            status: 'partial',
+            interest_payment: 100,
+            extra_interest_assessed: 500,
+            paid_breakdown: { interest: 100 }
+        }]
+    });
+    assert.equal(C.getMaxInterestAllowed(nearCap), 7920);
+
+    // Live preview candidate is included for recalculated caps
+    const livePreview = eligibleLoan({
+        max_interest_allowed: 2000,
+        interest_recalculated: true,
+        schedule: [{
+            status: 'pending',
+            interest_payment: 100,
+            extra_interest_assessed: 0,
+            paid_breakdown: {}
+        }]
+    });
+    assert.equal(
+        C.getMaxInterestAllowed(livePreview, {
+            openEntry: livePreview.schedule[0],
+            openLiveExtraInterest: 300
+        }),
+        2300
+    );
 });
 
 test('effective interest due includes extra_interest_assessed', () => {

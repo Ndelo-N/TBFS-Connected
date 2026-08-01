@@ -1868,9 +1868,9 @@ Click "OK" to process payment or "Cancel" to go back.
             };
         }
 
-        function interestCapRemainingFor(loan) {
+        function interestCapRemainingFor(loan, opts) {
             if (typeof Calculations.getMaxInterestAllowed === 'function') {
-                const maxAllowed = Calculations.getMaxInterestAllowed(loan);
+                const maxAllowed = Calculations.getMaxInterestAllowed(loan, opts);
                 return Math.max(0, maxAllowed - (loan.interest_paid || 0));
             }
             return Number.isFinite(loan.max_interest_allowed)
@@ -1950,7 +1950,10 @@ Click "OK" to process payment or "Cancel" to go back.
                     extraInterestAssessedCandidate: fees.extraInterestAssessedCandidate
                 }),
                 latePenaltyDue: fees.latePenalty,
-                interestCapRemaining: interestCapRemainingFor(loan),
+                interestCapRemaining: interestCapRemainingFor(loan, {
+                    openEntry: entry,
+                    openLiveExtraInterest: fees.extraInterestAssessedCandidate
+                }),
                 remainingPrincipal: loan.remaining_principal
             });
             const line = (label, v) => v > 0

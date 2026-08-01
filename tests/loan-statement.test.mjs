@@ -224,9 +224,14 @@ test('buildLoanStatementModel caps interest remaining to max_interest_allowed', 
     const loan = sampleLoan();
     loan.total_interest = 900;
     loan.interest_paid = 300;
+    loan.original_period_interest = 900;
     loan.max_interest_allowed = 400; // cap below scheduled total interest
     loan.interest_recalculated = true;
-    const model = C.buildLoanStatementModel(loan, { transactions: [] });
+    // asOf on open due date so live delinquency does not lift the freeze
+    const model = C.buildLoanStatementModel(loan, { transactions: [] }, {
+        asOf: '2026-04-30T12:00:00.000Z',
+        gracePeriodDays: 3
+    });
     assert.equal(model.position.interest_remaining, 100);
     assert.equal(model.summary.max_interest_allowed, 400);
     // total_remaining must use capped interest, not 900 − 300

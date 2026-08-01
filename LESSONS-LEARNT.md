@@ -4,6 +4,34 @@ Branch-scoped findings from Bugbot / review loops. Newest entries at the top.
 
 ---
 
+## 2026-08-01 — `cursor/delinquency-monthly-interest-a923` (Bugbot loop C round 4)
+
+### LL-DELQ-024 — Recalculated cap could exceed statutory 2× period
+- **Severity:** high
+- **Symptom:** `getMaxInterestAllowed` returned `freeze + unpaid extras` with no `min(2× period)` ceiling, so near-cap freezes plus delinquency could collect above the product 2× limit.
+- **Fix:** `Math.min(2× original_period_interest, freeze + unpaidScheduleExtraInterest)`.
+- **Lesson:** Overpayment freeze + delinquency headroom is still bounded by the statutory 2× period cap.
+
+### LL-DELQ-025 — Statement total_interest used full assessed extras
+- **Severity:** medium
+- **Symptom:** `buildLoanStatementModel` used `original_period_interest + Σ extra_interest_assessed` (including live) for committed `total_interest`, overstating when cap-bound `extra_interest_in_total` is lower.
+- **Fix:** Commit total from `in_total` (legacy: assessed); keep full/live assessed for dues and `interest_extra_assessed`; remaining still considers live then clamps to cap.
+- **Lesson:** Statement committed totals follow `total_interest` / `in_total`; assessed-only figures are for dues/display.
+
+### LL-DELQ-026 — Payment preview omitted live extras from recalculated cap
+- **Severity:** medium
+- **Symptom:** Preview called `interestCapRemainingFor(loan)` without the live candidate confirm stamps before allocate, under-allocating interest vs confirm on `interest_recalculated` loans.
+- **Fix:** Pass `openEntry` + `openLiveExtraInterest` into `getMaxInterestAllowed` / preview cap remaining.
+- **Lesson:** Preview must use the same live assessment inputs as confirm for cap headroom.
+
+### LL-DELQ-027 — Delinquency month could exceed 30% when admin > cap
+- **Severity:** medium
+- **Symptom:** Full R60 admin was always billed; only interest was squeezed, so low principal months had `monthIncome > incomeCap`.
+- **Fix:** Fit admin then late into the 30% cap, then interest; `monthIncome === incomeCap` (or less only if all zero).
+- **Lesson:** The 30% basket is a hard ceiling for admin + late + interest, including when admin alone would exceed it.
+
+---
+
 ## 2026-08-01 — `cursor/delinquency-monthly-interest-a923` (Bugbot loop C round 3)
 
 ### LL-DELQ-023 — Full stamp after capped total bump blocked later total increases

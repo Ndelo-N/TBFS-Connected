@@ -295,14 +295,22 @@ const Calculations = {
      * Unpaid delinquency interest still sitting on open schedule rows.
      * Scheduled interest is treated as paid first; remainder of paid_breakdown
      * interest counts toward extra_interest_assessed.
+     *
+     * @param {object} [override] optional live assessment for one open entry
+     * @param {object} [override.entry]
+     * @param {number} [override.extraInterestAssessed]
      */
-    unpaidScheduleExtraInterest(loan) {
+    unpaidScheduleExtraInterest(loan, override) {
         if (!loan || !Array.isArray(loan.schedule)) return 0;
         let unpaid = 0;
         loan.schedule.forEach(entry => {
             if (!entry || entry.status === 'paid') return;
             const scheduled = Number(entry.interest_payment) || 0;
-            const extra = Number(entry.extra_interest_assessed) || 0;
+            let extra = Number(entry.extra_interest_assessed) || 0;
+            if (override && override.entry === entry &&
+                Number.isFinite(Number(override.extraInterestAssessed))) {
+                extra = Math.max(extra, Number(override.extraInterestAssessed) || 0);
+            }
             if (!(extra > 0)) return;
             const paid = Number(entry.paid_breakdown && entry.paid_breakdown.interest) || 0;
             const paidTowardExtra = Math.max(0, paid - scheduled);
@@ -334,13 +342,22 @@ const Calculations = {
      * delinquency interest has headroom on read paths (preview/allocation).
      * Overpayment recalculation stores a lowered scheduled ceiling in
      * max_interest_allowed; unpaid delinquency on open rows is added at
-     * read time so later accrual still has allocation headroom.
+     * read time so later accrual still has allocation headroom, but never
+     * above the statutory 2× period ceiling.
+     *
+     * @param {object} [opts]
+     * @param {object} [opts.openEntry] open schedule row for live preview
+     * @param {number} [opts.openLiveExtraInterest] live extra_interest candidate
      */
-    getMaxInterestAllowed(loan) {
+    getMaxInterestAllowed(loan, opts) {
         const existing = Number(loan && loan.max_interest_allowed);
         const target = this.round(this.getOriginalPeriodInterest(loan) * 2);
         if (loan && loan.interest_recalculated && Number.isFinite(existing) && existing >= 0) {
-            return this.round(existing + this.unpaidScheduleExtraInterest(loan));
+            const unpaid = this.unpaidScheduleExtraInterest(loan, {
+                entry: opts && opts.openEntry,
+                extraInterestAssessed: opts && opts.openLiveExtraInterest
+            });
+            return this.round(Math.min(target, existing + unpaid));
         }
         if (Number.isFinite(existing) && existing > target) return this.round(existing);
         return target;
@@ -1370,15 +1387,19 @@ const Calculations = {
      */
     calculateDelinquencyMonthIncome(outstandingPrincipal, monthlyAdmin, opts) {
         const outstanding = Math.max(0, Number(outstandingPrincipal) || 0);
-        const admin = Math.max(0, Number(monthlyAdmin) || RATES.ADMIN_FEE_STANDARD);
+        const requestedAdmin = Math.max(0, Number(monthlyAdmin) || RATES.ADMIN_FEE_STANDARD);
         const lateDays = (opts && Number.isFinite(Number(opts.latePenaltyDays)))
             ? Math.max(0, Number(opts.latePenaltyDays))
             : RATES.LATE_PENALTY_MAX_DAYS;
         const latePenaltyApplied = this.isLatePenaltyPrincipalEligible(outstanding);
-        const latePenalty = latePenaltyApplied
+        const requestedLate = latePenaltyApplied
             ? this.calculateLatePenalty(lateDays, outstanding)
             : 0;
         const incomeCap = this.round(outstanding * RATES.INCOME_TABLE_RATE);
+        // Basket must not exceed the 30% income cap: admin first, then late,
+        // then interest fills any remainder.
+        let admin = Math.min(requestedAdmin, incomeCap);
+        let latePenalty = Math.min(requestedLate, Math.max(0, this.round(incomeCap - admin)));
         const interest = Math.max(0, this.round(incomeCap - admin - latePenalty));
         const monthIncome = this.round(admin + latePenalty + interest);
         return {
@@ -1388,7 +1409,7 @@ const Calculations = {
             latePenalty,
             interest,
             monthIncome,
-            latePenaltyApplied
+            latePenaltyApplied: latePenaltyApplied && latePenalty > 0
         };
     },
 
@@ -3150,8 +3171,14 @@ const Calculations = {
         let openLiveLate = null;
         let openLiveExtraInterest = null;
         let interestExtraAssessed = 0;
+        let interestExtraInTotal = 0;
         schedule.forEach(entry => {
-            if (entry) interestExtraAssessed += Number(entry.extra_interest_assessed) || 0;
+            if (!entry) return;
+            interestExtraAssessed += Number(entry.extra_interest_assessed) || 0;
+            const inTotal = Number(entry.extra_interest_in_total);
+            interestExtraInTotal += Number.isFinite(inTotal) && inTotal >= 0
+                ? inTotal
+                : (Number(entry.extra_interest_assessed) || 0);
         });
         if (openEntry) {
             const fees = this.assessOpenInstallmentFees(loan, openEntry, asOf, graceDays);
@@ -3179,13 +3206,20 @@ const Calculations = {
         const remainingPrincipal = Number(loan.remaining_principal) || 0;
         const interestPaid = Number(loan.interest_paid) || 0;
         const originalPeriodInterest = this.getOriginalPeriodInterest(loan);
+        // Committed total uses extras folded into total_interest only.
+        // Live/full assessed amounts still drive dues / interest_extra_assessed.
         const interestTotalWithExtra = this.round(
-            Math.max(totalInterest, originalPeriodInterest + interestExtraAssessed));
+            Math.max(totalInterest, originalPeriodInterest + interestExtraInTotal));
+        const interestTotalWithLiveAssessed = this.round(
+            Math.max(interestTotalWithExtra, originalPeriodInterest + interestExtraAssessed));
         // Match payment allocation: never show more interest still owed than
         // getMaxInterestAllowed − interest_paid (lifts legacy 1× caps to 2×;
         // preserves overpayment-recalculated ceilings).
-        let interestRemaining = Math.max(0, this.round(interestTotalWithExtra - interestPaid));
-        const maxInterestAllowed = this.getMaxInterestAllowed(loan);
+        let interestRemaining = Math.max(0, this.round(interestTotalWithLiveAssessed - interestPaid));
+        const maxInterestAllowed = this.getMaxInterestAllowed(loan, openEntry ? {
+            openEntry,
+            openLiveExtraInterest: openLiveExtraInterest
+        } : undefined);
         const interestCapRemaining = Number.isFinite(maxInterestAllowed)
             ? Math.max(0, this.round(maxInterestAllowed - interestPaid))
             : null;
