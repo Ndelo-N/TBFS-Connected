@@ -3627,17 +3627,37 @@ TBFS - Transparent, Fair, Simple
             loan.total_interest = totalInterestCommit;
             loan.total_initiation_fee = totalInitiationFee;
             loan.interest_calculation_months = preserveThrough + remainingInterestPeriod;
-            // Period base = regen remaining interest only (not open-row extras).
-            // Collectible ceiling is statutory 2× period (never lift by
-            // delinquency-inclusive totalInterestCommit).
+            // Period base = scheduled interest for this contract (paid scheduled
+            // + unpaid scheduled on preserved partial + regen remaining).
+            // Exclude delinquency so 2× is not poisoned; mid-loan term changes
+            // must not shrink the cap below interest already paid.
             const priorPeriodInterest = typeof Calculations.getOriginalPeriodInterest === 'function'
                 ? Calculations.getOriginalPeriodInterest(loan)
                 : (Number(loan.original_period_interest) || 0);
-            loan.original_period_interest = Calculations.round(Number(remainingInterest) || 0);
+            const delinquencyPaidForPeriod = typeof Calculations.paidScheduleExtraInterest === 'function'
+                ? Calculations.paidScheduleExtraInterest(loan)
+                : 0;
+            const scheduledInterestPaid = Math.max(
+                0,
+                (Number(interestAlreadyPaid) || 0) - (Number(delinquencyPaidForPeriod) || 0)
+            );
+            let unpaidScheduledOnPartial = 0;
+            if (termChangeOpen && termChangeOpen.status === 'partial') {
+                const scheduledOnOpen = Number(termChangeOpen.interest_payment) || 0;
+                const paidOnOpen = Number(
+                    (termChangeOpen.paid_breakdown || {}).interest
+                ) || 0;
+                unpaidScheduledOnPartial = Math.max(
+                    0,
+                    scheduledOnOpen - Math.min(paidOnOpen, scheduledOnOpen)
+                );
+            }
+            loan.original_period_interest = Calculations.round(
+                scheduledInterestPaid + unpaidScheduledOnPartial + (Number(remainingInterest) || 0)
+            );
             if (!(loan.original_period_interest > 0)) {
-                // Zero regen interest: keep prior period base. Never fall back
-                // to oldTotalInterest / totalInterestCommit — those can already
-                // include delinquency folded into total_interest.
+                // Zero scheduled interest: keep prior period base. Never fall
+                // back to delinquency-inclusive totals.
                 loan.original_period_interest = Calculations.round(
                     Math.max(0, Number(priorPeriodInterest) || 0)
                 );

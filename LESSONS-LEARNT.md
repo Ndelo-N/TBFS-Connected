@@ -4,6 +4,16 @@ Branch-scoped findings from Bugbot / review loops. Newest entries at the top.
 
 ---
 
+## 2026-08-01 — `cursor/delinquency-monthly-interest-a923` (Bugbot loop C round 7)
+
+### LL-DELQ-032 — Term change remaining-only period base zeroed interest cap
+- **Severity:** high
+- **Symptom:** `changeRepaymentPeriod` set `original_period_interest = remainingInterest` only. Mid-loan, `interest_paid` could already exceed `2× remaining`, so `interestCapRemainingFor` became 0 and the waterfall stopped allocating interest/delinquency.
+- **Fix:** Period base = scheduled interest paid (exclude delinquency) + unpaid scheduled on preserved partial + regen remaining; cap = 2× that. Same idea for stockvel top-up outstanding period base.
+- **Lesson:** After mid-loan adjustments, the 2× base must cover scheduled interest already paid plus remaining schedule — remaining-only shrinks the collectible ceiling below history.
+
+---
+
 ## 2026-08-01 — `cursor/delinquency-monthly-interest-a923` (Bugbot loop C round 6)
 
 ### LL-DELQ-031 — Stored max_interest_allowed could exceed statutory 2×
