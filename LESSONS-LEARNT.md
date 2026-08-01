@@ -4,6 +4,16 @@ Branch-scoped findings from Bugbot / review loops. Newest entries at the top.
 
 ---
 
+## 2026-08-01 — `cursor/delinquency-monthly-interest-a923` (Bugbot loop C round 14)
+
+### LL-DELQ-041 — Second-half overpayment gated interest on total_interest lag
+- **Severity:** high
+- **Symptom:** Second-half surplus used `min(total_interest − interest_paid, capLeft)`. When committed `total_interest` lagged claimable delinquency (cap-bound `extra_interest_in_total`), that term was 0 and cash skipped to principal despite cap headroom.
+- **Fix:** Apply second-half surplus up to live `interestCapRemainingFor` only (open entry + assessed extras).
+- **Lesson:** Collectible interest for overpayment is the interest cap remaining, not `total_interest − interest_paid`, once delinquency can sit outside the committed total.
+
+---
+
 ## 2026-08-01 — `cursor/delinquency-monthly-interest-a923` (Bugbot loop C round 13)
 
 ### LL-DELQ-039 — Early payoff could inflate assessed extras past live candidate

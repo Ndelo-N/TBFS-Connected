@@ -2236,13 +2236,17 @@ Click "OK" to process payment or "Cancel" to go back.
                         dbg(`Applied R${extraInitiation.toFixed(2)} to initiation fee balance`);
                     }
                     
-                    // Apply to remaining interest balance (never beyond the
-                    // loan's interest cap — F-02)
-                    const capLeft = Math.max(0, interestCapRemainingFor(loan) - interestPaid);
-                    const remainingInterest = Math.min(
-                        Math.max(0, (loan.total_interest || 0) - (loan.interest_paid || 0)), capLeft);
-                    if (remainingAmount > 0 && remainingInterest > 0) {
-                        const extraInterest = Math.min(remainingAmount, remainingInterest);
+                    // Apply remaining cash to claimable interest under the
+                    // statutory/read-time cap (includes unpaid delinquency
+                    // headroom). Do not gate on total_interest − interest_paid:
+                    // extras may be assessed above what is already folded into
+                    // total_interest via extra_interest_in_total.
+                    const capLeft = Math.max(0, interestCapRemainingFor(loan, {
+                        openEntry: nextPayment,
+                        openLiveExtraInterest: Number(nextPayment.extra_interest_assessed) || 0
+                    }) - interestPaid);
+                    if (remainingAmount > 0 && capLeft > 0) {
+                        const extraInterest = Math.min(remainingAmount, capLeft);
                         interestPaid += extraInterest;
                         remainingAmount -= extraInterest;
                         dbg(`Applied R${extraInterest.toFixed(2)} to interest balance`);
