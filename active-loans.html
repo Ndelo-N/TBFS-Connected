@@ -1249,12 +1249,22 @@ Click "OK" to process payment or "Cancel" to go back.
                                 );
                             }
                             if (extraInterestAssessedCandidate > 0) {
-                                payment.extra_interest_assessed = Math.max(
-                                    Number(payment.extra_interest_assessed) || 0,
-                                    extraInterestAssessedCandidate
-                                );
-                                if (typeof Calculations.syncDelinquencyInterestTracking === 'function') {
-                                    Calculations.syncDelinquencyInterestTracking(loan);
+                                if (typeof Calculations.applyExtraInterestAssessment === 'function') {
+                                    // total_interest already includes claimable
+                                    // delinquency via interest_paid path; only
+                                    // persist the assessed field without re-bumping.
+                                    payment.extra_interest_assessed = Math.max(
+                                        Number(payment.extra_interest_assessed) || 0,
+                                        extraInterestAssessedCandidate
+                                    );
+                                    if (typeof Calculations.syncDelinquencyInterestTracking === 'function') {
+                                        Calculations.syncDelinquencyInterestTracking(loan);
+                                    }
+                                } else {
+                                    payment.extra_interest_assessed = Math.max(
+                                        Number(payment.extra_interest_assessed) || 0,
+                                        extraInterestAssessedCandidate
+                                    );
                                 }
                             }
                             pb.initiation = Calculations.round(
@@ -2071,12 +2081,15 @@ Click "OK" to process payment or "Cancel" to go back.
             }
 
             if (nextPayment && feeAssess.extraInterestAssessedCandidate > 0) {
-                nextPayment.extra_interest_assessed = Math.max(
-                    Number(nextPayment.extra_interest_assessed) || 0,
-                    feeAssess.extraInterestAssessedCandidate
-                );
-                if (typeof Calculations.syncDelinquencyInterestTracking === 'function') {
-                    Calculations.syncDelinquencyInterestTracking(loan);
+                if (typeof Calculations.applyExtraInterestAssessment === 'function') {
+                    Calculations.applyExtraInterestAssessment(
+                        loan, nextPayment, feeAssess.extraInterestAssessedCandidate
+                    );
+                } else {
+                    nextPayment.extra_interest_assessed = Math.max(
+                        Number(nextPayment.extra_interest_assessed) || 0,
+                        feeAssess.extraInterestAssessedCandidate
+                    );
                 }
             }
             
@@ -3399,26 +3412,7 @@ TBFS - Transparent, Fair, Simple
                 new Date(),
                 termChangeGrace
             );
-            if (termChangeOpen) {
-                if (termChangeFees.extraAdminAssessedCandidate > 0) {
-                    termChangeOpen.extra_admin_assessed = Math.max(
-                        Number(termChangeOpen.extra_admin_assessed) || 0,
-                        termChangeFees.extraAdminAssessedCandidate
-                    );
-                }
-                if (termChangeFees.latePenaltyAssessedCandidate > 0) {
-                    termChangeOpen.late_penalty_assessed = Math.max(
-                        Number(termChangeOpen.late_penalty_assessed) || 0,
-                        termChangeFees.latePenaltyAssessedCandidate
-                    );
-                }
-                if (termChangeFees.extraInterestAssessedCandidate > 0) {
-                    termChangeOpen.extra_interest_assessed = Math.max(
-                        Number(termChangeOpen.extra_interest_assessed) || 0,
-                        termChangeFees.extraInterestAssessedCandidate
-                    );
-                }
-            }
+            // Candidates only until confirm — do not mutate the open row yet.
             const unpaidPartial = unpaidOnPartialEntry(termChangeOpen, {
                 extraAdminAssessedCandidate: termChangeFees.extraAdminAssessedCandidate,
                 latePenaltyAssessedCandidate: termChangeFees.latePenaltyAssessedCandidate,
@@ -3545,12 +3539,9 @@ TBFS - Transparent, Fair, Simple
             loan.total_interest = totalInterest;
             loan.total_initiation_fee = totalInitiationFee;
             loan.interest_calculation_months = preserveThrough + remainingInterestPeriod;
-            // Refresh period-interest base for the adjusted outstanding schedule
-            // (regen months + open-row unpaid interest). Cap = max(2×period,
-            // new total interest, interest already paid) — same as top-up.
-            loan.original_period_interest = Calculations.round(
-                (Number(remainingInterest) || 0) + (Number(unpaidPartial.interest) || 0)
-            );
+            // Period base = regen remaining interest only (not open-row extras).
+            // Cap covers 2× period, new total, and interest already paid.
+            loan.original_period_interest = Calculations.round(Number(remainingInterest) || 0);
             if (!(loan.original_period_interest > 0)) {
                 loan.original_period_interest = Calculations.round(
                     Number(oldTotalInterest) || totalInterest || 0
@@ -3562,6 +3553,29 @@ TBFS - Transparent, Fair, Simple
                 Number(interestAlreadyPaid) || 0
             ));
             loan.expected_monthly_interest = repaymentBreakdown.interestPerMonthRaw;
+
+            // Persist live delinquency assessments only after confirm so cancel
+            // does not leave fees on the in-memory loan.
+            if (termChangeOpen) {
+                if (termChangeFees.extraAdminAssessedCandidate > 0) {
+                    termChangeOpen.extra_admin_assessed = Math.max(
+                        Number(termChangeOpen.extra_admin_assessed) || 0,
+                        termChangeFees.extraAdminAssessedCandidate
+                    );
+                }
+                if (termChangeFees.latePenaltyAssessedCandidate > 0) {
+                    termChangeOpen.late_penalty_assessed = Math.max(
+                        Number(termChangeOpen.late_penalty_assessed) || 0,
+                        termChangeFees.latePenaltyAssessedCandidate
+                    );
+                }
+                if (termChangeFees.extraInterestAssessedCandidate > 0) {
+                    termChangeOpen.extra_interest_assessed = Math.max(
+                        Number(termChangeOpen.extra_interest_assessed) || 0,
+                        termChangeFees.extraInterestAssessedCandidate
+                    );
+                }
+            }
             
             // STEP 2: UPDATE MONTHLY PAYMENT
             loan.monthly_payment = newMonthlyPayment;
@@ -3579,11 +3593,10 @@ TBFS - Transparent, Fair, Simple
             });
             if (typeof Calculations.syncDelinquencyInterestTracking === 'function') {
                 Calculations.syncDelinquencyInterestTracking(loan);
-                loan.total_interest = Math.max(
-                    Number(loan.total_interest) || 0,
-                    interestAlreadyPaid + unpaidPartial.interest + remainingInterest
-                );
             }
+            loan.total_interest = Calculations.round(
+                interestAlreadyPaid + unpaidPartial.interest + remainingInterest
+            );
             
             // STEP 4: LOG ADJUSTMENT (loan-local + global transactions)
             const afterSnapshot = snapshotLoanAdjustmentState(loan);
@@ -3773,8 +3786,7 @@ TBFS - Transparent, Fair, Simple
             // Period-interest base for the 2× collectible cap (not lifetime paid+remaining).
             let periodInterestBase = Number(loan.original_period_interest) || 0;
 
-            // Live-assess delinquency on the open row so unpaidPartial.interest
-            // includes extra interest (not only previously persisted values).
+            // Live-assess delinquency candidates (no persist until confirm).
             const topUpOpenEntry = getNextPendingScheduleEntry(loan);
             const topUpGrace = AppState.gracePeriodDays || 3;
             const topUpFeeAssess = assessOpenInstallmentFees(
@@ -3785,26 +3797,6 @@ TBFS - Transparent, Fair, Simple
                 new Date(),
                 topUpGrace
             );
-            if (topUpOpenEntry) {
-                if (topUpFeeAssess.extraAdminAssessedCandidate > 0) {
-                    topUpOpenEntry.extra_admin_assessed = Math.max(
-                        Number(topUpOpenEntry.extra_admin_assessed) || 0,
-                        topUpFeeAssess.extraAdminAssessedCandidate
-                    );
-                }
-                if (topUpFeeAssess.latePenaltyAssessedCandidate > 0) {
-                    topUpOpenEntry.late_penalty_assessed = Math.max(
-                        Number(topUpOpenEntry.late_penalty_assessed) || 0,
-                        topUpFeeAssess.latePenaltyAssessedCandidate
-                    );
-                }
-                if (topUpFeeAssess.extraInterestAssessedCandidate > 0) {
-                    topUpOpenEntry.extra_interest_assessed = Math.max(
-                        Number(topUpOpenEntry.extra_interest_assessed) || 0,
-                        topUpFeeAssess.extraInterestAssessedCandidate
-                    );
-                }
-            }
             const unpaidPartial = unpaidOnPartialEntry(topUpOpenEntry, {
                 extraAdminAssessedCandidate: topUpFeeAssess.extraAdminAssessedCandidate,
                 latePenaltyAssessedCandidate: topUpFeeAssess.latePenaltyAssessedCandidate,
@@ -3932,6 +3924,28 @@ TBFS - Transparent, Fair, Simple
             loan.expected_monthly_interest = stockvelPlan
                 ? stockvelPlan.averageInterestRaw
                 : (remainingInterest / remainingMonths);
+
+            // Persist live delinquency assessments only after confirm.
+            if (topUpOpenEntry) {
+                if (topUpFeeAssess.extraAdminAssessedCandidate > 0) {
+                    topUpOpenEntry.extra_admin_assessed = Math.max(
+                        Number(topUpOpenEntry.extra_admin_assessed) || 0,
+                        topUpFeeAssess.extraAdminAssessedCandidate
+                    );
+                }
+                if (topUpFeeAssess.latePenaltyAssessedCandidate > 0) {
+                    topUpOpenEntry.late_penalty_assessed = Math.max(
+                        Number(topUpOpenEntry.late_penalty_assessed) || 0,
+                        topUpFeeAssess.latePenaltyAssessedCandidate
+                    );
+                }
+                if (topUpFeeAssess.extraInterestAssessedCandidate > 0) {
+                    topUpOpenEntry.extra_interest_assessed = Math.max(
+                        Number(topUpOpenEntry.extra_interest_assessed) || 0,
+                        topUpFeeAssess.extraInterestAssessedCandidate
+                    );
+                }
+            }
             
             // STEP 5: UPDATE APPSTATE
             AppState.capital = availableCapital - amount;
@@ -3953,11 +3967,8 @@ TBFS - Transparent, Fair, Simple
             });
             if (typeof Calculations.syncDelinquencyInterestTracking === 'function') {
                 Calculations.syncDelinquencyInterestTracking(loan);
-                recalculatedInterest = Math.max(
-                    recalculatedInterest, Number(loan.total_interest) || 0
-                );
-                loan.total_interest = recalculatedInterest;
             }
+            loan.total_interest = Calculations.round(recalculatedInterest);
             
             // STEP 7: LOG ADJUSTMENT (loan-local + global transactions)
             const afterSnapshot = snapshotLoanAdjustmentState(loan);

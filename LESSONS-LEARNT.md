@@ -4,6 +4,22 @@ Branch-scoped findings from Bugbot / review loops. Newest entries at the top.
 
 ---
 
+## 2026-08-01 — `cursor/delinquency-monthly-interest-a923` (Bugbot loop B round 1)
+
+### LL-DELQ-010 — syncDelinquencyInterestTracking inflated total_interest
+- **Severity:** high
+- **Symptom:** Sync set `total_interest = original_period_interest + Σ extras`, double-counting after top-up/term-change where extras were already in `paid + unpaidPartial + remaining`.
+- **Fix:** Sync only ensures period base + 2× cap. New `applyExtraInterestAssessment` bumps `total_interest` by assessment **delta** only on payment.
+- **Lesson:** Never recompute total_interest as period+extras after adjustments; use delta applies or the paid+unpaid+remaining identity.
+
+### LL-DELQ-011 — Term change/top-up persisted fees before confirm
+- **Severity:** medium
+- **Symptom:** Live delinquency fields were written onto the open schedule row before reason/preview confirms; cancel left assessments in memory.
+- **Fix:** Pass candidates into `unpaidOnPartialEntry` only; persist `extra_*` / late onto the open row after confirm, before schedule regen.
+- **Lesson:** Match payment-modal rule — assess for math early, persist only after operator confirm.
+
+---
+
 ## 2026-08-01 — `cursor/delinquency-monthly-interest-a923` (Bugbot round 4)
 
 ### LL-DELQ-009 — Term change left stale 2× interest cap base

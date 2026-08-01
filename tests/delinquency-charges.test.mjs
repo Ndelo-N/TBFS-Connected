@@ -155,7 +155,7 @@ test('effective interest due includes extra_interest_assessed', () => {
     assert.equal(C.getEntryEffectiveInterestDue(entry), 819);
 });
 
-test('syncDelinquencyInterestTracking raises total_interest for extras', () => {
+test('syncDelinquencyInterestTracking only ensures cap (no total rewrite)', () => {
     const loan = eligibleLoan({
         total_interest: 3960,
         schedule: [{
@@ -167,7 +167,28 @@ test('syncDelinquencyInterestTracking raises total_interest for extras', () => {
     });
     C.syncDelinquencyInterestTracking(loan);
     assert.equal(loan.max_interest_allowed, 7920);
-    assert.equal(loan.total_interest, 3960 + 819);
+    // Must not inflate to original + extras (double-count after adjustments)
+    assert.equal(loan.total_interest, 3960);
+});
+
+test('applyExtraInterestAssessment bumps total_interest by delta only', () => {
+    const entry = {
+        due_date: '2026-06-30',
+        status: 'partial',
+        extra_interest_assessed: 100,
+        admin_fee: 60
+    };
+    const loan = eligibleLoan({
+        total_interest: 3960,
+        schedule: [entry]
+    });
+    const delta = C.applyExtraInterestAssessment(loan, entry, 819);
+    assert.equal(delta, 719);
+    assert.equal(entry.extra_interest_assessed, 819);
+    assert.equal(loan.total_interest, 3960 + 719);
+    // Second apply with same candidate is a no-op
+    assert.equal(C.applyExtraInterestAssessment(loan, entry, 819), 0);
+    assert.equal(loan.total_interest, 3960 + 719);
 });
 
 test('stockvel loans use same delinquency eligibility', () => {

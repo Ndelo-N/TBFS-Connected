@@ -1697,9 +1697,11 @@ const Calculations = {
     },
 
     /**
-     * Ensure loan interest tracking reflects delinquency interest headroom.
-     * Sets original_period_interest (if missing) and max_interest_allowed = 2×.
-     * Raises total_interest to cover assessed extra interest on the schedule.
+     * Ensure loan interest tracking has a period base and 2× collectible cap.
+     * Does NOT rewrite total_interest — callers own that identity (origination,
+     * payment delta on newly assessed extras, or paid+unpaid+remaining on
+     * adjustments). Rewriting as original_period_interest + Σ extras double-
+     * counts after top-up/term-change where extras are already folded in.
      */
     syncDelinquencyInterestTracking(loan) {
         if (!loan) return loan;
@@ -1708,18 +1710,24 @@ const Calculations = {
             loan.original_period_interest = original;
         }
         this.ensureMaxInterestAllowed(loan);
-
-        const schedule = Array.isArray(loan.schedule) ? loan.schedule : [];
-        let extraInterest = 0;
-        schedule.forEach(entry => {
-            if (entry) extraInterest += Number(entry.extra_interest_assessed) || 0;
-        });
-        const withExtra = this.round(original + extraInterest);
-        const currentTotal = Number(loan.total_interest) || 0;
-        if (withExtra > currentTotal) {
-            loan.total_interest = withExtra;
-        }
         return loan;
+    },
+
+    /**
+     * Persist a new extra_interest_assessed on an open entry and bump
+     * total_interest by the delta only (no double-count).
+     */
+    applyExtraInterestAssessment(loan, entry, assessedCandidate) {
+        if (!loan || !entry) return 0;
+        const prev = Number(entry.extra_interest_assessed) || 0;
+        const next = Math.max(prev, Number(assessedCandidate) || 0);
+        const delta = this.round(next - prev);
+        entry.extra_interest_assessed = next;
+        if (delta > 0) {
+            loan.total_interest = this.round((Number(loan.total_interest) || 0) + delta);
+        }
+        this.syncDelinquencyInterestTracking(loan);
+        return delta;
     },
 
     /** Reliability band labels for UI. */
