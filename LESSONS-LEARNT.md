@@ -4,6 +4,22 @@ Branch-scoped findings from Bugbot / review loops. Newest entries at the top.
 
 ---
 
+## 2026-08-01 — `cursor/delinquency-monthly-interest-a923` (Bugbot loop C round 13)
+
+### LL-DELQ-039 — Early payoff could inflate assessed extras past live candidate
+- **Severity:** high
+- **Symptom:** Payoff passed `max(liveCandidate, prevInTotal + partialExtra)` as the assessed amount into `applyExtraInterestAssessment`, allowing `extra_interest_assessed` / total folds above the live candidate.
+- **Fix:** `fullCandidate = max(live, row assessed)`; `claimableInTotal = min(fullCandidate, prevInTotal + partialExtra)`.
+- **Lesson:** Payoff assessment apply must match payment confirm — full candidate for the row, claimable-in-total capped by that candidate.
+
+### LL-DELQ-040 — Early payoff credited uncapped unpaid scheduled on the row
+- **Severity:** medium
+- **Symptom:** `paid_breakdown.interest` used full `unpaidScheduledOnOpen` while cash/`interest_paid` only included `interestOwed + claimableUnpaidScheduled` (cap-limited).
+- **Fix:** Credit `min(unpaidScheduledOnOpen, interestOwed + claimableUnpaidScheduled)` plus delinquency collected.
+- **Lesson:** Row paid_breakdown interest must match cap-limited collection, not the uncapped unpaid scheduled balance.
+
+---
+
 ## 2026-08-01 — `cursor/delinquency-monthly-interest-a923` (Bugbot loop C round 12)
 
 ### LL-DELQ-038 — Early payoff double-charged scheduled interest with add-on

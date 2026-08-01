@@ -1290,21 +1290,25 @@ Click "OK" to process payment or "Cancel" to go back.
                                 const prevInTotal = Number.isFinite(Number(payment.extra_interest_in_total))
                                     ? Number(payment.extra_interest_in_total)
                                     : (Number(payment.extra_interest_assessed) || 0);
-                                const claimableInTotal = prevInTotal + Math.max(0, partialExtraInterest);
+                                const fullCandidate = Math.max(
+                                    Number(extraInterestAssessedCandidate) || 0,
+                                    Number(payment.extra_interest_assessed) || 0
+                                );
+                                const claimableInTotal = Math.min(
+                                    fullCandidate,
+                                    prevInTotal + Math.max(0, partialExtraInterest)
+                                );
                                 if (typeof Calculations.applyExtraInterestAssessment === 'function') {
                                     Calculations.applyExtraInterestAssessment(
                                         loan,
                                         payment,
-                                        Math.max(
-                                            extraInterestAssessedCandidate,
-                                            claimableInTotal
-                                        ),
+                                        fullCandidate,
                                         claimableInTotal
                                     );
                                 } else {
                                     payment.extra_interest_assessed = Math.max(
                                         Number(payment.extra_interest_assessed) || 0,
-                                        extraInterestAssessedCandidate
+                                        fullCandidate
                                     );
                                     payment.extra_interest_in_total = Math.max(
                                         prevInTotal,
@@ -1319,12 +1323,15 @@ Click "OK" to process payment or "Cancel" to go back.
                                     pb.admin || 0,
                                     baseAdmin + (Number(payment.extra_admin_assessed) || 0)
                                 ));
-                            // Settle remaining scheduled on the row (may already
-                            // be cash-collected via interestOwed and/or the
-                            // scheduled add-on gap) plus claimable delinquency.
+                            // Credit only scheduled interest actually collected
+                            // (prorated interestOwed + capped scheduled add-on).
                             const prevPaidInterest = Number(pb.interest) || 0;
+                            const scheduledCredited = Math.min(
+                                unpaidScheduledOnOpen,
+                                (Number(payoffData.interestOwed) || 0) + claimableUnpaidScheduled
+                            );
                             pb.interest = Calculations.round(
-                                prevPaidInterest + unpaidScheduledOnOpen + partialExtraInterest
+                                prevPaidInterest + scheduledCredited + partialExtraInterest
                             );
                             pb.principal = Calculations.round(
                                 Math.max(pb.principal || 0, Number(payment.principal_payment) || 0));
