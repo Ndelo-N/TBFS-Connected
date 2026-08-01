@@ -3628,7 +3628,8 @@ TBFS - Transparent, Fair, Simple
             loan.total_initiation_fee = totalInitiationFee;
             loan.interest_calculation_months = preserveThrough + remainingInterestPeriod;
             // Period base = regen remaining interest only (not open-row extras).
-            // Cap covers 2× period, new total, and interest already paid.
+            // Collectible ceiling is statutory 2× period (never lift by
+            // delinquency-inclusive totalInterestCommit).
             const priorPeriodInterest = typeof Calculations.getOriginalPeriodInterest === 'function'
                 ? Calculations.getOriginalPeriodInterest(loan)
                 : (Number(loan.original_period_interest) || 0);
@@ -3641,11 +3642,9 @@ TBFS - Transparent, Fair, Simple
                     Math.max(0, Number(priorPeriodInterest) || 0)
                 );
             }
-            loan.max_interest_allowed = Calculations.round(Math.max(
-                (Number(loan.original_period_interest) || 0) * 2,
-                Number(totalInterestCommit) || 0,
-                Number(interestAlreadyPaid) || 0
-            ));
+            loan.max_interest_allowed = Calculations.round(
+                (Number(loan.original_period_interest) || 0) * 2
+            );
             loan.expected_monthly_interest = repaymentBreakdown.interestPerMonthRaw;
 
             // STEP 2: UPDATE MONTHLY PAYMENT
@@ -4077,13 +4076,11 @@ TBFS - Transparent, Fair, Simple
                 ? (preserveThrough + remainingMonths)
                 : Calculations.calculateInterestPeriod(currentTerm).interestMonths;
             // Cap base = new period interest only (not paid+remaining lifetime).
-            // Ceiling is at least 2× that base and at least scheduled total interest.
+            // Collectible ceiling is statutory 2× period (not delinquency totals).
             loan.original_period_interest = Number(periodInterestBase) || 0;
-            loan.max_interest_allowed = Calculations.round(Math.max(
-                (Number(loan.original_period_interest) || 0) * 2,
-                Number(recalculatedInterest) || 0,
-                Number(interestAlreadyPaid) || 0
-            ));
+            loan.max_interest_allowed = Calculations.round(
+                (Number(loan.original_period_interest) || 0) * 2
+            );
             loan.expected_monthly_interest = stockvelPlan
                 ? stockvelPlan.averageInterestRaw
                 : (remainingInterest / remainingMonths);

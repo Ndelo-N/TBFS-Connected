@@ -375,9 +375,11 @@ const Calculations = {
                 entry: opts && opts.openEntry,
                 extraInterestAssessed: opts && opts.openLiveExtraInterest
             });
+            // Lowered overpayment freeze + unpaid extras, never above statutory 2×.
             return this.round(Math.min(target, existing + unpaid));
         }
-        if (Number.isFinite(existing) && existing > target) return this.round(existing);
+        // Non-recalculated loans: statutory 2× period only. Do not honor a
+        // stored max_interest_allowed inflated by delinquency-inclusive totals.
         return target;
     },
 

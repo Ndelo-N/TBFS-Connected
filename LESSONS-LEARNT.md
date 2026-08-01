@@ -4,6 +4,16 @@ Branch-scoped findings from Bugbot / review loops. Newest entries at the top.
 
 ---
 
+## 2026-08-01 — `cursor/delinquency-monthly-interest-a923` (Bugbot loop C round 6)
+
+### LL-DELQ-031 — Stored max_interest_allowed could exceed statutory 2×
+- **Severity:** high
+- **Symptom:** Term-change/top-up set `max_interest_allowed = max(2×period, total_interest, interest_paid)`. Delinquency-inflated totals made the store exceed 2×, and `getMaxInterestAllowed` returned any stored value above target on non-recalculated loans.
+- **Fix:** Persist and read statutory `2× original_period_interest` for normal loans; only overpayment freezes may sit below 2× (still capped at 2× with unpaid extras).
+- **Lesson:** Never lift the collectible ceiling above 2× period using `total_interest` that may include delinquency.
+
+---
+
 ## 2026-08-01 — `cursor/delinquency-monthly-interest-a923` (Bugbot loop C round 5)
 
 ### LL-DELQ-028 — Confirm claimableInTotal used cap without live extras

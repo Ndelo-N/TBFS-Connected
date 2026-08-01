@@ -147,6 +147,14 @@ test('max interest allowed is 2× original period interest', () => {
     const legacy = eligibleLoan({ max_interest_allowed: 3960 });
     assert.equal(C.getMaxInterestAllowed(legacy), 7920);
 
+    // Stored max inflated by delinquency-inclusive totals is not honored
+    const inflatedStore = eligibleLoan({
+        original_period_interest: 3960,
+        max_interest_allowed: 9000,
+        total_interest: 5000
+    });
+    assert.equal(C.getMaxInterestAllowed(inflatedStore), 7920);
+
     // Overpayment recalc keeps a deliberately lowered scheduled freeze
     const recalced = eligibleLoan({
         max_interest_allowed: 2000,
