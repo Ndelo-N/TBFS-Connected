@@ -4,6 +4,15 @@ Branch-scoped findings from Bugbot / review loops. Newest entries at the top.
 
 ---
 
+## 2026-08-01 — `cursor/delinquency-monthly-interest-a923` (Bugbot loop C rounds 15–17)
+
+### Clean passes
+- **Round 15:** No new bugs found.
+- **Round 16:** No new bugs found (verification re-run).
+- **Round 17:** No new bugs found (verification re-run).
+
+---
+
 ## 2026-08-01 — `cursor/delinquency-monthly-interest-a923` (Bugbot loop C round 14)
 
 ### LL-DELQ-041 — Second-half overpayment gated interest on total_interest lag
