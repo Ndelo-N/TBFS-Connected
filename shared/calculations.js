@@ -272,15 +272,31 @@ const Calculations = {
     },
 
     /**
+     * Sum extra_interest_assessed across the schedule.
+     */
+    sumScheduleExtraInterest(loan) {
+        if (!loan || !Array.isArray(loan.schedule)) return 0;
+        let extras = 0;
+        loan.schedule.forEach(entry => {
+            if (entry) extras += Number(entry.extra_interest_assessed) || 0;
+        });
+        return this.round(extras);
+    },
+
+    /**
      * Resolve original period interest for the 2× collectible cap.
-     * Prefers the stored origination value; falls back for legacy loans.
+     * Prefers the stored origination value. For legacy loans, derives
+     * period base as total_interest − schedule extras so delinquency
+     * already folded into total_interest is not treated as period interest.
      */
     getOriginalPeriodInterest(loan) {
         if (!loan) return 0;
         const stored = Number(loan.original_period_interest);
         if (Number.isFinite(stored) && stored >= 0) return this.round(stored);
         const total = Number(loan.total_interest);
-        if (Number.isFinite(total) && total >= 0) return this.round(total);
+        if (Number.isFinite(total) && total >= 0) {
+            return this.round(Math.max(0, total - this.sumScheduleExtraInterest(loan)));
+        }
         return 0;
     },
 
@@ -1705,9 +1721,9 @@ const Calculations = {
      */
     syncDelinquencyInterestTracking(loan) {
         if (!loan) return loan;
-        const original = this.getOriginalPeriodInterest(loan);
         if (!Number.isFinite(Number(loan.original_period_interest))) {
-            loan.original_period_interest = original;
+            // Backfill period base before/without treating delinquency as period.
+            loan.original_period_interest = this.getOriginalPeriodInterest(loan);
         }
         this.ensureMaxInterestAllowed(loan);
         return loan;
@@ -1719,6 +1735,15 @@ const Calculations = {
      */
     applyExtraInterestAssessment(loan, entry, assessedCandidate) {
         if (!loan || !entry) return 0;
+        // Freeze period base BEFORE total_interest grows with delinquency
+        // so legacy loans do not adopt inflated total as original_period_interest.
+        if (!Number.isFinite(Number(loan.original_period_interest))) {
+            const extrasBefore = this.sumScheduleExtraInterest(loan);
+            const totalBefore = Number(loan.total_interest) || 0;
+            loan.original_period_interest = this.round(
+                Math.max(0, totalBefore - extrasBefore)
+            );
+        }
         const prev = Number(entry.extra_interest_assessed) || 0;
         const next = Math.max(prev, Number(assessedCandidate) || 0);
         const delta = this.round(next - prev);

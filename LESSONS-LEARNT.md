@@ -4,6 +4,16 @@ Branch-scoped findings from Bugbot / review loops. Newest entries at the top.
 
 ---
 
+## 2026-08-01 — `cursor/delinquency-monthly-interest-a923` (Bugbot loop B round 6)
+
+### LL-DELQ-018 — Legacy sync poisoned original_period_interest from inflated total
+- **Severity:** high
+- **Symptom:** On loans missing `original_period_interest`, `applyExtraInterestAssessment` raised `total_interest` then sync backfilled period base from `getOriginalPeriodInterest` → `total_interest`, so delinquency became part of the 2× cap base.
+- **Fix:** Freeze period base before the total bump (`total − existing extras`); `getOriginalPeriodInterest` legacy fallback also subtracts schedule extras.
+- **Lesson:** Never derive `original_period_interest` from a total that may already include delinquency.
+
+---
+
 ## 2026-08-01 — `cursor/delinquency-monthly-interest-a923` (Bugbot loop B round 5)
 
 ### LL-DELQ-017 — Early payoff inflated total_interest past the interest cap

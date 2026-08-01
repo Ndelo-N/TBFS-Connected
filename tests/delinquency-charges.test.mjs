@@ -191,6 +191,28 @@ test('applyExtraInterestAssessment bumps total_interest by delta only', () => {
     assert.equal(loan.total_interest, 3960 + 719);
 });
 
+test('legacy applyExtraInterestAssessment does not poison period base', () => {
+    const entry = {
+        due_date: '2026-06-30',
+        status: 'pending',
+        admin_fee: 60
+    };
+    // Legacy loan: no original_period_interest stored
+    const loan = {
+        status: 'active',
+        created_at: '2026-03-01T12:00:00.000Z',
+        remaining_principal: 3000,
+        total_interest: 480,
+        max_interest_allowed: 480,
+        interest_paid: 0,
+        schedule: [entry]
+    };
+    C.applyExtraInterestAssessment(loan, entry, 200);
+    assert.equal(loan.original_period_interest, 480);
+    assert.equal(loan.total_interest, 680);
+    assert.equal(loan.max_interest_allowed, 960); // 2× period, not 2× inflated total
+});
+
 test('stockvel loans use same delinquency eligibility', () => {
     const loan = eligibleLoan({
         loan_type: 'stockvel',
