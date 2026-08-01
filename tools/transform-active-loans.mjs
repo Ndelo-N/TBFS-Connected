@@ -341,8 +341,15 @@ rep(
                     loan.max_interest_allowed = newMaxInterest;
                     loan.expected_monthly_interest = newMaxInterest / loan.term_months;`,
 `                    const previousMaxInterest = loan.max_interest_allowed || 0;
+                    const delinquencyPaid = typeof Calculations.paidScheduleExtraInterest === 'function'
+                        ? Calculations.paidScheduleExtraInterest(loan)
+                        : 0;
+                    const scheduledInterestPaid = Math.max(
+                        0,
+                        (Number(loan.interest_paid) || 0) - (Number(delinquencyPaid) || 0)
+                    );
                     const scheduledMaxInterest = Calculations.round(
-                        (Number(loan.interest_paid) || 0) + newInterestCalculation
+                        scheduledInterestPaid + newInterestCalculation
                     );
                     const newMaxInterest = scheduledMaxInterest;
                     loan.max_interest_allowed = newMaxInterest;

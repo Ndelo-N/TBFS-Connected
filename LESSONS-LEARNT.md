@@ -4,6 +4,28 @@ Branch-scoped findings from Bugbot / review loops. Newest entries at the top.
 
 ---
 
+## 2026-08-01 — `cursor/delinquency-monthly-interest-a923` (Bugbot loop C round 5)
+
+### LL-DELQ-028 — Confirm claimableInTotal used cap without live extras
+- **Severity:** high
+- **Symptom:** `claimableInTotal` called `interestCapRemainingFor(loan)` before stamping, so on `interest_recalculated` loans the fold into `total_interest` omitted live unpaid extras that the post-stamp waterfall could still collect.
+- **Fix:** Pass `openEntry` + live candidate into confirm-time `interestCapRemainingFor` (same as preview).
+- **Lesson:** Any pre-waterfall claimable-total math must use the same live cap inputs as allocation.
+
+### LL-DELQ-029 — Early payoff omitted live extras from max interest
+- **Severity:** medium
+- **Symptom:** Payoff clamped delinquency with `getMaxInterestAllowed(loan)` only, so recalculated loans with unpersisted live extras got zero/understated headroom.
+- **Fix:** Pass open entry + live extra candidate into payoff `getMaxInterestAllowed`.
+- **Lesson:** Payoff cap reads must match payment confirm/preview live assessment wiring.
+
+### LL-DELQ-030 — Overpayment freeze included delinquency inside interest_paid
+- **Severity:** medium
+- **Symptom:** `scheduledMaxInterest = interest_paid + newInterestCalculation` treated delinquency collected in the same payment as scheduled, inflating the stored freeze.
+- **Fix:** Subtract `paidScheduleExtraInterest` before adding recomputed scheduled remaining interest.
+- **Lesson:** Scheduled-only freezes must exclude every delinquency component already inside `interest_paid`.
+
+---
+
 ## 2026-08-01 — `cursor/delinquency-monthly-interest-a923` (Bugbot loop C round 4)
 
 ### LL-DELQ-024 — Recalculated cap could exceed statutory 2× period

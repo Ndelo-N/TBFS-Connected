@@ -1163,7 +1163,10 @@ Click "OK" to process payment or "Cancel" to go back.
                 // AFTER reserving room for prorated payoff interest (applied below).
                 // Do not mutate the loan until the operator confirms add-ons.
                 const maxInterestAllowed = typeof Calculations.getMaxInterestAllowed === 'function'
-                    ? Calculations.getMaxInterestAllowed(loan)
+                    ? Calculations.getMaxInterestAllowed(loan, {
+                        openEntry,
+                        openLiveExtraInterest: extraInterestAssessedCandidate
+                    })
                     : (Number(loan.max_interest_allowed) || Infinity);
                 const capAfterPayoffInterest = Math.max(
                     0,
@@ -2116,7 +2119,10 @@ Click "OK" to process payment or "Cancel" to go back.
                 );
                 const capForExtra = Math.max(
                     0,
-                    interestCapRemainingFor(loan) - unpaidScheduledInterest
+                    interestCapRemainingFor(loan, {
+                        openEntry: nextPayment,
+                        openLiveExtraInterest: fullCandidate
+                    }) - unpaidScheduledInterest
                 );
                 const claimableInTotal = Math.min(
                     fullCandidate,
@@ -2347,12 +2353,19 @@ Click "OK" to process payment or "Cancel" to go back.
                         }
                     }
                     
-                    // Store scheduled-only freeze. Unpaid delinquency headroom
-                    // is added at read time by getMaxInterestAllowed so later
-                    // accrual is not locked out by interest_recalculated.
+                    // Store scheduled-only freeze (exclude delinquency already
+                    // inside interest_paid). Unpaid delinquency headroom is
+                    // added at read time by getMaxInterestAllowed.
                     const previousMaxInterest = loan.max_interest_allowed || 0;
+                    const delinquencyPaid = typeof Calculations.paidScheduleExtraInterest === 'function'
+                        ? Calculations.paidScheduleExtraInterest(loan)
+                        : 0;
+                    const scheduledInterestPaid = Math.max(
+                        0,
+                        (Number(loan.interest_paid) || 0) - (Number(delinquencyPaid) || 0)
+                    );
                     const scheduledMaxInterest = Calculations.round(
-                        (Number(loan.interest_paid) || 0) + newInterestCalculation
+                        scheduledInterestPaid + newInterestCalculation
                     );
                     const newMaxInterest = scheduledMaxInterest;
                     loan.max_interest_allowed = newMaxInterest;

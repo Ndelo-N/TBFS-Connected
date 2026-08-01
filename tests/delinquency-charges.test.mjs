@@ -269,6 +269,19 @@ test('applyExtraInterestAssessment can stamp full assessment with partial total'
     assert.equal(loan.total_interest, 4460);
 });
 
+test('paidScheduleExtraInterest counts only paid-toward-extra', () => {
+    const loan = eligibleLoan({
+        schedule: [{
+            status: 'partial',
+            interest_payment: 100,
+            extra_interest_assessed: 50,
+            paid_breakdown: { interest: 130 }
+        }]
+    });
+    assert.equal(C.paidScheduleExtraInterest(loan), 30);
+    assert.equal(C.unpaidScheduleExtraInterest(loan), 20);
+});
+
 test('unpaidScheduleExtraInterest ignores paid scheduled then extras', () => {
     const loan = eligibleLoan({
         schedule: [

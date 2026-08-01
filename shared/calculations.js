@@ -292,6 +292,24 @@ const Calculations = {
     },
 
     /**
+     * Delinquency interest already collected (paid_breakdown toward extras).
+     * Scheduled interest is treated as paid first.
+     */
+    paidScheduleExtraInterest(loan) {
+        if (!loan || !Array.isArray(loan.schedule)) return 0;
+        let paidExtras = 0;
+        loan.schedule.forEach(entry => {
+            if (!entry) return;
+            const scheduled = Number(entry.interest_payment) || 0;
+            const extra = Number(entry.extra_interest_assessed) || 0;
+            if (!(extra > 0)) return;
+            const paid = Number(entry.paid_breakdown && entry.paid_breakdown.interest) || 0;
+            paidExtras += Math.min(extra, Math.max(0, paid - scheduled));
+        });
+        return this.round(paidExtras);
+    },
+
+    /**
      * Unpaid delinquency interest still sitting on open schedule rows.
      * Scheduled interest is treated as paid first; remainder of paid_breakdown
      * interest counts toward extra_interest_assessed.
