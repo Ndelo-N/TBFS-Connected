@@ -2082,15 +2082,41 @@ Click "OK" to process payment or "Cancel" to go back.
             }
 
             if (nextPayment && feeAssess.extraInterestAssessedCandidate > 0) {
+                // Stamp full assessment on the row for dues/audit, but only
+                // delta-bump total_interest by the claimable amount under the
+                // interest cap after reserving unpaid scheduled interest
+                // (same idea as early-payoff LL-DELQ-017).
+                const prevExtra = Number(nextPayment.extra_interest_assessed) || 0;
+                const fullCandidate = feeAssess.extraInterestAssessedCandidate;
+                const paidInterest = Number(
+                    (nextPayment.paid_breakdown || {}).interest
+                ) || 0;
+                const scheduledInterest = Number(nextPayment.interest_payment) || 0;
+                const unpaidScheduledInterest = Math.max(
+                    0,
+                    scheduledInterest - Math.min(paidInterest, scheduledInterest)
+                );
+                const capForExtra = Math.max(
+                    0,
+                    interestCapRemainingFor(loan) - unpaidScheduledInterest
+                );
+                const totalInterestBumpTarget = Math.min(
+                    fullCandidate,
+                    prevExtra + capForExtra
+                );
                 if (typeof Calculations.applyExtraInterestAssessment === 'function') {
-                    Calculations.applyExtraInterestAssessment(
-                        loan, nextPayment, feeAssess.extraInterestAssessedCandidate
-                    );
-                } else {
-                    nextPayment.extra_interest_assessed = Math.max(
-                        Number(nextPayment.extra_interest_assessed) || 0,
-                        feeAssess.extraInterestAssessedCandidate
-                    );
+                    if (totalInterestBumpTarget > prevExtra) {
+                        Calculations.applyExtraInterestAssessment(
+                            loan, nextPayment, totalInterestBumpTarget
+                        );
+                    }
+                }
+                nextPayment.extra_interest_assessed = Math.max(
+                    Number(nextPayment.extra_interest_assessed) || 0,
+                    fullCandidate
+                );
+                if (typeof Calculations.syncDelinquencyInterestTracking === 'function') {
+                    Calculations.syncDelinquencyInterestTracking(loan);
                 }
             }
             
@@ -2307,21 +2333,16 @@ Click "OK" to process payment or "Cancel" to go back.
                         }
                     }
                     
-                    // Update interest tracking. Cap must still cover unpaid
-                    // delinquency interest on open rows (extra_interest_assessed);
-                    // interest_paid already includes any extras collected here.
+                    // Store scheduled-only freeze. Unpaid delinquency headroom
+                    // is added at read time by getMaxInterestAllowed so later
+                    // accrual is not locked out by interest_recalculated.
                     const previousMaxInterest = loan.max_interest_allowed || 0;
-                    const unpaidDelinquencyInterest = typeof Calculations.unpaidScheduleExtraInterest === 'function'
-                        ? Calculations.unpaidScheduleExtraInterest(loan)
-                        : 0;
                     const scheduledMaxInterest = Calculations.round(
                         (Number(loan.interest_paid) || 0) + newInterestCalculation
                     );
-                    const newMaxInterest = Calculations.round(
-                        scheduledMaxInterest + (Number(unpaidDelinquencyInterest) || 0)
-                    );
+                    const newMaxInterest = scheduledMaxInterest;
                     loan.max_interest_allowed = newMaxInterest;
-                    loan.expected_monthly_interest = scheduledMaxInterest / loan.term_months;
+                    loan.expected_monthly_interest = scheduledMaxInterest / Math.max(1, loan.term_months || 1);
 
                     // Propagate the recalculated interest into the remaining
                     // schedule entries so future allocations and displays use

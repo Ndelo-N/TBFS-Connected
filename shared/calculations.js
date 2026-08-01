@@ -324,13 +324,15 @@ const Calculations = {
      * Collectible interest ceiling.
      * Default / legacy loans: at least 2× original period interest so
      * delinquency interest has headroom on read paths (preview/allocation).
-     * Overpayment recalculation (interest_recalculated) keeps its lowered cap.
+     * Overpayment recalculation stores a lowered scheduled ceiling in
+     * max_interest_allowed; unpaid delinquency on open rows is added at
+     * read time so later accrual still has allocation headroom.
      */
     getMaxInterestAllowed(loan) {
         const existing = Number(loan && loan.max_interest_allowed);
         const target = this.round(this.getOriginalPeriodInterest(loan) * 2);
         if (loan && loan.interest_recalculated && Number.isFinite(existing) && existing >= 0) {
-            return this.round(existing);
+            return this.round(existing + this.unpaidScheduleExtraInterest(loan));
         }
         if (Number.isFinite(existing) && existing > target) return this.round(existing);
         return target;
@@ -338,12 +340,12 @@ const Calculations = {
 
     /**
      * Ensure max_interest_allowed is at least 2× original period interest.
-     * Does not undo overpayment interest reductions.
+     * Does not undo overpayment interest reductions (stored scheduled freeze).
      */
     ensureMaxInterestAllowed(loan) {
         if (!loan) return 0;
         if (loan.interest_recalculated) {
-            return Number(loan.max_interest_allowed) || 0;
+            return this.getMaxInterestAllowed(loan);
         }
         const target = this.round(this.getOriginalPeriodInterest(loan) * 2);
         const existing = Number(loan.max_interest_allowed);

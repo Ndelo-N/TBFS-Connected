@@ -4,13 +4,29 @@ Branch-scoped findings from Bugbot / review loops. Newest entries at the top.
 
 ---
 
+## 2026-08-01 — `cursor/delinquency-monthly-interest-a923` (Bugbot loop C round 2)
+
+### LL-DELQ-021 — Payment confirmation bumped total_interest by uncapped assessment
+- **Severity:** high
+- **Symptom:** Confirm called `applyExtraInterestAssessment` with the full live candidate before the waterfall, so `total_interest` rose by the entire assessment even when `interestCapRemainingFor` could absorb less (early payoff already clamped this in LL-DELQ-017).
+- **Fix:** Reserve unpaid scheduled interest from the cap, delta-bump `total_interest` only up to claimable extras, then stamp the full candidate on the row for dues/audit.
+- **Lesson:** Every confirm path that persists delinquency interest must cap the `total_interest` delta the same way collection is capped.
+
+### LL-DELQ-022 — Frozen overpayment cap blocked later delinquency accrual
+- **Severity:** high
+- **Symptom:** After `interest_recalculated`, `getMaxInterestAllowed` returned only the stored freeze. Baking unpaid extras into the store at recalc time still left later accrual without headroom.
+- **Fix:** Store scheduled-only freeze in `max_interest_allowed`; `getMaxInterestAllowed` adds `unpaidScheduleExtraInterest` at read time when `interest_recalculated`.
+- **Lesson:** A lowered overpayment freeze is for scheduled interest; live unpaid delinquency must remain additive on the read path.
+
+---
+
 ## 2026-08-01 — `cursor/delinquency-monthly-interest-a923` (Bugbot loop C round 1)
 
 ### LL-DELQ-019 — Overpayment recalc froze cap without unpaid delinquency room
 - **Severity:** high
 - **Symptom:** First-half overpayment set `max_interest_allowed = interest_paid + recomputed scheduled interest` and flagged `interest_recalculated`, so `getMaxInterestAllowed` froze that lowered cap with no headroom for unpaid `extra_interest_assessed` on open rows.
-- **Fix:** Add unpaid open-row delinquency interest into the frozen cap (`unpaidScheduleExtraInterest`); keep `expected_monthly_interest` on the scheduled (non-delinquency) base.
-- **Lesson:** Any path that freezes `max_interest_allowed` via `interest_recalculated` must reserve room for still-unpaid delinquency interest.
+- **Fix:** Initially baked unpaid extras into the stored freeze; superseded by LL-DELQ-022 (scheduled freeze + read-time unpaid add) so later accrual also has headroom.
+- **Lesson:** Any path that freezes `max_interest_allowed` via `interest_recalculated` must still allow unpaid delinquency — prefer read-time add over baking a snapshot into the store.
 
 ### LL-DELQ-020 — Term-change zero-interest fallback poisoned period base
 - **Severity:** medium

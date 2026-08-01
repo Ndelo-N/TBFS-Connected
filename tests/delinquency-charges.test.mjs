@@ -137,13 +137,26 @@ test('max interest allowed is 2× original period interest', () => {
     const legacy = eligibleLoan({ max_interest_allowed: 3960 });
     assert.equal(C.getMaxInterestAllowed(legacy), 7920);
 
-    // Overpayment recalc keeps a deliberately lowered cap
+    // Overpayment recalc keeps a deliberately lowered scheduled freeze
     const recalced = eligibleLoan({
         max_interest_allowed: 2000,
         interest_recalculated: true
     });
     assert.equal(C.getMaxInterestAllowed(recalced), 2000);
     assert.equal(C.ensureMaxInterestAllowed(recalced), 2000);
+
+    // Later unpaid delinquency still has headroom on a frozen cap
+    const recalcedWithExtra = eligibleLoan({
+        max_interest_allowed: 2000,
+        interest_recalculated: true,
+        schedule: [{
+            status: 'partial',
+            interest_payment: 100,
+            extra_interest_assessed: 250,
+            paid_breakdown: { interest: 100 }
+        }]
+    });
+    assert.equal(C.getMaxInterestAllowed(recalcedWithExtra), 2250);
 });
 
 test('effective interest due includes extra_interest_assessed', () => {
