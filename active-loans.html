@@ -4004,8 +4004,6 @@ TBFS - Transparent, Fair, Simple
             } else {
                 newTotalInitiationFee = newPrincipal * Calculations.RATES.INITIATION_FEE_RATE;
                 const fullInterest = calculateStandardTotalInterest(newPrincipal, currentTerm);
-                // Cap base = income-table period interest on the new principal/term.
-                periodInterestBase = Calculations.round(Number(fullInterest) || 0);
                 const previousInitiationFee = (loan.total_initiation_fee != null)
                     ? Math.max(0, Number(loan.total_initiation_fee) || 0)
                     : 0;
@@ -4032,6 +4030,20 @@ TBFS - Transparent, Fair, Simple
                 remainingInitiationFee = Math.max(0, remainingInitiationFeeGross - unpaidPartial.initiation);
                 // Delinquency on the open row is additive on top of period remaining.
                 recalculatedInterest = interestAlreadyPaid + unpaidPartial.interest + remainingInterest;
+                // Cap base: prefer income-table fullInterest, but never below
+                // scheduled paid + preserved unpaid scheduled + regen remaining
+                // (exclude delinquency) so mid-loan top-ups cannot zero the cap.
+                const stdDelinquencyPaid = typeof Calculations.paidScheduleExtraInterest === 'function'
+                    ? Calculations.paidScheduleExtraInterest(loan)
+                    : 0;
+                const stdScheduledPaid = Math.max(
+                    0,
+                    (Number(interestAlreadyPaid) || 0) - (Number(stdDelinquencyPaid) || 0)
+                );
+                periodInterestBase = Calculations.round(Math.max(
+                    Number(fullInterest) || 0,
+                    stdScheduledPaid + scheduledUnpaidOnOpen + (Number(remainingInterest) || 0)
+                ));
                 const principalPerMonth = regenPrincipal / remainingMonths;
                 const interestPerMonth = remainingInterest / remainingMonths;
                 const initiationFeePerMonth = remainingInitiationFee / remainingMonths;

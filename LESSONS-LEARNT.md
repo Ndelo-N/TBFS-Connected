@@ -4,6 +4,16 @@ Branch-scoped findings from Bugbot / review loops. Newest entries at the top.
 
 ---
 
+## 2026-08-01 — `cursor/delinquency-monthly-interest-a923` (Bugbot loop C round 8)
+
+### LL-DELQ-033 — Standard top-up fullInterest-only period base could zero cap
+- **Severity:** high
+- **Symptom:** Standard top-up set `original_period_interest = fullInterest` only. When `interest_paid` (esp. with delinquency) already exceeded that figure, `2×` fell below collected interest and waterfall headroom hit zero.
+- **Fix:** `periodInterestBase = max(fullInterest, scheduledPaid + unpaidScheduledOnPartial + remainingInterest)`.
+- **Lesson:** Same mid-loan rule as term-change/stockvel — income-table fullInterest is a floor preference, not a license to shrink below scheduled history.
+
+---
+
 ## 2026-08-01 — `cursor/delinquency-monthly-interest-a923` (Bugbot loop C round 7)
 
 ### LL-DELQ-032 — Term change remaining-only period base zeroed interest cap
