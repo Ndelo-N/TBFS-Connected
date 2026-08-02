@@ -1407,7 +1407,11 @@ const Calculations = {
      */
     calculateDelinquencyMonthIncome(outstandingPrincipal, monthlyAdmin, opts) {
         const outstanding = Math.max(0, Number(outstandingPrincipal) || 0);
-        const requestedAdmin = Math.max(0, Number(monthlyAdmin) || RATES.ADMIN_FEE_STANDARD);
+        // Allow explicit 0 admin (post-grace months still inside the original
+        // loan period). Only default when monthlyAdmin is null/undefined/NaN.
+        const requestedAdmin = Number.isFinite(Number(monthlyAdmin))
+            ? Math.max(0, Number(monthlyAdmin))
+            : RATES.ADMIN_FEE_STANDARD;
         const lateDays = (opts && Number.isFinite(Number(opts.latePenaltyDays)))
             ? Math.max(0, Number(opts.latePenaltyDays))
             : RATES.LATE_PENALTY_MAX_DAYS;
@@ -1434,9 +1438,31 @@ const Calculations = {
     },
 
     /**
+     * Final contractual due date for the original loan period (last schedule
+     * due_date). Used so extra admin starts only after the original term ends
+     * (e.g. month 2 on a 1-month loan, month 4 on a 3-month loan).
+     */
+    getLoanPeriodEndDueDate(loan) {
+        if (!loan || !Array.isArray(loan.schedule)) return null;
+        let last = null;
+        loan.schedule.forEach(entry => {
+            if (!entry || !entry.due_date) return;
+            const d = new Date(entry.due_date);
+            if (isNaN(d.getTime())) return;
+            if (!last || d > last) last = d;
+        });
+        return last;
+    },
+
+    /**
      * Aggregate post-grace delinquency charges for an open installment.
-     * Uses the same month count as extra admin. Late penalty is charged for
-     * EVERY delinquency month while remaining_principal > 100:
+     * Late penalty + delinquency interest accrue from the OPEN installment's
+     * grace lapse. Extra admin (+ monthly admin) accrues only for delinquency
+     * month slices on/after grace lapse of the ORIGINAL loan period end
+     * (final contractual due date).
+     *
+     * Late penalty is charged for EVERY open-installment delinquency month
+     * while remaining_principal > 100:
      *   month 1 → actual days past grace (capped at 7)
      *   months 2..N → full 7-day late penalty each
      * Interest fills the remainder of each month's 30% income cap after admin
@@ -1445,6 +1471,7 @@ const Calculations = {
     calculateDelinquencyCharges(loan, entry, asOfDate, gracePeriodDays) {
         const empty = {
             months: 0,
+            adminMonths: 0,
             monthlyAdmin: 0,
             outstanding: 0,
             extraAdmin: 0,
@@ -1473,27 +1500,48 @@ const Calculations = {
         const outstanding = Math.max(0, Number(loan.remaining_principal) || 0);
         const monthlyAdmin = this.getMonthlyAdminFeeForLoan(loan);
         const due = new Date(open.due_date);
+        let graceEnd = null;
         let daysPastGrace = 0;
         if (!isNaN(due.getTime())) {
-            const graceEnd = new Date(due.getTime());
+            graceEnd = new Date(due.getTime());
             graceEnd.setDate(graceEnd.getDate() + grace);
             if (asOf > graceEnd) {
                 daysPastGrace = Math.floor((asOf - graceEnd) / 86400000);
             }
         }
 
+        // Extra admin only after original loan period ends.
+        const periodEnd = this.getLoanPeriodEndDueDate(loan) || due;
+        const termGraceEnd = new Date(periodEnd.getTime());
+        termGraceEnd.setDate(termGraceEnd.getDate() + grace);
+
         const monthsBreakdown = [];
         let extraAdmin = 0;
         let latePenalty = 0;
         let extraInterest = 0;
+        let adminMonths = 0;
 
         for (let m = 1; m <= months; m++) {
             const lateDays = m === 1
                 ? Math.max(1, Math.min(daysPastGrace || 1, RATES.LATE_PENALTY_MAX_DAYS))
                 : RATES.LATE_PENALTY_MAX_DAYS;
+            // Map open-delinquency month m to its anniversary slice date.
+            let adminForMonth = 0;
+            if (graceEnd && !isNaN(graceEnd.getTime())) {
+                const sliceDate = new Date(graceEnd.getTime());
+                sliceDate.setMonth(sliceDate.getMonth() + (m - 1));
+                if (sliceDate >= termGraceEnd) {
+                    adminForMonth = monthlyAdmin;
+                    adminMonths += 1;
+                }
+            }
             const month = this.calculateDelinquencyMonthIncome(
-                outstanding, monthlyAdmin, { latePenaltyDays: lateDays });
-            monthsBreakdown.push(Object.assign({ month: m, latePenaltyDays: lateDays }, month));
+                outstanding, adminForMonth, { latePenaltyDays: lateDays });
+            monthsBreakdown.push(Object.assign({
+                month: m,
+                latePenaltyDays: lateDays,
+                adminBilled: adminForMonth > 0
+            }, month));
             extraAdmin += month.admin;
             latePenalty += month.latePenalty;
             extraInterest += month.interest;
@@ -1501,6 +1549,7 @@ const Calculations = {
 
         return {
             months,
+            adminMonths,
             monthlyAdmin: this.round(monthlyAdmin),
             outstanding: this.round(outstanding),
             extraAdmin: this.round(extraAdmin),
@@ -1576,7 +1625,8 @@ const Calculations = {
 
     /**
      * Extra admin due for an open installment (assessment candidate).
-     * Amount = months × monthly admin. Does not mutate state.
+     * Extra admin months are counted only after the original loan period ends
+     * (final contractual due date + grace). Does not mutate state.
      * Requires an active loan and a pending/partial schedule row with due_date —
      * never falls back to payments_made-derived dates (avoids accruing on
      * completed loans).
@@ -1592,13 +1642,12 @@ const Calculations = {
             ? entry
             : null;
         if (!open) return empty;
-        const monthlyAdmin = this.getMonthlyAdminFeeForLoan(loan);
-        const months = this.countExtraAdminMonths(
-            open.due_date, asOfDate || new Date(), gracePeriodDays);
+        const delinquency = this.calculateDelinquencyCharges(
+            loan, open, asOfDate || new Date(), gracePeriodDays);
         return {
-            months,
-            monthlyAdmin,
-            amount: this.round(months * monthlyAdmin)
+            months: delinquency.adminMonths || 0,
+            monthlyAdmin: delinquency.monthlyAdmin,
+            amount: delinquency.extraAdmin
         };
     },
 
@@ -1608,8 +1657,9 @@ const Calculations = {
      * portal statement packs so unpaid accrued fees appear before persistence.
      *
      * Late penalty is assessed for each post-grace delinquency month while
-     * remaining_principal > 100. Interest fills each month's 30% income cap
-     * after admin and late penalty (initiation excluded).
+     * remaining_principal > 100. Extra admin accrues only after the original
+     * loan period ends. Interest fills each month's 30% income cap after admin
+     * and late penalty (initiation excluded).
      */
     assessOpenInstallmentFees(loan, openEntry, asOfDate, gracePeriodDays) {
         const result = {
@@ -1657,7 +1707,8 @@ const Calculations = {
 
         const delinquency = this.calculateDelinquencyCharges(
             loan, entryForCalc, asOf, grace);
-        result.extraAdminMonths = delinquency.months;
+        // UI "extra admin months" = months billed after original period end.
+        result.extraAdminMonths = delinquency.adminMonths || 0;
         result.delinquencyMonthsBreakdown = delinquency.monthsBreakdown;
 
         const priorExtra = Number(openEntry && openEntry.extra_admin_assessed) || 0;
@@ -1679,7 +1730,7 @@ const Calculations = {
         result.latePenalty = Math.max(
             0, this.round(result.latePenaltyAssessedCandidate - alreadyPaidLate));
         result.isPaymentLate = result.latePenalty > 0.01 || delinquency.latePenalty > 0
-            || result.extraAdminMonths > 0;
+            || delinquency.months > 0;
 
         const priorInterest = Number(openEntry && openEntry.extra_interest_assessed) || 0;
         result.extraInterestAssessedCandidate = Math.max(

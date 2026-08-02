@@ -4,6 +4,16 @@ Branch-scoped findings from Bugbot / review loops. Newest entries at the top.
 
 ---
 
+## 2026-08-02 — `cursor/delinquency-monthly-interest-a923` (product rule)
+
+### LL-DELQ-042 — Extra admin only after original loan period ends
+- **Severity:** product rule
+- **Symptom / request:** Extra admin (+ monthly admin) was accruing from the first post-grace month on the open installment, so a 3-month loan underpaying in months 1–3 stacked large extra-admin totals during the contractual term.
+- **Fix:** Keep late penalty + delinquency interest on the open installment’s grace timeline. Bill extra admin only for delinquency month slices on/after grace lapse of the **final contractual due date** (`getLoanPeriodEndDueDate`). Allow explicit admin `0` in `calculateDelinquencyMonthIncome`.
+- **Lesson:** 1-month loans unchanged (period end = only due). Multi-month loans: no extra admin until month after original term (e.g. month 4 on a 3-month loan).
+
+---
+
 ## 2026-08-01 — `cursor/delinquency-monthly-interest-a923` (Bugbot loop C rounds 15–17)
 
 ### Clean passes

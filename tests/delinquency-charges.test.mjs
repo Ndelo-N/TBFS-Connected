@@ -58,6 +58,14 @@ test('month income: admin + late penalty + interest = 30% outstanding', () => {
     assert.equal(month.monthIncome, 1800);
 });
 
+test('month income: explicit admin 0 is honored (not defaulted to R60)', () => {
+    const month = C.calculateDelinquencyMonthIncome(3000, 0, { latePenaltyDays: 7 });
+    assert.equal(month.admin, 0);
+    assert.equal(month.latePenalty, C.calculateLatePenalty(7, 3000));
+    assert.equal(month.monthIncome, month.incomeCap);
+    assert.equal(month.interest, C.round(month.incomeCap - month.latePenalty));
+});
+
 test('delinquency charges: late penalty on EVERY month while principal > 100', () => {
     const due = new Date(2026, 5, 30); // 30 Jun
     const loan = eligibleLoan({
@@ -69,11 +77,13 @@ test('delinquency charges: late penalty on EVERY month while principal > 100', (
             status: 'pending'
         }]
     });
-    // grace end = 3 Jul; +1 month anniversary = 3 Aug → 2 extra-admin months
+    // grace end = 3 Jul; +1 month anniversary = 3 Aug → 2 open-delinquency months
+    // Single-due schedule: period end = that due, so extra admin also from month 1
     const asOf = new Date(2026, 7, 3);
     assert.equal(C.countExtraAdminMonths(due, asOf, 3), 2);
     const r = C.calculateDelinquencyCharges(loan, loan.schedule[0], asOf, 3);
     assert.equal(r.months, 2);
+    assert.equal(r.adminMonths, 2);
     assert.equal(r.extraAdmin, 120);
     // Month1 late (days past grace) + month2 full 7-day late
     assert.ok(r.latePenalty > C.calculateLatePenalty(7, 3000));
@@ -89,6 +99,43 @@ test('delinquency charges: late penalty on EVERY month while principal > 100', (
             m.incomeCap
         );
     });
+});
+
+test('extra admin starts only after original loan period ends', () => {
+    // 3-month schedule: period ends 30 Aug. Open month-1 due 30 Jun.
+    const loan = eligibleLoan({
+        remaining_principal: 3000,
+        term_months: 3,
+        schedule: [
+            { due_date: '2026-06-30T12:00:00', admin_fee: 60, interest_payment: 420, status: 'partial' },
+            { due_date: '2026-07-30T12:00:00', admin_fee: 60, interest_payment: 420, status: 'pending' },
+            { due_date: '2026-08-30T12:00:00', admin_fee: 60, interest_payment: 420, status: 'pending' }
+        ]
+    });
+    const periodEnd = C.getLoanPeriodEndDueDate(loan);
+    assert.equal(periodEnd.toISOString().slice(0, 10), '2026-08-30');
+
+    // Still inside original period (30 Jul): late/interest yes, extra admin no
+    const midTerm = C.calculateDelinquencyCharges(
+        loan, loan.schedule[0], new Date(2026, 6, 30), 3);
+    assert.equal(midTerm.months, 1);
+    assert.equal(midTerm.adminMonths, 0);
+    assert.equal(midTerm.extraAdmin, 0);
+    assert.ok(midTerm.latePenalty > 0);
+    assert.ok(midTerm.extraInterest > 0);
+    assert.equal(midTerm.monthsBreakdown[0].adminBilled, false);
+
+    // Month after period ends (30 Sep): first extra-admin month
+    const afterTerm = C.calculateDelinquencyCharges(
+        loan, loan.schedule[0], new Date(2026, 8, 30), 3);
+    assert.ok(afterTerm.months >= 3);
+    assert.equal(afterTerm.adminMonths, 1);
+    assert.equal(afterTerm.extraAdmin, 60);
+    assert.equal(afterTerm.monthsBreakdown.filter(m => m.adminBilled).length, 1);
+
+    const due = C.calculateExtraAdminDue(loan, loan.schedule[0], new Date(2026, 8, 30), 3);
+    assert.equal(due.months, 1);
+    assert.equal(due.amount, 60);
 });
 
 test('delinquency charges: principal <= 100 → no late penalty any month', () => {

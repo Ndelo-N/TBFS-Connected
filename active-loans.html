@@ -1852,7 +1852,10 @@ Click "OK" to process payment or "Cancel" to go back.
             if (!delinquency || !delinquency.months) return result;
 
             result.daysLate = Math.floor((asOf - due) / (1000 * 60 * 60 * 24));
-            result.extraAdminMonths = delinquency.months;
+            // Billable extra-admin months after original loan period end.
+            result.extraAdminMonths = delinquency.adminMonths != null
+                ? delinquency.adminMonths
+                : delinquency.months;
             result.extraAdminAssessedCandidate = Math.max(
                 Number(openEntry && openEntry.extra_admin_assessed) || 0,
                 delinquency.extraAdmin);
