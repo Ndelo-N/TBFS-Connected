@@ -47,7 +47,12 @@ test('calculateExtraAdminDue: eligible loan bills months × admin', () => {
         created_at: '2026-03-01T12:00:00.000Z',
         loan_type: 'standard',
         remaining_principal: 3000,
-        schedule: [{ due_date: '2026-06-30T12:00:00', admin_fee: 60, status: 'partial' }]
+        schedule: [{
+            due_date: '2026-06-30T12:00:00',
+            principal_payment: 3000,
+            admin_fee: 60,
+            status: 'partial'
+        }]
     };
     const r = C.calculateExtraAdminDue(loan, loan.schedule[0], new Date(2026, 6, 4), 3);
     assert.equal(r.months, 1);
