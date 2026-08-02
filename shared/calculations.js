@@ -1901,7 +1901,8 @@ const Calculations = {
         const extra = this.calculateExtraAdminDue(loan, open, asOf, gracePeriodDays);
         const delinquency = this.calculateDelinquencyCharges(loan, open, asOf, gracePeriodDays);
         const history = Array.isArray(loan.payment_history) ? loan.payment_history : [];
-        const partialPaymentCount = history.filter(h => h && h.payment_status === 'partial').length
+        const partialPaymentCount = history.filter(h =>
+            h && this.isPartialPaymentStatus(h.payment_status)).length
             + (Array.isArray(loan.schedule)
                 ? loan.schedule.filter(p => p && p.status === 'partial').length
                 : 0);
@@ -2126,15 +2127,19 @@ const Calculations = {
                 const when = h.date || h.payment_date;
                 if (!this._inRollingWindow(when, asOf, windowMonths)) return;
                 const st = h.payment_status;
-                const clean = st === 'on-time' && !(Number(h.late_penalty) > 0);
-                if (st === 'late') lateCount += 1;
-                else if (st === 'partial') partialCount += 1;
-                else if (st === 'on-time') onTimeCount += 1;
+                // Amount and timing are independent: partial-late counts in both.
+                const isPartial = this.isPartialPaymentStatus(st);
+                const isLate = this.isLatePaymentStatus(st);
+                const isOnTime = st === 'on-time';
+                const clean = isOnTime && !(Number(h.late_penalty) > 0);
+                if (isLate) lateCount += 1;
+                if (isPartial) partialCount += 1;
+                if (isOnTime) onTimeCount += 1;
                 events.push({
                     date: this._parseEventDate(when),
                     kind: 'loan',
                     status: st,
-                    clean: clean && st === 'on-time'
+                    clean: clean
                 });
             });
 
@@ -2173,7 +2178,8 @@ const Calculations = {
         let raw = 100 - penLate - penPartial - penMissed - penExtra + credits;
         raw = Math.max(0, Math.min(100, Math.round(raw)));
 
-        const totalEvents = lateCount + partialCount + onTimeCount;
+        // Count each payment once (partial-late is still one event).
+        const totalEvents = events.length;
         return {
             score: raw,
             late_count: lateCount,
@@ -2445,7 +2451,7 @@ const Calculations = {
                     date: h.date || h.payment_date,
                     type: 'loan_payment',
                     title: `Loan #${loan.loan_id} payment`,
-                    detail: `${this.formatCurrency(h.amount || 0)} · ${h.payment_status || 'recorded'}`,
+                    detail: `${this.formatCurrency(h.amount || 0)} · ${this.formatPaymentStatus(h.payment_status)}`,
                     meta: h
                 });
             });
@@ -3061,33 +3067,70 @@ const Calculations = {
     },
 
     /**
-     * Determine payment status relative to due date.
+     * True when history status reflects an underpayment (&lt; 90% of expected).
+     * Includes compound `partial-late`.
+     */
+    isPartialPaymentStatus(status) {
+        const st = String(status || '').toLowerCase();
+        return st === 'partial' || st === 'partial-late';
+    },
+
+    /**
+     * True when history status reflects payment after grace.
+     * Includes compound `partial-late`.
+     */
+    isLatePaymentStatus(status) {
+        const st = String(status || '').toLowerCase();
+        return st === 'late' || st === 'partial-late';
+    },
+
+    /**
+     * Human label for payment_history status (statement / UI).
+     */
+    formatPaymentStatus(status) {
+        const st = String(status || '').toLowerCase();
+        if (st === 'partial-late') return 'partial + late';
+        if (st === 'on-time') return 'on-time';
+        if (st === 'partial') return 'partial';
+        if (st === 'late') return 'late';
+        if (st === 'missed') return 'missed';
+        return status || 'recorded';
+    },
+
+    /**
+     * Determine payment status from amount AND timing.
+     * Amount and timing are independent so realistic underpay+late behavior
+     * is visible in history and scoring.
+     *
      * @param {Date|string} paymentDate - When the payment was made
      * @param {Date|string} dueDate - When the payment was due
      * @param {number} amountPaid - Amount actually paid
      * @param {number} amountDue - Amount that was expected
      * @param {number} gracePeriodDays - Grace period in days (default 3)
-     * @returns {string} 'on-time' | 'late' | 'partial' | 'missed'
+     * @returns {string} 'on-time' | 'late' | 'partial' | 'partial-late' | 'missed'
      */
     getPaymentStatus(paymentDate, dueDate, amountPaid, amountDue, gracePeriodDays) {
         if (typeof gracePeriodDays !== 'number') gracePeriodDays = 3;
         const pDate = new Date(paymentDate);
         const dDate = new Date(dueDate);
-        
+
         // Missed: no payment at all (amountPaid is 0 or undefined)
         if (!amountPaid || amountPaid <= 0) return 'missed';
-        
-        // Partial: paid something but less than 90% of expected amount
-        if (amountPaid < amountDue * 0.9) return 'partial';
-        
-        // Add grace period to due date
-        const graceCutoff = new Date(dDate);
-        graceCutoff.setDate(graceCutoff.getDate() + gracePeriodDays);
-        
-        // Late: paid after grace period
-        if (pDate > graceCutoff) return 'late';
-        
-        // On-time: paid within grace period
+
+        const dueAmt = Math.max(0, Number(amountDue) || 0);
+        const paidAmt = Math.max(0, Number(amountPaid) || 0);
+        const isPartial = dueAmt > 0 ? paidAmt < dueAmt * 0.9 : false;
+
+        let isLate = false;
+        if (!isNaN(pDate.getTime()) && !isNaN(dDate.getTime())) {
+            const graceCutoff = new Date(dDate.getTime());
+            graceCutoff.setDate(graceCutoff.getDate() + gracePeriodDays);
+            isLate = pDate > graceCutoff;
+        }
+
+        if (isPartial && isLate) return 'partial-late';
+        if (isPartial) return 'partial';
+        if (isLate) return 'late';
         return 'on-time';
     },
 
@@ -3675,8 +3718,10 @@ const Calculations = {
                         ? payment.payments_made_after : (index + 1)) + '/' + term;
             }
             if (payment.payment_status) {
-                detail += (detail ? '\n' : '') + 'Status: ' + payment.payment_status +
-                    (payment.days_late != null ? ' (' + payment.days_late + ' days late)' : '');
+                detail += (detail ? '\n' : '') + 'Status: ' +
+                    this.formatPaymentStatus(payment.payment_status) +
+                    (payment.days_late != null && this.isLatePaymentStatus(payment.payment_status)
+                        ? ' (' + payment.days_late + ' days late)' : '');
             }
             if (payment.interest_recalculated) {
                 detail += (detail ? '\n' : '') +

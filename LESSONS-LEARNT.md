@@ -6,6 +6,12 @@ Branch-scoped findings from Bugbot / review loops. Newest entries at the top.
 
 ## 2026-08-02 — `cursor/delinquency-monthly-interest-a923` (product rule)
 
+### LL-DELQ-045 — Payment status: amount and timing are independent
+- **Severity:** scoring / UX
+- **Symptom / request:** `getPaymentStatus` returned `partial` whenever paid &lt; 90% of expected, before checking grace — so late underpayments never counted as late in history or score.
+- **Fix:** Return `partial-late` when both apply; helpers `isPartialPaymentStatus` / `isLatePaymentStatus`; scoring counts both penalties on one event; statement shows `partial + late`.
+- **Lesson:** Realistic client behavior needs underpayment and lateness as separate signals, not a single mutually exclusive status.
+
 ### LL-DELQ-044 — Statement fee dates + payment installment tag
 - **Severity:** UX / audit
 - **Symptom / request:** Extra-admin / late / delinquency-interest activity used the installment `due_date`, so post-term admin looked like it billed on Jul/Aug dues. Payments also did not show which open installment received the waterfall.

@@ -2621,7 +2621,12 @@ Click "OK" to process payment or "Cancel" to go back.
             const partialMsg = nextPayment && nextPayment.partial_payment ? '\n⚠️ Partial payment recorded - installment not yet complete' : '';
             const recalcMsg = loan.interest_recalculated ? `\n\n🔄 INTEREST RECALCULATED!\nYour overpayment in the first half reduced future interest.\nNew Max Interest: ${Calculations.formatCurrency(loan.max_interest_allowed)}` : '';
             const penaltyMsg = latePenaltyPaid > 0 ? `\n• Late Penalty: ${Calculations.formatCurrency(latePenaltyPaid)} (${daysLate} days late)` : '';
-            const statusMsg = paymentStatus !== 'on-time' ? `\n📋 Status: ${paymentStatus.toUpperCase()}` : '';
+            const statusLabel = (typeof Calculations.formatPaymentStatus === 'function')
+                ? Calculations.formatPaymentStatus(paymentStatus)
+                : paymentStatus;
+            const statusMsg = paymentStatus !== 'on-time'
+                ? `\n📋 Status: ${String(statusLabel).toUpperCase()}`
+                : '';
             
             // Stockvel bonus message
             let bonusMsg = '';
