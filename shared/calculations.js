@@ -1398,12 +1398,16 @@ const Calculations = {
     /**
      * One delinquency month under the 30% income-table ceiling.
      * Basket = admin + late penalty + interest (initiation excluded).
-     * Late penalty is included only when outstanding principal > 100.
      *
-     * @param {number} outstandingPrincipal
+     * Interest / income-cap base = outstandingPrincipal (unpaid installment
+     * principal). Late penalty is calculated on latePenaltyPrincipal (full
+     * loan remaining_principal) and only when that late base > 100.
+     *
+     * @param {number} outstandingPrincipal - interest / 30% cap base
      * @param {number} monthlyAdmin
      * @param {object} [opts]
      * @param {number} [opts.latePenaltyDays=LATE_PENALTY_MAX_DAYS]
+     * @param {number} [opts.latePenaltyPrincipal] - defaults to outstandingPrincipal
      */
     calculateDelinquencyMonthIncome(outstandingPrincipal, monthlyAdmin, opts) {
         const outstanding = Math.max(0, Number(outstandingPrincipal) || 0);
@@ -1415,9 +1419,12 @@ const Calculations = {
         const lateDays = (opts && Number.isFinite(Number(opts.latePenaltyDays)))
             ? Math.max(0, Number(opts.latePenaltyDays))
             : RATES.LATE_PENALTY_MAX_DAYS;
-        const latePenaltyApplied = this.isLatePenaltyPrincipalEligible(outstanding);
+        const latePrincipal = (opts && Number.isFinite(Number(opts.latePenaltyPrincipal)))
+            ? Math.max(0, Number(opts.latePenaltyPrincipal))
+            : outstanding;
+        const latePenaltyApplied = this.isLatePenaltyPrincipalEligible(latePrincipal);
         const requestedLate = latePenaltyApplied
-            ? this.calculateLatePenalty(lateDays, outstanding)
+            ? this.calculateLatePenalty(lateDays, latePrincipal)
             : 0;
         const incomeCap = this.round(outstanding * RATES.INCOME_TABLE_RATE);
         // Basket must not exceed the 30% income cap: admin first, then late,
@@ -1428,6 +1435,7 @@ const Calculations = {
         const monthIncome = this.round(admin + latePenalty + interest);
         return {
             outstanding: this.round(outstanding),
+            latePenaltyPrincipal: this.round(latePrincipal),
             incomeCap,
             admin: this.round(admin),
             latePenalty,
@@ -1455,11 +1463,11 @@ const Calculations = {
     },
 
     /**
-     * Principal base for the post-grace 30% income basket (late + delinquency
-     * interest). Uses unpaid scheduled principal on the open installment —
-     * the amount that should have been paid but was not — not the full loan
-     * remaining_principal. Capped by remaining_principal. Legacy rows without
+     * Interest / 30% income-cap base for delinquency months: unpaid scheduled
+     * principal on the open installment (amount that should have been paid but
+     * was not). Capped by remaining_principal. Legacy rows without
      * principal_payment fall back to remaining_principal.
+     * Late penalty does NOT use this — it uses full remaining_principal.
      */
     getDelinquencyOutstandingPrincipal(loan, entry) {
         const remaining = Math.max(0, Number(loan && loan.remaining_principal) || 0);
@@ -1478,13 +1486,13 @@ const Calculations = {
      * month slices on/after grace lapse of the ORIGINAL loan period end
      * (final contractual due date).
      *
-     * The 30% basket base is unpaid open-installment principal (not full
-     * remaining_principal). Late penalty is charged for EVERY open-installment
-     * delinquency month while that base > 100:
+     * Late penalty is calculated on full remaining_principal for EVERY
+     * open-installment delinquency month while remaining_principal > 100:
      *   month 1 → actual days past grace (capped at 7)
      *   months 2..N → full 7-day late penalty each
      * Interest fills the remainder of each month's 30% income cap after admin
-     * and late penalty (initiation excluded).
+     * and late penalty; that 30% cap uses unpaid open-installment principal
+     * (not full remaining_principal). Initiation excluded.
      */
     calculateDelinquencyCharges(loan, entry, asOfDate, gracePeriodDays) {
         const empty = {
@@ -1492,6 +1500,7 @@ const Calculations = {
             adminMonths: 0,
             monthlyAdmin: 0,
             outstanding: 0,
+            latePenaltyPrincipal: 0,
             extraAdmin: 0,
             latePenalty: 0,
             extraInterest: 0,
@@ -1515,7 +1524,8 @@ const Calculations = {
         const months = this.countExtraAdminMonths(open.due_date, asOf, grace);
         if (months <= 0) return empty;
 
-        const outstanding = this.getDelinquencyOutstandingPrincipal(loan, open);
+        const interestBase = this.getDelinquencyOutstandingPrincipal(loan, open);
+        const lateBase = Math.max(0, Number(loan.remaining_principal) || 0);
         const monthlyAdmin = this.getMonthlyAdminFeeForLoan(loan);
         const due = new Date(open.due_date);
         let graceEnd = null;
@@ -1554,7 +1564,10 @@ const Calculations = {
                 }
             }
             const month = this.calculateDelinquencyMonthIncome(
-                outstanding, adminForMonth, { latePenaltyDays: lateDays });
+                interestBase, adminForMonth, {
+                    latePenaltyDays: lateDays,
+                    latePenaltyPrincipal: lateBase
+                });
             monthsBreakdown.push(Object.assign({
                 month: m,
                 latePenaltyDays: lateDays,
@@ -1569,7 +1582,8 @@ const Calculations = {
             months,
             adminMonths,
             monthlyAdmin: this.round(monthlyAdmin),
-            outstanding: this.round(outstanding),
+            outstanding: this.round(interestBase),
+            latePenaltyPrincipal: this.round(lateBase),
             extraAdmin: this.round(extraAdmin),
             latePenalty: this.round(latePenalty),
             extraInterest: this.round(extraInterest),
@@ -1675,10 +1689,10 @@ const Calculations = {
      * portal statement packs so unpaid accrued fees appear before persistence.
      *
      * Late penalty is assessed for each post-grace delinquency month while
-     * unpaid open-installment principal > 100. Extra admin accrues only after
-     * the original loan period ends. Interest fills each month's 30% income
-     * cap after admin and late penalty (initiation excluded). Basket base is
-     * unpaid installment principal, not full remaining_principal.
+     * remaining_principal > 100 (full loan principal base). Extra admin
+     * accrues only after the original loan period ends. Interest fills each
+     * month's 30% income cap after admin and late penalty; that cap uses
+     * unpaid installment principal (initiation excluded).
      */
     assessOpenInstallmentFees(loan, openEntry, asOfDate, gracePeriodDays) {
         const result = {

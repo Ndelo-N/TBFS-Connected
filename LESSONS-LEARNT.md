@@ -6,11 +6,11 @@ Branch-scoped findings from Bugbot / review loops. Newest entries at the top.
 
 ## 2026-08-02 — `cursor/delinquency-monthly-interest-a923` (product rule)
 
-### LL-DELQ-043 — Delinquency basket on unpaid installment principal
+### LL-DELQ-043 — Delinquency interest on unpaid installment principal (late stays full)
 - **Severity:** product rule
-- **Symptom / request:** Underpaying a R1,600 installment left R0 on the R1,000 principal slot while `remaining_principal` stayed R3,000, so the 30% basket charged delinquency interest as if the full balance were the missed amount.
-- **Fix:** `getDelinquencyOutstandingPrincipal` = unpaid `principal_payment − paid_breakdown.principal` on the open row (capped by `remaining_principal`). Legacy rows without `principal_payment` still fall back to remaining. Late + interest share that base inside the basket.
-- **Lesson:** Charge delinquency income on principal that should have been paid on the open installment, not the whole loan balance.
+- **Symptom / request:** Underpaying a R1,600 installment left R0 on the R1,000 principal slot while `remaining_principal` stayed R3,000, so delinquency interest used the full balance. Late fee must still use full remaining principal.
+- **Fix:** Interest / 30% cap base = unpaid open-installment principal (`getDelinquencyOutstandingPrincipal`). Late penalty base stays `remaining_principal` via `latePenaltyPrincipal`. Both still fit admin → late → interest inside the installment 30% cap.
+- **Lesson:** Split bases — late on full loan principal; delinquency interest on principal that should have been paid on the open installment.
 
 ### LL-DELQ-042 — Extra admin only after original loan period ends
 - **Severity:** product rule

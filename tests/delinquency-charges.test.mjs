@@ -103,7 +103,7 @@ test('delinquency charges: late penalty on EVERY month while principal > 100', (
     });
 });
 
-test('delinquency basket uses unpaid installment principal, not full remaining', () => {
+test('interest basket uses unpaid installment principal; late uses full remaining', () => {
     // R3000 remaining, but open installment only owed R1000 principal (underpaid).
     const loan = eligibleLoan({
         remaining_principal: 3000,
@@ -125,23 +125,27 @@ test('delinquency basket uses unpaid installment principal, not full remaining',
 
     const asOf = new Date(2026, 6, 4); // day after grace
     const r = C.calculateDelinquencyCharges(loan, loan.schedule[0], asOf, 3);
-    assert.equal(r.outstanding, 1000);
+    assert.equal(r.outstanding, 1000); // interest / 30% cap base
+    assert.equal(r.latePenaltyPrincipal, 3000); // late fee base unchanged
     assert.equal(r.monthsBreakdown[0].incomeCap, 300); // 30% of 1000, not 900
     assert.equal(r.monthsBreakdown[0].admin, 0); // still inside original 3-month term
-    assert.ok(r.extraInterest > 0);
-    assert.ok(r.extraInterest < 300);
+    assert.equal(r.monthsBreakdown[0].latePenalty, C.calculateLatePenalty(1, 3000)); // R3, not R1
+    assert.equal(r.monthsBreakdown[0].interest, 297);
     assert.equal(
         C.round(r.monthsBreakdown[0].admin + r.monthsBreakdown[0].latePenalty +
             r.monthsBreakdown[0].interest),
         300
     );
 
-    // Partial principal pay-down shrinks the basket base
+    // Partial principal pay-down shrinks interest base only; late still on remaining
     loan.schedule[0].paid_breakdown.principal = 400;
+    loan.remaining_principal = 2600;
     assert.equal(C.getDelinquencyOutstandingPrincipal(loan, loan.schedule[0]), 600);
     const afterPay = C.calculateDelinquencyCharges(loan, loan.schedule[0], asOf, 3);
     assert.equal(afterPay.outstanding, 600);
+    assert.equal(afterPay.latePenaltyPrincipal, 2600);
     assert.equal(afterPay.monthsBreakdown[0].incomeCap, 180);
+    assert.equal(afterPay.monthsBreakdown[0].latePenalty, C.calculateLatePenalty(1, 2600));
 });
 
 test('extra admin starts only after original loan period ends', () => {
