@@ -2013,6 +2013,330 @@ const Calculations = {
         return { id: 'critical', label: 'Critical', min: 0, max: 24 };
     },
 
+    /**
+     * Editable reloan / financing bylaws — one section per reliability tier.
+     * Stored on AppState.reloanBylaws; calculator references the active tier
+     * when advising officers on returning clients.
+     */
+    getDefaultReloanBylaws() {
+        const tier = (id, label, scoreRange, fields) => Object.assign({
+            id,
+            label,
+            score_range: scoreRange,
+            stance: 'proceed',
+            same_amount_allowed: true,
+            max_principal_pct_of_prior: 100,
+            require_rehab_clean_events: 0,
+            calculator_severity: 'info',
+            summary: '',
+            conditions: [],
+            officer_notes: ''
+        }, fields || {});
+
+        return {
+            version: 1,
+            title: 'TBFS Reloan & Financing Bylaws',
+            intro: 'Officer guidance when a client requests new financing after prior loan history. Advice informs the decision; inactive/blacklisted clients remain hard-blocked.',
+            updated_at: null,
+            tiers: {
+                building: tier('building', 'Building', 'provisional / <2 scored events', {
+                    stance: 'proceed_with_standard_checks',
+                    same_amount_allowed: true,
+                    max_principal_pct_of_prior: 100,
+                    calculator_severity: 'info',
+                    summary: 'Thin file — treat as a new-client underwriting decision.',
+                    conditions: [
+                        'Verify identity and affordability as for a first loan',
+                        'Do not assume prior completion if score is still provisional'
+                    ],
+                    officer_notes: 'Building band means not enough scored events yet. Prefer standard origination checks.'
+                }),
+                excellent: tier('excellent', 'Excellent', '90–100', {
+                    stance: 'proceed',
+                    same_amount_allowed: true,
+                    max_principal_pct_of_prior: 120,
+                    calculator_severity: 'info',
+                    summary: 'Strong payer — like-for-like or modest increase is appropriate.',
+                    conditions: [
+                        'Confirm affordability still holds at requested amount/term',
+                        'Document any increase above prior principal'
+                    ],
+                    officer_notes: 'Excellent track record. Same amount is fine; increases up to ~20% of prior principal allowed with affordability check.'
+                }),
+                good: tier('good', 'Good', '75–89', {
+                    stance: 'proceed',
+                    same_amount_allowed: true,
+                    max_principal_pct_of_prior: 100,
+                    calculator_severity: 'info',
+                    summary: 'Reliable enough for same-amount reloan on standard terms.',
+                    conditions: [
+                        'Keep principal at or below prior completed loan amount unless new income evidence',
+                        'Prefer term patterns they have already completed cleanly'
+                    ],
+                    officer_notes: 'Good band: same financing OK. Avoid aggressive upsizing.'
+                }),
+                watch: tier('watch', 'Watch', '50–74', {
+                    stance: 'conditional',
+                    same_amount_allowed: false,
+                    max_principal_pct_of_prior: 75,
+                    require_rehab_clean_events: 3,
+                    calculator_severity: 'watch',
+                    summary: 'Mixed history — do not auto-approve same amount; structure a smaller or gated facility.',
+                    conditions: [
+                        'Cap principal at 75% of prior loan unless officer overrides with notes',
+                        'Prefer shorter term or equalized installment they can meet in full',
+                        'Require 3 trailing full on-time payments before restoring prior amount'
+                    ],
+                    officer_notes: 'Watch band: patterns of underpay/late. Same amount needs rehab or reduction.'
+                }),
+                poor: tier('poor', 'Poor', '25–49', {
+                    stance: 'conditional_decline_same_terms',
+                    same_amount_allowed: false,
+                    max_principal_pct_of_prior: 50,
+                    require_rehab_clean_events: 6,
+                    calculator_severity: 'caution',
+                    summary: 'Completed ≠ creditworthy for like-for-like repeat. Decline same amount on same terms; offer reduced/conditional facility only.',
+                    conditions: [
+                        'Do not offer the same principal on the same terms',
+                        'If lending: cap at ≤50% of prior principal',
+                        'Require rehab: 6 trailing full on-time (no late penalty) payments before restoring prior amount',
+                        'Consider stockvel membership path if contributions can support discipline',
+                        'No same-day auto-reloan after payoff'
+                    ],
+                    officer_notes: 'Poor band (e.g. chronic R900 underpay on contractual dues). Positive that loan cleared; position is hold or reduced structured offer.'
+                }),
+                critical: tier('critical', 'Critical', '0–24', {
+                    stance: 'decline',
+                    same_amount_allowed: false,
+                    max_principal_pct_of_prior: 0,
+                    require_rehab_clean_events: 6,
+                    calculator_severity: 'block',
+                    summary: 'Do not extend new standard financing until rehab clears critical risk.',
+                    conditions: [
+                        'Decline new standard loan',
+                        'Require documented rehab plan and 6 clean full on-time payments',
+                        'Escalate to manager before any exception'
+                    ],
+                    officer_notes: 'Critical band: decline. Exceptions need manager approval and written notes.'
+                })
+            }
+        };
+    },
+
+    normalizeReloanBylaws(doc) {
+        const defaults = this.getDefaultReloanBylaws();
+        const src = doc && typeof doc === 'object' ? doc : {};
+        const tiersIn = src.tiers && typeof src.tiers === 'object' ? src.tiers : {};
+        const tiers = {};
+        Object.keys(defaults.tiers).forEach(id => {
+            const base = defaults.tiers[id];
+            const over = tiersIn[id] && typeof tiersIn[id] === 'object' ? tiersIn[id] : {};
+            const conditions = Array.isArray(over.conditions)
+                ? over.conditions.map(c => String(c || '').trim()).filter(Boolean)
+                : base.conditions.slice();
+            let pct = Number(over.max_principal_pct_of_prior);
+            if (!Number.isFinite(pct)) pct = base.max_principal_pct_of_prior;
+            pct = Math.max(0, Math.min(200, Math.round(pct)));
+            let rehab = Number(over.require_rehab_clean_events);
+            if (!Number.isFinite(rehab)) rehab = base.require_rehab_clean_events;
+            rehab = Math.max(0, Math.min(24, Math.round(rehab)));
+            const severity = String(over.calculator_severity || base.calculator_severity);
+            const allowedSeverity = { info: 1, watch: 1, caution: 1, block: 1 };
+            tiers[id] = {
+                id,
+                label: String(over.label || base.label),
+                score_range: String(over.score_range || base.score_range),
+                stance: String(over.stance || base.stance),
+                same_amount_allowed: over.same_amount_allowed != null
+                    ? !!over.same_amount_allowed : !!base.same_amount_allowed,
+                max_principal_pct_of_prior: pct,
+                require_rehab_clean_events: rehab,
+                calculator_severity: allowedSeverity[severity] ? severity : base.calculator_severity,
+                summary: String(over.summary != null ? over.summary : base.summary),
+                conditions,
+                officer_notes: String(over.officer_notes != null
+                    ? over.officer_notes : base.officer_notes)
+            };
+        });
+        return {
+            version: Math.max(1, Number(src.version) || defaults.version),
+            title: String(src.title || defaults.title),
+            intro: String(src.intro != null ? src.intro : defaults.intro),
+            updated_at: src.updated_at || null,
+            tiers
+        };
+    },
+
+    getReloanBylaws(state) {
+        return this.normalizeReloanBylaws(state && state.reloanBylaws);
+    },
+
+    /**
+     * Officer advice for a proposed new loan / reloan from bylaws + score.
+     */
+    buildReloanAdvice(client, loans, state, opts) {
+        const options = opts || {};
+        const bylaws = this.getReloanBylaws(state);
+        const grace = typeof options.gracePeriodDays === 'number'
+            ? options.gracePeriodDays
+            : (state && Number(state.gracePeriodDays)) || 3;
+        const requestedPrincipal = Math.max(0, Number(options.requestedPrincipal) || 0);
+        const requestedTerm = Math.max(0, Math.floor(Number(options.requestedTerm) || 0));
+        const clientLoans = this.getClientLoans(client, loans);
+        const priorCompleted = clientLoans.filter(l =>
+            l && String(l.status || '').toLowerCase() === 'completed');
+        const priorActive = clientLoans.filter(l =>
+            l && String(l.status || '').toLowerCase() === 'active');
+        const isReturning = priorCompleted.length > 0 || priorActive.length > 0
+            || (client && (Number(client.total_loans) || 0) > 0);
+
+        const metrics = this.computeClientPaymentMetrics(client, loans, {
+            asOf: options.asOf,
+            gracePeriodDays: grace,
+            windowMonths: options.windowMonths || 12,
+            stockvelMembers: state && state.stockvelMembers,
+            stockvelReceipts: state && state.stockvelReceipts
+        });
+        const band = (metrics && metrics.band) || this.getReliabilityBand(null);
+        const tier = bylaws.tiers[band.id] || bylaws.tiers.building;
+
+        let priorPrincipal = 0;
+        priorCompleted.forEach(l => {
+            priorPrincipal = Math.max(priorPrincipal, this.loanPrincipalAmount(l));
+        });
+        if (!priorPrincipal && clientLoans.length) {
+            clientLoans.forEach(l => {
+                priorPrincipal = Math.max(priorPrincipal, this.loanPrincipalAmount(l));
+            });
+        }
+
+        const maxAllowedPrincipal = tier.max_principal_pct_of_prior > 0 && priorPrincipal > 0
+            ? this.round(priorPrincipal * (tier.max_principal_pct_of_prior / 100))
+            : (tier.max_principal_pct_of_prior === 0 && isReturning ? 0 : null);
+
+        const notes = [];
+        const flags = [];
+        if (!isReturning) {
+            notes.push('First financing request on file — apply standard origination checks.');
+        } else {
+            notes.push(
+                'Returning client · reliability ' + tier.label +
+                (metrics.score != null ? ' (score ' + metrics.score + ')' : ' (provisional)') + '.'
+            );
+        }
+        if (tier.summary) notes.push(tier.summary);
+        (tier.conditions || []).forEach(c => notes.push(c));
+
+        if (isReturning && priorPrincipal > 0 && requestedPrincipal > 0) {
+            const sameAmount = Math.abs(requestedPrincipal - priorPrincipal) < 0.5;
+            if (sameAmount && !tier.same_amount_allowed) {
+                flags.push('same_amount_blocked');
+                notes.push(
+                    'Requested amount matches prior principal (' +
+                    this.formatCurrency(priorPrincipal) +
+                    ') — bylaws for ' + tier.label + ' do not allow same-amount terms.'
+                );
+            }
+            if (maxAllowedPrincipal != null && requestedPrincipal > maxAllowedPrincipal + 0.005) {
+                flags.push('principal_above_tier_cap');
+                notes.push(
+                    'Requested ' + this.formatCurrency(requestedPrincipal) +
+                    ' exceeds tier cap ' + this.formatCurrency(maxAllowedPrincipal) +
+                    ' (' + tier.max_principal_pct_of_prior + '% of prior ' +
+                    this.formatCurrency(priorPrincipal) + ').'
+                );
+            }
+        }
+        if (tier.require_rehab_clean_events > 0 && isReturning) {
+            const streak = (metrics.redemption && metrics.redemption.clean_streak) || 0;
+            if (streak < tier.require_rehab_clean_events) {
+                flags.push('rehab_incomplete');
+                notes.push(
+                    'Rehab incomplete: ' + streak + '/' +
+                    tier.require_rehab_clean_events + ' trailing clean full on-time payments.'
+                );
+            }
+        }
+        if (priorActive.length) {
+            flags.push('has_active_loan');
+            notes.push('Client still has ' + priorActive.length + ' active loan(s) — confirm capital policy before stacking.');
+        }
+        if (tier.officer_notes) notes.push('Officer note: ' + tier.officer_notes);
+
+        let severity = tier.calculator_severity || 'info';
+        if (flags.indexOf('same_amount_blocked') >= 0 || flags.indexOf('principal_above_tier_cap') >= 0) {
+            if (severity === 'info') severity = 'caution';
+        }
+        if (tier.stance === 'decline') severity = 'block';
+
+        return {
+            is_returning: isReturning,
+            requested_principal: this.round(requestedPrincipal),
+            requested_term: requestedTerm,
+            prior_principal: this.round(priorPrincipal),
+            max_allowed_principal: maxAllowedPrincipal,
+            metrics,
+            band,
+            tier,
+            bylaws: {
+                version: bylaws.version,
+                title: bylaws.title,
+                updated_at: bylaws.updated_at
+            },
+            severity,
+            stance: tier.stance,
+            flags,
+            notes,
+            summary: tier.summary || notes[0] || '',
+            confirm_required: severity === 'watch' || severity === 'caution' || severity === 'block'
+                || flags.length > 0
+        };
+    },
+
+    /**
+     * Snapshot of bylaws tier applied at loan acceptance (audit trail).
+     */
+    buildLoanBylawsReference(advice) {
+        if (!advice || !advice.tier) return null;
+        return {
+            document: 'reloan_bylaws',
+            title: advice.bylaws && advice.bylaws.title,
+            version: advice.bylaws && advice.bylaws.version,
+            updated_at: advice.bylaws && advice.bylaws.updated_at,
+            applied_at: new Date().toISOString(),
+            band_id: advice.band && advice.band.id,
+            band_label: advice.band && advice.band.label,
+            score: advice.metrics && advice.metrics.score,
+            tier_id: advice.tier.id,
+            stance: advice.stance,
+            severity: advice.severity,
+            same_amount_allowed: advice.tier.same_amount_allowed,
+            max_principal_pct_of_prior: advice.tier.max_principal_pct_of_prior,
+            summary: advice.summary,
+            flags: Array.isArray(advice.flags) ? advice.flags.slice() : [],
+            conditions: Array.isArray(advice.tier.conditions)
+                ? advice.tier.conditions.slice() : []
+        };
+    },
+
+    formatReloanAdviceForConfirm(advice) {
+        if (!advice) return '';
+        const lines = [];
+        lines.push((advice.bylaws && advice.bylaws.title) || 'Reloan bylaws');
+        lines.push('Tier: ' + (advice.tier && advice.tier.label) +
+            (advice.metrics && advice.metrics.score != null
+                ? ' (score ' + advice.metrics.score + ')' : ''));
+        lines.push('Stance: ' + advice.stance);
+        if (advice.summary) lines.push(advice.summary);
+        (advice.notes || []).slice(0, 8).forEach(n => lines.push('• ' + n));
+        if (advice.severity === 'block') {
+            lines.push('\nBylaws severity is BLOCK — continue only with manager override.');
+        } else {
+            lines.push('\nPatterns/bylaws inform the decision; they do not replace inactive-client hard blocks.');
+        }
+        return lines.join('\n');
+    },
+
     _parseEventDate(value) {
         if (!value) return null;
         const d = new Date(value);

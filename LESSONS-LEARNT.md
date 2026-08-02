@@ -6,6 +6,12 @@ Branch-scoped findings from Bugbot / review loops. Newest entries at the top.
 
 ## 2026-08-02 — `cursor/delinquency-monthly-interest-a923` (product rule)
 
+### LL-DELQ-046 — Reloan bylaws document drives calculator officer advice
+- **Severity:** product / UX
+- **Symptom / request:** Returning clients (reload) needed officer guidance tied to reliability score; policy must be editable and stamped on each loan.
+- **Fix:** `AppState.reloanBylaws` editable document with one section per score tier (building → critical). Calculator shows advice from `buildReloanAdvice`, confirms on accept, stamps `loan.bylaws_reference`. Settings UI edits tiers (stance, caps, rehab, conditions).
+- **Lesson:** Completed loans are not automatic same-terms approval — bylaws encode tier stance (e.g. Poor: decline same amount, ≤50% prior, 6 clean rehab) and leave inactive/blacklist as hard blocks.
+
 ### LL-DELQ-045 — Payment status: amount and timing are independent
 - **Severity:** scoring / UX
 - **Symptom / request:** `getPaymentStatus` returned `partial` whenever paid &lt; 90% of expected, before checking grace — so late underpayments never counted as late in history or score.

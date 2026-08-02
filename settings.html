@@ -252,6 +252,32 @@
                 </p>
             </div>
         </div>
+
+        <!-- Reloan Bylaws (editable officer guidance by score tier) -->
+        <div class="form-section">
+            <h3 style="color: #2c3e50; margin-bottom: 12px;">📜 Reloan &amp; Financing Bylaws</h3>
+            <p style="color: #636e72; margin-bottom: 16px; font-size: 14px;">
+                Editable policy document referenced by the Loan Calculator when a client returns for a reload.
+                Each reliability score tier has its own section. Advice informs the officer; inactive/blacklisted
+                clients remain hard-blocked.
+            </p>
+            <div style="display: grid; gap: 12px; margin-bottom: 16px;">
+                <label style="display: grid; gap: 4px;">
+                    <span style="font-size: 13px; font-weight: 600; color: #2c3e50;">Document title</span>
+                    <input type="text" id="reloanBylawsTitle" style="padding: 10px; border: 1px solid #dfe6e9; border-radius: 8px;">
+                </label>
+                <label style="display: grid; gap: 4px;">
+                    <span style="font-size: 13px; font-weight: 600; color: #2c3e50;">Intro</span>
+                    <textarea id="reloanBylawsIntro" rows="2" style="padding: 10px; border: 1px solid #dfe6e9; border-radius: 8px; resize: vertical;"></textarea>
+                </label>
+            </div>
+            <div id="reloanBylawsTiers" style="display: grid; gap: 16px;"></div>
+            <p id="reloanBylawsMeta" style="font-size: 12px; color: #636e72; margin: 12px 0;"></p>
+            <div style="display: flex; flex-wrap: wrap; gap: 10px;">
+                <button class="btn btn-primary" onclick="saveReloanBylaws()">💾 Save Bylaws</button>
+                <button class="btn btn-secondary" onclick="resetReloanBylaws()">↺ Reset to Defaults</button>
+            </div>
+        </div>
         
         <!-- Payment Reminder Log -->
         <div class="form-section">
@@ -540,6 +566,7 @@
             
             // Update payment management settings
             updatePaymentSettings();
+            renderReloanBylawsEditor();
             displayReminderLog();
             
             // Update version display
@@ -559,6 +586,8 @@
                 dbg('State updated from another tab, reloading...');
                 AppState = AppStateManager.load();
                 updateFinancialSettings();
+                updatePaymentSettings();
+                renderReloanBylawsEditor();
             });
             
             dbg('✅ Settings page initialized');
@@ -630,6 +659,144 @@
             AppStateManager.save(AppState);
             updatePaymentSettings();
             alert(`✅ Grace period set to ${days} day${days !== 1 ? 's' : ''}.\n\nLate penalties will apply ${days} day${days !== 1 ? 's' : ''} after the due date for loans distributed after 31 January 2026.`);
+        }
+
+        const RELOAN_TIER_ORDER = ['building', 'excellent', 'good', 'watch', 'poor', 'critical'];
+
+        function getEditableReloanBylaws() {
+            return Calculations.getReloanBylaws(AppState);
+        }
+
+        function renderReloanBylawsEditor() {
+            const doc = getEditableReloanBylaws();
+            const titleEl = document.getElementById('reloanBylawsTitle');
+            const introEl = document.getElementById('reloanBylawsIntro');
+            const tiersEl = document.getElementById('reloanBylawsTiers');
+            const metaEl = document.getElementById('reloanBylawsMeta');
+            if (!titleEl || !introEl || !tiersEl) return;
+
+            titleEl.value = doc.title || '';
+            introEl.value = doc.intro || '';
+            metaEl.textContent = 'Version ' + (doc.version || 1)
+                + (doc.updated_at
+                    ? ' · last saved ' + new Date(doc.updated_at).toLocaleString()
+                    : ' · defaults (not yet customized)');
+
+            const severityOpts = ['info', 'watch', 'caution', 'block'];
+            const stanceOpts = [
+                'proceed',
+                'proceed_with_standard_checks',
+                'conditional',
+                'conditional_decline_same_terms',
+                'decline'
+            ];
+
+            tiersEl.innerHTML = RELOAN_TIER_ORDER.map(id => {
+                const t = doc.tiers[id] || {};
+                const conditionsText = (t.conditions || []).join('\n');
+                return `
+                <div class="setting-card" data-tier="${id}" style="border-left: 4px solid #2c3e50;">
+                    <h4 style="margin: 0 0 4px 0;">${esc(t.label || id)} <span style="font-weight: 400; color: #636e72; font-size: 13px;">(${esc(t.score_range || '')})</span></h4>
+                    <p style="font-size: 12px; color: #636e72; margin: 0 0 12px 0;">Segment id: <code>${esc(id)}</code></p>
+                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 10px;">
+                        <label style="display: grid; gap: 4px; font-size: 12px;">
+                            Stance
+                            <select data-field="stance" style="padding: 8px; border: 1px solid #dfe6e9; border-radius: 6px;">
+                                ${stanceOpts.map(s => `<option value="${s}" ${t.stance === s ? 'selected' : ''}>${s}</option>`).join('')}
+                            </select>
+                        </label>
+                        <label style="display: grid; gap: 4px; font-size: 12px;">
+                            Calculator severity
+                            <select data-field="calculator_severity" style="padding: 8px; border: 1px solid #dfe6e9; border-radius: 6px;">
+                                ${severityOpts.map(s => `<option value="${s}" ${t.calculator_severity === s ? 'selected' : ''}>${s}</option>`).join('')}
+                            </select>
+                        </label>
+                        <label style="display: grid; gap: 4px; font-size: 12px;">
+                            Max % of prior principal
+                            <input type="number" data-field="max_principal_pct_of_prior" min="0" max="200" step="1"
+                                value="${Number(t.max_principal_pct_of_prior) || 0}"
+                                style="padding: 8px; border: 1px solid #dfe6e9; border-radius: 6px;">
+                        </label>
+                        <label style="display: grid; gap: 4px; font-size: 12px;">
+                            Rehab clean events
+                            <input type="number" data-field="require_rehab_clean_events" min="0" max="24" step="1"
+                                value="${Number(t.require_rehab_clean_events) || 0}"
+                                style="padding: 8px; border: 1px solid #dfe6e9; border-radius: 6px;">
+                        </label>
+                        <label style="display: flex; align-items: center; gap: 8px; font-size: 12px; margin-top: 18px;">
+                            <input type="checkbox" data-field="same_amount_allowed" ${t.same_amount_allowed ? 'checked' : ''}>
+                            Same amount allowed
+                        </label>
+                    </div>
+                    <label style="display: grid; gap: 4px; font-size: 12px; margin-top: 10px;">
+                        Summary (officer-facing)
+                        <textarea data-field="summary" rows="2" style="padding: 8px; border: 1px solid #dfe6e9; border-radius: 6px; resize: vertical;">${esc(t.summary || '')}</textarea>
+                    </label>
+                    <label style="display: grid; gap: 4px; font-size: 12px; margin-top: 10px;">
+                        Conditions (one per line)
+                        <textarea data-field="conditions" rows="4" style="padding: 8px; border: 1px solid #dfe6e9; border-radius: 6px; resize: vertical;">${esc(conditionsText)}</textarea>
+                    </label>
+                    <label style="display: grid; gap: 4px; font-size: 12px; margin-top: 10px;">
+                        Officer notes
+                        <textarea data-field="officer_notes" rows="2" style="padding: 8px; border: 1px solid #dfe6e9; border-radius: 6px; resize: vertical;">${esc(t.officer_notes || '')}</textarea>
+                    </label>
+                </div>`;
+            }).join('');
+        }
+
+        function collectReloanBylawsFromEditor() {
+            const base = getEditableReloanBylaws();
+            const tiers = {};
+            RELOAN_TIER_ORDER.forEach(id => {
+                const card = document.querySelector(`#reloanBylawsTiers [data-tier="${id}"]`);
+                const prev = base.tiers[id] || {};
+                if (!card) {
+                    tiers[id] = prev;
+                    return;
+                }
+                const val = (field) => {
+                    const el = card.querySelector(`[data-field="${field}"]`);
+                    if (!el) return null;
+                    if (el.type === 'checkbox') return el.checked;
+                    return el.value;
+                };
+                const conditionsRaw = String(val('conditions') || '');
+                tiers[id] = {
+                    id,
+                    label: prev.label,
+                    score_range: prev.score_range,
+                    stance: String(val('stance') || prev.stance),
+                    calculator_severity: String(val('calculator_severity') || prev.calculator_severity),
+                    same_amount_allowed: !!val('same_amount_allowed'),
+                    max_principal_pct_of_prior: Number(val('max_principal_pct_of_prior')),
+                    require_rehab_clean_events: Number(val('require_rehab_clean_events')),
+                    summary: String(val('summary') || ''),
+                    conditions: conditionsRaw.split('\n').map(s => s.trim()).filter(Boolean),
+                    officer_notes: String(val('officer_notes') || '')
+                };
+            });
+            return Calculations.normalizeReloanBylaws({
+                version: (Number(base.version) || 1) + 1,
+                title: document.getElementById('reloanBylawsTitle').value.trim() || base.title,
+                intro: document.getElementById('reloanBylawsIntro').value,
+                updated_at: new Date().toISOString(),
+                tiers
+            });
+        }
+
+        function saveReloanBylaws() {
+            AppState.reloanBylaws = collectReloanBylawsFromEditor();
+            AppStateManager.save(AppState);
+            renderReloanBylawsEditor();
+            alert('✅ Reloan bylaws saved.\n\nThe Loan Calculator will use these tiers when advising on reloads.');
+        }
+
+        function resetReloanBylaws() {
+            if (!confirm('Reset reloan bylaws to factory defaults? Your custom tier text will be lost.')) return;
+            AppState.reloanBylaws = Calculations.getDefaultReloanBylaws();
+            AppStateManager.save(AppState);
+            renderReloanBylawsEditor();
+            alert('✅ Reloan bylaws reset to defaults.');
         }
         
         /**
