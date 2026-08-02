@@ -37,6 +37,8 @@ function sampleLoan() {
             late_penalty: 40,
             payment_status: 'late',
             days_late: 5,
+            due_date: '2026-03-31',
+            installment_index: 1,
             remaining_principal_after: 7000,
             payments_made_after: 1
         }],
@@ -105,8 +107,22 @@ test('buildLoanStatementModel includes payments, adjustments, fees, schedule', (
     assert.ok(types.includes('late_penalty'));
 
     const payment = model.activity.find(a => a.type === 'payment');
+    assert.match(payment.title, /\(inst #1\)/);
+    assert.match(payment.detail, /\(inst #1\)/);
     assert.match(payment.detail, /Late penalty/);
     assert.match(payment.detail, /late/);
+    assert.equal(payment.installment_index, 1);
+
+    // Fee activity dates from first billable day, not installment due_date
+    const lateAct = model.activity.find(a =>
+        a.type === 'late_penalty' && /installment #2/.test(a.title));
+    assert.ok(lateAct);
+    assert.equal(String(lateAct.date).slice(0, 10), '2026-05-04'); // due 30 Apr + 3 grace + 1
+    const adminAct = model.activity.find(a =>
+        a.type === 'extra_admin' && /installment #2/.test(a.title));
+    assert.ok(adminAct);
+    // Period end = 31 May; term grace end 3 Jun; open due 30 Apr → slices 3 May, 3 Jun
+    assert.equal(String(adminAct.date).slice(0, 10), '2026-06-03');
 
     assert.ok(model.financials.admin_extra_assessed >= 60);
     assert.ok(model.financials.late_penalties_assessed >= 40);

@@ -1463,6 +1463,78 @@ const Calculations = {
     },
 
     /**
+     * Inclusive grace-end date for an installment due date.
+     */
+    getInstallmentGraceEndDate(dueDate, gracePeriodDays) {
+        const due = new Date(dueDate);
+        if (isNaN(due.getTime())) return null;
+        const grace = typeof gracePeriodDays === 'number' ? gracePeriodDays : 3;
+        const graceEnd = new Date(due.getTime());
+        graceEnd.setDate(graceEnd.getDate() + grace);
+        return graceEnd;
+    },
+
+    /**
+     * First calendar day late penalty / delinquency interest can bill for an
+     * installment (day after grace end).
+     */
+    getFirstDelinquencyFeeDate(entry, gracePeriodDays) {
+        const graceEnd = this.getInstallmentGraceEndDate(
+            entry && entry.due_date, gracePeriodDays);
+        if (!graceEnd) return null;
+        const first = new Date(graceEnd.getTime());
+        first.setDate(first.getDate() + 1);
+        return first;
+    },
+
+    /**
+     * First calendar day extra admin can bill for an installment: the first
+     * open-delinquency month slice on/after original period-end + grace.
+     */
+    getFirstExtraAdminFeeDate(loan, entry, gracePeriodDays) {
+        const grace = typeof gracePeriodDays === 'number' ? gracePeriodDays : 3;
+        const graceEnd = this.getInstallmentGraceEndDate(
+            entry && entry.due_date, grace);
+        if (!graceEnd) return null;
+        const periodEnd = this.getLoanPeriodEndDueDate(loan)
+            || new Date(entry.due_date);
+        if (!periodEnd || isNaN(periodEnd.getTime())) return null;
+        const termGraceEnd = new Date(periodEnd.getTime());
+        termGraceEnd.setDate(termGraceEnd.getDate() + grace);
+        let slice = new Date(graceEnd.getTime());
+        for (let i = 0; i < 120; i++) {
+            if (slice >= termGraceEnd) return slice;
+            slice = new Date(slice.getTime());
+            slice.setMonth(slice.getMonth() + 1);
+        }
+        return termGraceEnd;
+    },
+
+    /**
+     * 1-based schedule installment index for a payment history row.
+     * Prefers stored installment_index; else matches payment.due_date.
+     */
+    getPaymentInstallmentIndex(loan, payment) {
+        if (!payment) return null;
+        const stored = Number(payment.installment_index);
+        if (Number.isFinite(stored) && stored >= 1) return Math.floor(stored);
+        const schedule = Array.isArray(loan && loan.schedule) ? loan.schedule : [];
+        const dueRaw = payment.due_date || payment.installment_due_date;
+        if (!dueRaw || !schedule.length) return null;
+        const due = new Date(dueRaw);
+        if (isNaN(due.getTime())) return null;
+        const dueKey = due.toISOString().slice(0, 10);
+        for (let i = 0; i < schedule.length; i++) {
+            const entry = schedule[i];
+            if (!entry || !entry.due_date) continue;
+            const ed = new Date(entry.due_date);
+            if (isNaN(ed.getTime())) continue;
+            if (ed.toISOString().slice(0, 10) === dueKey) return i + 1;
+        }
+        return null;
+    },
+
+    /**
      * Interest / 30% income-cap base for delinquency months: unpaid scheduled
      * principal on the open installment (amount that should have been paid but
      * was not). Capped by remaining_principal. Legacy rows without
@@ -2399,35 +2471,48 @@ const Calculations = {
             }
             (loan.schedule || []).forEach(entry => {
                 if (!entry) return;
-                if (Number(entry.extra_admin_assessed) > 0 && entry.due_date &&
-                    this._inRollingWindow(entry.due_date, asOf, months)) {
-                    items.push({
-                        date: entry.due_date,
-                        type: 'extra_admin',
-                        title: `Loan #${loan.loan_id} extra admin`,
-                        detail: this.formatCurrency(entry.extra_admin_assessed),
-                        meta: entry
-                    });
+                const graceDays = options.gracePeriodDays || 3;
+                if (Number(entry.extra_admin_assessed) > 0) {
+                    const adminDate = this.getFirstExtraAdminFeeDate(
+                        loan, entry, graceDays) || entry.due_date;
+                    if (adminDate && this._inRollingWindow(adminDate, asOf, months)) {
+                        items.push({
+                            date: adminDate instanceof Date
+                                ? adminDate.toISOString() : adminDate,
+                            type: 'extra_admin',
+                            title: `Loan #${loan.loan_id} extra admin`,
+                            detail: this.formatCurrency(entry.extra_admin_assessed),
+                            meta: entry
+                        });
+                    }
                 }
-                if (Number(entry.late_penalty_assessed) > 0 && entry.due_date &&
-                    this._inRollingWindow(entry.due_date, asOf, months)) {
-                    items.push({
-                        date: entry.due_date,
-                        type: 'late_penalty',
-                        title: `Loan #${loan.loan_id} late penalty`,
-                        detail: this.formatCurrency(entry.late_penalty_assessed),
-                        meta: entry
-                    });
+                if (Number(entry.late_penalty_assessed) > 0) {
+                    const lateDate = this.getFirstDelinquencyFeeDate(
+                        entry, graceDays) || entry.due_date;
+                    if (lateDate && this._inRollingWindow(lateDate, asOf, months)) {
+                        items.push({
+                            date: lateDate instanceof Date
+                                ? lateDate.toISOString() : lateDate,
+                            type: 'late_penalty',
+                            title: `Loan #${loan.loan_id} late penalty`,
+                            detail: this.formatCurrency(entry.late_penalty_assessed),
+                            meta: entry
+                        });
+                    }
                 }
-                if (Number(entry.extra_interest_assessed) > 0 && entry.due_date &&
-                    this._inRollingWindow(entry.due_date, asOf, months)) {
-                    items.push({
-                        date: entry.due_date,
-                        type: 'extra_interest',
-                        title: `Loan #${loan.loan_id} delinquency interest`,
-                        detail: this.formatCurrency(entry.extra_interest_assessed),
-                        meta: entry
-                    });
+                if (Number(entry.extra_interest_assessed) > 0) {
+                    const intDate = this.getFirstDelinquencyFeeDate(
+                        entry, graceDays) || entry.due_date;
+                    if (intDate && this._inRollingWindow(intDate, asOf, months)) {
+                        items.push({
+                            date: intDate instanceof Date
+                                ? intDate.toISOString() : intDate,
+                            type: 'extra_interest',
+                            title: `Loan #${loan.loan_id} delinquency interest`,
+                            detail: this.formatCurrency(entry.extra_interest_assessed),
+                            meta: entry
+                        });
+                    }
                 }
             });
         });
@@ -3564,6 +3649,8 @@ const Calculations = {
         });
 
         history.forEach((payment, index) => {
+            const instIndex = this.getPaymentInstallmentIndex(loan, payment);
+            const instTag = instIndex != null ? '(inst #' + instIndex + ') ' : '';
             const parts = [];
             if (Number(payment.principal) > 0) {
                 parts.push('Principal: ' + this.formatCurrency(payment.principal));
@@ -3580,7 +3667,7 @@ const Calculations = {
             if (Number(payment.late_penalty) > 0) {
                 parts.push('Late penalty: ' + this.formatCurrency(payment.late_penalty));
             }
-            let detail = parts.join(', ');
+            let detail = parts.length ? (instTag + parts.join(', ')) : instTag.trim();
             if (payment.remaining_principal_after != null) {
                 detail += (detail ? '\n' : '') +
                     'Balance after: ' + this.formatCurrency(payment.remaining_principal_after) +
@@ -3599,11 +3686,13 @@ const Calculations = {
             activity.push({
                 date: payment.date || payment.payment_date || asOf.toISOString(),
                 type: 'payment',
-                title: 'Payment #' + (index + 1),
+                title: 'Payment #' + (index + 1) +
+                    (instIndex != null ? ' (inst #' + instIndex + ')' : ''),
                 detail: detail,
                 amount: this.round(Number(payment.amount) || 0),
                 payment_status: payment.payment_status || null,
                 days_late: payment.days_late != null ? payment.days_late : null,
+                installment_index: instIndex,
                 recalculated: !!payment.interest_recalculated,
                 new_max_interest: this.round(Number(payment.new_max_interest) || 0)
             });
@@ -3631,29 +3720,39 @@ const Calculations = {
 
         schedule.forEach((entry, index) => {
             if (!entry || !entry.due_date) return;
+            const instLabel = 'installment #' + (index + 1);
             if (Number(entry.extra_admin_assessed) > 0) {
+                const adminDate = this.getFirstExtraAdminFeeDate(
+                    loan, entry, graceDays) || entry.due_date;
                 activity.push({
-                    date: entry.due_date,
+                    date: adminDate instanceof Date
+                        ? adminDate.toISOString() : adminDate,
                     type: 'extra_admin',
-                    title: 'Extra admin assessed (installment #' + (index + 1) + ')',
+                    title: 'Extra admin assessed (' + instLabel + ')',
                     detail: this.formatCurrency(entry.extra_admin_assessed),
                     amount: this.round(Number(entry.extra_admin_assessed) || 0)
                 });
             }
             if (Number(entry.late_penalty_assessed) > 0) {
+                const lateDate = this.getFirstDelinquencyFeeDate(
+                    entry, graceDays) || entry.due_date;
                 activity.push({
-                    date: entry.due_date,
+                    date: lateDate instanceof Date
+                        ? lateDate.toISOString() : lateDate,
                     type: 'late_penalty',
-                    title: 'Late penalty assessed (installment #' + (index + 1) + ')',
+                    title: 'Late penalty assessed (' + instLabel + ')',
                     detail: this.formatCurrency(entry.late_penalty_assessed),
                     amount: this.round(Number(entry.late_penalty_assessed) || 0)
                 });
             }
             if (Number(entry.extra_interest_assessed) > 0) {
+                const intDate = this.getFirstDelinquencyFeeDate(
+                    entry, graceDays) || entry.due_date;
                 activity.push({
-                    date: entry.due_date,
+                    date: intDate instanceof Date
+                        ? intDate.toISOString() : intDate,
                     type: 'extra_interest',
-                    title: 'Delinquency interest assessed (installment #' + (index + 1) + ')',
+                    title: 'Delinquency interest assessed (' + instLabel + ')',
                     detail: this.formatCurrency(entry.extra_interest_assessed),
                     amount: this.round(Number(entry.extra_interest_assessed) || 0)
                 });

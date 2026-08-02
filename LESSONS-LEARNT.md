@@ -6,6 +6,12 @@ Branch-scoped findings from Bugbot / review loops. Newest entries at the top.
 
 ## 2026-08-02 — `cursor/delinquency-monthly-interest-a923` (product rule)
 
+### LL-DELQ-044 — Statement fee dates + payment installment tag
+- **Severity:** UX / audit
+- **Symptom / request:** Extra-admin / late / delinquency-interest activity used the installment `due_date`, so post-term admin looked like it billed on Jul/Aug dues. Payments also did not show which open installment received the waterfall.
+- **Fix:** Date fee activity from `getFirstDelinquencyFeeDate` / `getFirstExtraAdminFeeDate`. Persist `installment_index` on `payment_history`; statement title/detail show `(inst #N)` on the allocation breakdown.
+- **Lesson:** Statement chronology should reflect first billable day, and each payment should name the installment it paid toward.
+
 ### LL-DELQ-043 — Delinquency interest on unpaid installment principal (late stays full)
 - **Severity:** product rule
 - **Symptom / request:** Underpaying a R1,600 installment left R0 on the R1,000 principal slot while `remaining_principal` stayed R3,000, so delinquency interest used the full balance. Late fee must still use full remaining principal.

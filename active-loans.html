@@ -2310,6 +2310,9 @@ Click "OK" to process payment or "Cancel" to go back.
                 : 'on-time';
             
             // Add this payment to history
+            const scheduleIndex = Array.isArray(loan.schedule) && nextPayment
+                ? loan.schedule.indexOf(nextPayment)
+                : -1;
             loan.payment_history.push({
                 date: paymentDate,
                 amount: amount,
@@ -2322,6 +2325,8 @@ Click "OK" to process payment or "Cancel" to go back.
                 due_date: nextDueDate && !isNaN(new Date(nextDueDate).getTime())
                     ? new Date(nextDueDate).toISOString()
                     : null,
+                // 1-based open installment this payment was applied to
+                installment_index: scheduleIndex >= 0 ? scheduleIndex + 1 : null,
                 days_late: daysLate,
                 payments_made_after: 0, // Will be updated below
                 remaining_principal_after: 0, // Will be updated below
