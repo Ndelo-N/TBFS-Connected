@@ -872,6 +872,76 @@
             }
         }
         
+        function buildCalculatorReloanAdvice() {
+            if (!loanData) return null;
+            const client = (AppState.clients || []).find(c =>
+                c.account_number === loanData.accountNumber
+            ) || {
+                account_number: loanData.accountNumber,
+                first_name: loanData.firstName,
+                last_name: loanData.lastName,
+                status: 'active',
+                total_loans: 0
+            };
+            return Calculations.buildReloanAdvice(
+                client,
+                AppState.loans || [],
+                AppState,
+                {
+                    requestedPrincipal: loanData.principal,
+                    requestedTerm: loanData.term,
+                    gracePeriodDays: AppState.gracePeriodDays || 3
+                }
+            );
+        }
+
+        function renderReloanAdviceHtml(advice) {
+            if (!advice) return '';
+            const severityColors = {
+                info: { bg: '#eef7ff', border: '#3498db', text: '#1a5276' },
+                watch: { bg: '#fff8e6', border: '#f39c12', text: '#7d6608' },
+                caution: { bg: '#fdeeea', border: '#e67e22', text: '#6e2c00' },
+                block: { bg: '#fdedec', border: '#c0392b', text: '#641e16' }
+            };
+            const colors = severityColors[advice.severity] || severityColors.info;
+            const scoreText = advice.metrics && advice.metrics.score != null
+                ? String(advice.metrics.score)
+                : (advice.band && advice.band.id === 'building' ? 'provisional' : '—');
+            const capText = advice.max_allowed_principal != null
+                ? Calculations.formatCurrency(advice.max_allowed_principal)
+                : 'n/a (first file / uncapped)';
+            const notes = (advice.notes || []).map(n =>
+                `<li style="margin: 4px 0;">${esc(n)}</li>`
+            ).join('');
+            const flags = (advice.flags || []).length
+                ? `<p style="margin: 8px 0 0 0; font-size: 12px;"><strong>Flags:</strong> ${esc(advice.flags.join(', '))}</p>`
+                : '';
+            return `
+                <div style="background: ${colors.bg}; border-left: 4px solid ${colors.border}; padding: 14px 16px; border-radius: 8px; margin-top: 12px; color: ${colors.text};">
+                    <div style="display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px; margin-bottom: 8px;">
+                        <strong>📜 Reloan bylaws advice</strong>
+                        <span style="font-size: 12px;">${esc((advice.bylaws && advice.bylaws.title) || 'TBFS Reloan Bylaws')} · v${esc(String((advice.bylaws && advice.bylaws.version) || 1))}</span>
+                    </div>
+                    <p style="margin: 0 0 6px 0; font-size: 14px;">
+                        <strong>Tier:</strong> ${esc(advice.tier && advice.tier.label)} (score ${esc(scoreText)})
+                        · <strong>Stance:</strong> ${esc(advice.stance)}
+                        · <strong>Severity:</strong> ${esc(advice.severity)}
+                    </p>
+                    <p style="margin: 0 0 8px 0; font-size: 14px;">${esc(advice.summary || '')}</p>
+                    <p style="margin: 0 0 6px 0; font-size: 13px;">
+                        Prior principal: <strong>${Calculations.formatCurrency(advice.prior_principal || 0)}</strong>
+                        · Tier cap: <strong>${esc(capText)}</strong>
+                        · Requested: <strong>${Calculations.formatCurrency(advice.requested_principal || 0)}</strong>
+                    </p>
+                    <ul style="margin: 0; padding-left: 18px; font-size: 13px;">${notes}</ul>
+                    ${flags}
+                    <p style="margin: 10px 0 0 0; font-size: 11px; opacity: 0.85;">
+                        Editable in Settings → Reloan &amp; Financing Bylaws. This advice is stamped on the loan when accepted.
+                    </p>
+                </div>
+            `;
+        }
+
         /**
          * Display calculation results
          */
@@ -881,13 +951,17 @@
             
             // Scroll to results
             document.getElementById('results').scrollIntoView({ behavior: 'smooth', block: 'start' });
+
+            const advice = buildCalculatorReloanAdvice();
+            loanData.reloanAdvice = advice;
             
-            // Display client info
+            // Display client info + bylaws advice for returning / scored clients
             const clientInfo = `
                 <div style="background: #f8f9fa; padding: 15px; border-radius: 8px; margin-bottom: 20px;">
                     <strong>Client:</strong> ${esc(loanData.firstName)} ${esc(loanData.lastName)} | 
                     <strong>Account:</strong> ${esc(loanData.accountNumber)} | 
                     <strong>Type:</strong> ${loanData.isStockvelMember ? 'Stockvel Member' : 'Standard Client'}
+                    ${renderReloanAdviceHtml(advice)}
                 </div>
             `;
             document.getElementById('clientInfo').innerHTML = clientInfo;
@@ -1374,6 +1448,17 @@
                 alert(`❌ Insufficient capital!\n\nLoan Amount: ${Calculations.formatCurrency(loanData.principal)}\nAvailable: ${Calculations.formatCurrency(availableCapital)}\n\nPlease reduce the loan amount or add more capital.`);
                 return;
             }
+
+            // Reloan bylaws advice — confirm with officer before accepting
+            const reloanAdvice = loanData.reloanAdvice || buildCalculatorReloanAdvice();
+            loanData.reloanAdvice = reloanAdvice;
+            if (reloanAdvice && (reloanAdvice.is_returning || reloanAdvice.confirm_required)) {
+                const confirmText = Calculations.formatReloanAdviceForConfirm(reloanAdvice)
+                    + '\n\nProceed with accepting this loan under these bylaws?';
+                if (!confirm(confirmText)) {
+                    return;
+                }
+            }
             
             // Unified Model: Check if client exists, sync with stockvel member if applicable
             let client = (AppState.clients || []).find(c => c.account_number === loanData.accountNumber);
@@ -1602,7 +1687,10 @@
                 accumulated_bonus: loanData.accumulatedBonus || 0,
                 memberNumber: memberNumber, // Unified Model: Links to stockvelMembers[]
                 tieredRate: tieredRate,
-                isStockvelLoan: loanData.isStockvelMember
+                isStockvelLoan: loanData.isStockvelMember,
+
+                // Snapshot of bylaws tier applied at acceptance (audit trail)
+                bylaws_reference: Calculations.buildLoanBylawsReference(reloanAdvice)
             };
             
             // Unified Model: Sync member's contribution data if stockvel loan

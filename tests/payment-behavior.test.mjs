@@ -40,11 +40,19 @@ test('calculateExtraAdminDue: ineligible pre-cutoff loan is zero', () => {
 });
 
 test('calculateExtraAdminDue: eligible loan bills months × admin', () => {
+    // Single-due schedule: period end = that due, so extra admin from first
+    // post-grace month. remaining_principal required for 30% income basket.
     const loan = {
         status: 'active',
         created_at: '2026-03-01T12:00:00.000Z',
         loan_type: 'standard',
-        schedule: [{ due_date: '2026-06-30T12:00:00', admin_fee: 60, status: 'partial' }]
+        remaining_principal: 3000,
+        schedule: [{
+            due_date: '2026-06-30T12:00:00',
+            principal_payment: 3000,
+            admin_fee: 60,
+            status: 'partial'
+        }]
     };
     const r = C.calculateExtraAdminDue(loan, loan.schedule[0], new Date(2026, 6, 4), 3);
     assert.equal(r.months, 1);
@@ -108,6 +116,44 @@ test('waterfall: effective admin includes extra_admin_assessed', () => {
     });
     assert.equal(alloc.adminPaid, 120);
     assert.equal(alloc.principalPaid, 80);
+});
+
+test('getPaymentStatus: amount and timing are independent', () => {
+    const due = new Date(2026, 5, 30); // 30 Jun
+    const inGrace = new Date(2026, 6, 2); // 2 Jul
+    const afterGrace = new Date(2026, 6, 4); // 4 Jul
+    assert.equal(C.getPaymentStatus(inGrace, due, 1600, 1600, 3), 'on-time');
+    assert.equal(C.getPaymentStatus(afterGrace, due, 1600, 1600, 3), 'late');
+    assert.equal(C.getPaymentStatus(inGrace, due, 900, 1600, 3), 'partial');
+    assert.equal(C.getPaymentStatus(afterGrace, due, 900, 1600, 3), 'partial-late');
+    assert.equal(C.getPaymentStatus(afterGrace, due, 0, 1600, 3), 'missed');
+    assert.equal(C.isPartialPaymentStatus('partial-late'), true);
+    assert.equal(C.isLatePaymentStatus('partial-late'), true);
+    assert.equal(C.formatPaymentStatus('partial-late'), 'partial + late');
+});
+
+test('score: partial-late penalizes both amount and timing', () => {
+    const asOf = new Date('2026-08-15T12:00:00');
+    const client = { account_number: 'ACC-PL', status: 'active' };
+    const loans = [{
+        account_number: 'ACC-PL',
+        status: 'completed',
+        created_at: '2026-03-01T12:00:00.000Z',
+        payment_history: [
+            { payment_status: 'partial', date: '2026-06-30T12:00:00.000Z' },
+            { payment_status: 'partial-late', date: '2026-07-30T12:00:00.000Z' }
+        ],
+        schedule: [{ status: 'paid', due_date: '2026-06-30' }]
+    }];
+    const m = C.computeClientPaymentMetrics(client, loans, { asOf, gracePeriodDays: 3 });
+    assert.equal(m.provisional, false);
+    assert.equal(m.partial_count, 2); // both payments underpaid
+    assert.equal(m.late_count, 1);    // only the second was past grace
+    assert.equal(m.on_time_count, 0);
+    // −8 partial (2×4) −6 late = −14 → 86
+    assert.equal(m.penalties.loan.partial, 8);
+    assert.equal(m.penalties.loan.late, 6);
+    assert.equal(m.score, 86);
 });
 
 test('client payment metrics: clean payer scores 100 (dated window events)', () => {

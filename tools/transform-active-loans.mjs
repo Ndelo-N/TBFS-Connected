@@ -336,10 +336,24 @@ rep(
 
 /* ---- T11: propagate recalculated interest into the schedule ------------ */
 rep(
-`                    loan.max_interest_allowed = newMaxInterest;
+`                    const previousMaxInterest = loan.max_interest_allowed || 0;
+                    const newMaxInterest = loan.interest_paid + newInterestCalculation;
+                    loan.max_interest_allowed = newMaxInterest;
                     loan.expected_monthly_interest = newMaxInterest / loan.term_months;`,
-`                    loan.max_interest_allowed = newMaxInterest;
-                    loan.expected_monthly_interest = newMaxInterest / loan.term_months;
+`                    const previousMaxInterest = loan.max_interest_allowed || 0;
+                    const delinquencyPaid = typeof Calculations.paidScheduleExtraInterest === 'function'
+                        ? Calculations.paidScheduleExtraInterest(loan)
+                        : 0;
+                    const scheduledInterestPaid = Math.max(
+                        0,
+                        (Number(loan.interest_paid) || 0) - (Number(delinquencyPaid) || 0)
+                    );
+                    const scheduledMaxInterest = Calculations.round(
+                        scheduledInterestPaid + newInterestCalculation
+                    );
+                    const newMaxInterest = scheduledMaxInterest;
+                    loan.max_interest_allowed = newMaxInterest;
+                    loan.expected_monthly_interest = scheduledMaxInterest / Math.max(1, loan.term_months || 1);
 
                     // Propagate the recalculated interest into the remaining
                     // schedule entries so future allocations and displays use
@@ -348,10 +362,18 @@ rep(
                     if (openEntries.length > 0) {
                         const perEntry = Calculations.round(newInterestCalculation / openEntries.length);
                         openEntries.forEach(p => {
-                            p.interest_payment = perEntry;
+                            const paidInterest = Number(
+                                (p.paid_breakdown || {}).interest
+                            ) || 0;
+                            const prevScheduled = Number(p.interest_payment) || 0;
+                            const paidTowardScheduled = Math.min(paidInterest, prevScheduled);
+                            const nextScheduled = Calculations.round(
+                                Math.max(perEntry, paidTowardScheduled)
+                            );
+                            p.interest_payment = nextScheduled;
                             p.monthly_payment = Calculations.round(
                                 (p.principal_payment || 0) + (p.admin_fee || 0) +
-                                (p.initiation_fee || 0) + perEntry);
+                                (p.initiation_fee || 0) + nextScheduled);
                         });
                         loan.monthly_payment = openEntries[0].monthly_payment;
                     }`,

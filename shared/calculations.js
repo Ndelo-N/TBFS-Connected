@@ -27,7 +27,10 @@ const RATES = {
 
     // Late penalties
     LATE_PENALTY_DAILY_RATE: 0.001,    // 0.1% per day on outstanding balance
-    LATE_PENALTY_MAX_DAYS: 7
+    LATE_PENALTY_MAX_DAYS: 7,
+    // Late penalty accrues on each post-grace delinquency month only while
+    // outstanding principal remains above this floor.
+    LATE_PENALTY_MIN_PRINCIPAL: 100
 };
 
 function dbg(...args) { if (globalThis.TBFS_DEBUG) console.log(...args); }
@@ -240,16 +243,18 @@ const Calculations = {
         // Calculate interest period
         const interestPeriod = this.calculateInterestPeriod(term);
         const interestTotal = Number(totalInterest) || 0;
+        // Origination schedule uses 1× period interest; collectible cap is 2×
+        // so post-grace delinquency interest has headroom under the same field.
+        const maxInterestAllowed = this.round(interestTotal * 2);
         
         // Return fields to add to loan object
         return {
             // Interest Calculation Period
             interest_calculation_months: interestPeriod.interestMonths,
             
-            // Collectible interest = calculated period interest (matches schedule /
-            // monthly payment). Long-term protection is the shortened interest
-            // period, not a principal-sized ceiling that under-collects vs the bill.
-            max_interest_allowed: this.round(interestTotal),
+            // Cap = 2 × original period interest (origination bill + delinquency room)
+            max_interest_allowed: maxInterestAllowed,
+            original_period_interest: this.round(interestTotal),
             
             // Expected monthly interest (equalized)
             expected_monthly_interest: term > 0 ? interestTotal / term : 0,
@@ -264,6 +269,135 @@ const Calculations = {
             // Description for logging
             _interest_cap_description: interestPeriod.description
         };
+    },
+
+    /**
+     * Sum delinquency interest already folded into total_interest.
+     * Prefers extra_interest_in_total when present; otherwise assessed
+     * (legacy rows always counted the full assessment in the total).
+     */
+    sumScheduleExtraInterest(loan) {
+        if (!loan || !Array.isArray(loan.schedule)) return 0;
+        let extras = 0;
+        loan.schedule.forEach(entry => {
+            if (!entry) return;
+            const inTotal = Number(entry.extra_interest_in_total);
+            if (Number.isFinite(inTotal) && inTotal >= 0) {
+                extras += inTotal;
+            } else {
+                extras += Number(entry.extra_interest_assessed) || 0;
+            }
+        });
+        return this.round(extras);
+    },
+
+    /**
+     * Delinquency interest already collected (paid_breakdown toward extras).
+     * Scheduled interest is treated as paid first.
+     */
+    paidScheduleExtraInterest(loan) {
+        if (!loan || !Array.isArray(loan.schedule)) return 0;
+        let paidExtras = 0;
+        loan.schedule.forEach(entry => {
+            if (!entry) return;
+            const scheduled = Number(entry.interest_payment) || 0;
+            const extra = Number(entry.extra_interest_assessed) || 0;
+            if (!(extra > 0)) return;
+            const paid = Number(entry.paid_breakdown && entry.paid_breakdown.interest) || 0;
+            paidExtras += Math.min(extra, Math.max(0, paid - scheduled));
+        });
+        return this.round(paidExtras);
+    },
+
+    /**
+     * Unpaid delinquency interest still sitting on open schedule rows.
+     * Scheduled interest is treated as paid first; remainder of paid_breakdown
+     * interest counts toward extra_interest_assessed.
+     *
+     * @param {object} [override] optional live assessment for one open entry
+     * @param {object} [override.entry]
+     * @param {number} [override.extraInterestAssessed]
+     */
+    unpaidScheduleExtraInterest(loan, override) {
+        if (!loan || !Array.isArray(loan.schedule)) return 0;
+        let unpaid = 0;
+        loan.schedule.forEach(entry => {
+            if (!entry || entry.status === 'paid') return;
+            const scheduled = Number(entry.interest_payment) || 0;
+            let extra = Number(entry.extra_interest_assessed) || 0;
+            if (override && override.entry === entry &&
+                Number.isFinite(Number(override.extraInterestAssessed))) {
+                extra = Math.max(extra, Number(override.extraInterestAssessed) || 0);
+            }
+            if (!(extra > 0)) return;
+            const paid = Number(entry.paid_breakdown && entry.paid_breakdown.interest) || 0;
+            const paidTowardExtra = Math.max(0, paid - scheduled);
+            unpaid += Math.max(0, extra - paidTowardExtra);
+        });
+        return this.round(unpaid);
+    },
+
+    /**
+     * Resolve original period interest for the 2× collectible cap.
+     * Prefers the stored origination value. For legacy loans, derives
+     * period base as total_interest − schedule extras so delinquency
+     * already folded into total_interest is not treated as period interest.
+     */
+    getOriginalPeriodInterest(loan) {
+        if (!loan) return 0;
+        const stored = Number(loan.original_period_interest);
+        if (Number.isFinite(stored) && stored >= 0) return this.round(stored);
+        const total = Number(loan.total_interest);
+        if (Number.isFinite(total) && total >= 0) {
+            return this.round(Math.max(0, total - this.sumScheduleExtraInterest(loan)));
+        }
+        return 0;
+    },
+
+    /**
+     * Collectible interest ceiling.
+     * Default / legacy loans: at least 2× original period interest so
+     * delinquency interest has headroom on read paths (preview/allocation).
+     * Overpayment recalculation stores a lowered scheduled ceiling in
+     * max_interest_allowed; unpaid delinquency on open rows is added at
+     * read time so later accrual still has allocation headroom, but never
+     * above the statutory 2× period ceiling.
+     *
+     * @param {object} [opts]
+     * @param {object} [opts.openEntry] open schedule row for live preview
+     * @param {number} [opts.openLiveExtraInterest] live extra_interest candidate
+     */
+    getMaxInterestAllowed(loan, opts) {
+        const existing = Number(loan && loan.max_interest_allowed);
+        const target = this.round(this.getOriginalPeriodInterest(loan) * 2);
+        if (loan && loan.interest_recalculated && Number.isFinite(existing) && existing >= 0) {
+            const unpaid = this.unpaidScheduleExtraInterest(loan, {
+                entry: opts && opts.openEntry,
+                extraInterestAssessed: opts && opts.openLiveExtraInterest
+            });
+            // Lowered overpayment freeze + unpaid extras, never above statutory 2×.
+            return this.round(Math.min(target, existing + unpaid));
+        }
+        // Non-recalculated loans: statutory 2× period only. Do not honor a
+        // stored max_interest_allowed inflated by delinquency-inclusive totals.
+        return target;
+    },
+
+    /**
+     * Ensure max_interest_allowed is at least 2× original period interest.
+     * Does not undo overpayment interest reductions (stored scheduled freeze).
+     */
+    ensureMaxInterestAllowed(loan) {
+        if (!loan) return 0;
+        if (loan.interest_recalculated) {
+            return this.getMaxInterestAllowed(loan);
+        }
+        const target = this.round(this.getOriginalPeriodInterest(loan) * 2);
+        const existing = Number(loan.max_interest_allowed);
+        if (!Number.isFinite(existing) || existing < target) {
+            loan.max_interest_allowed = target;
+        }
+        return loan.max_interest_allowed;
     },
     
     /**
@@ -545,7 +679,9 @@ const Calculations = {
             totalCost: this.round(totalCostStandard),
             monthlyPayment: this.round(equalMonthlyPayment),
             interestMonths: interestMonths, // NEW: Interest calculation period
-            maxInterestAllowed: this.round(totalInterest), // NEW: Interest cap
+            // Quote cap mirrors loan creation: 2× period interest headroom.
+            maxInterestAllowed: this.round(totalInterest * 2),
+            originalPeriodInterest: this.round(totalInterest),
             expectedMonthlyInterest: this.round(equalizedMonthlyInterest), // NEW: Equalized interest
             breakdown
         };
@@ -1252,6 +1388,282 @@ const Calculations = {
     },
 
     /**
+     * Whether late penalty applies for a delinquency month.
+     * Principal outstanding must be strictly greater than LATE_PENALTY_MIN_PRINCIPAL.
+     */
+    isLatePenaltyPrincipalEligible(outstandingPrincipal) {
+        return (Number(outstandingPrincipal) || 0) > RATES.LATE_PENALTY_MIN_PRINCIPAL;
+    },
+
+    /**
+     * One delinquency month under the 30% income-table ceiling.
+     * Basket = admin + late penalty + interest (initiation excluded).
+     *
+     * Interest / income-cap base = outstandingPrincipal (unpaid installment
+     * principal). Late penalty is calculated on latePenaltyPrincipal (full
+     * loan remaining_principal) and only when that late base > 100.
+     *
+     * @param {number} outstandingPrincipal - interest / 30% cap base
+     * @param {number} monthlyAdmin
+     * @param {object} [opts]
+     * @param {number} [opts.latePenaltyDays=LATE_PENALTY_MAX_DAYS]
+     * @param {number} [opts.latePenaltyPrincipal] - defaults to outstandingPrincipal
+     */
+    calculateDelinquencyMonthIncome(outstandingPrincipal, monthlyAdmin, opts) {
+        const outstanding = Math.max(0, Number(outstandingPrincipal) || 0);
+        // Allow explicit 0 admin (post-grace months still inside the original
+        // loan period). Only default when monthlyAdmin is null/undefined/NaN.
+        const requestedAdmin = Number.isFinite(Number(monthlyAdmin))
+            ? Math.max(0, Number(monthlyAdmin))
+            : RATES.ADMIN_FEE_STANDARD;
+        const lateDays = (opts && Number.isFinite(Number(opts.latePenaltyDays)))
+            ? Math.max(0, Number(opts.latePenaltyDays))
+            : RATES.LATE_PENALTY_MAX_DAYS;
+        const latePrincipal = (opts && Number.isFinite(Number(opts.latePenaltyPrincipal)))
+            ? Math.max(0, Number(opts.latePenaltyPrincipal))
+            : outstanding;
+        const latePenaltyApplied = this.isLatePenaltyPrincipalEligible(latePrincipal);
+        const requestedLate = latePenaltyApplied
+            ? this.calculateLatePenalty(lateDays, latePrincipal)
+            : 0;
+        const incomeCap = this.round(outstanding * RATES.INCOME_TABLE_RATE);
+        // Basket must not exceed the 30% income cap: admin first, then late,
+        // then interest fills any remainder.
+        let admin = Math.min(requestedAdmin, incomeCap);
+        let latePenalty = Math.min(requestedLate, Math.max(0, this.round(incomeCap - admin)));
+        const interest = Math.max(0, this.round(incomeCap - admin - latePenalty));
+        const monthIncome = this.round(admin + latePenalty + interest);
+        return {
+            outstanding: this.round(outstanding),
+            latePenaltyPrincipal: this.round(latePrincipal),
+            incomeCap,
+            admin: this.round(admin),
+            latePenalty,
+            interest,
+            monthIncome,
+            latePenaltyApplied: latePenaltyApplied && latePenalty > 0
+        };
+    },
+
+    /**
+     * Final contractual due date for the original loan period (last schedule
+     * due_date). Used so extra admin starts only after the original term ends
+     * (e.g. month 2 on a 1-month loan, month 4 on a 3-month loan).
+     */
+    getLoanPeriodEndDueDate(loan) {
+        if (!loan || !Array.isArray(loan.schedule)) return null;
+        let last = null;
+        loan.schedule.forEach(entry => {
+            if (!entry || !entry.due_date) return;
+            const d = new Date(entry.due_date);
+            if (isNaN(d.getTime())) return;
+            if (!last || d > last) last = d;
+        });
+        return last;
+    },
+
+    /**
+     * Inclusive grace-end date for an installment due date.
+     */
+    getInstallmentGraceEndDate(dueDate, gracePeriodDays) {
+        const due = new Date(dueDate);
+        if (isNaN(due.getTime())) return null;
+        const grace = typeof gracePeriodDays === 'number' ? gracePeriodDays : 3;
+        const graceEnd = new Date(due.getTime());
+        graceEnd.setDate(graceEnd.getDate() + grace);
+        return graceEnd;
+    },
+
+    /**
+     * First calendar day late penalty / delinquency interest can bill for an
+     * installment (day after grace end).
+     */
+    getFirstDelinquencyFeeDate(entry, gracePeriodDays) {
+        const graceEnd = this.getInstallmentGraceEndDate(
+            entry && entry.due_date, gracePeriodDays);
+        if (!graceEnd) return null;
+        const first = new Date(graceEnd.getTime());
+        first.setDate(first.getDate() + 1);
+        return first;
+    },
+
+    /**
+     * First calendar day extra admin can bill for an installment: the first
+     * open-delinquency month slice on/after original period-end + grace.
+     */
+    getFirstExtraAdminFeeDate(loan, entry, gracePeriodDays) {
+        const grace = typeof gracePeriodDays === 'number' ? gracePeriodDays : 3;
+        const graceEnd = this.getInstallmentGraceEndDate(
+            entry && entry.due_date, grace);
+        if (!graceEnd) return null;
+        const periodEnd = this.getLoanPeriodEndDueDate(loan)
+            || new Date(entry.due_date);
+        if (!periodEnd || isNaN(periodEnd.getTime())) return null;
+        const termGraceEnd = new Date(periodEnd.getTime());
+        termGraceEnd.setDate(termGraceEnd.getDate() + grace);
+        let slice = new Date(graceEnd.getTime());
+        for (let i = 0; i < 120; i++) {
+            if (slice >= termGraceEnd) return slice;
+            slice = new Date(slice.getTime());
+            slice.setMonth(slice.getMonth() + 1);
+        }
+        return termGraceEnd;
+    },
+
+    /**
+     * 1-based schedule installment index for a payment history row.
+     * Prefers stored installment_index; else matches payment.due_date.
+     */
+    getPaymentInstallmentIndex(loan, payment) {
+        if (!payment) return null;
+        const stored = Number(payment.installment_index);
+        if (Number.isFinite(stored) && stored >= 1) return Math.floor(stored);
+        const schedule = Array.isArray(loan && loan.schedule) ? loan.schedule : [];
+        const dueRaw = payment.due_date || payment.installment_due_date;
+        if (!dueRaw || !schedule.length) return null;
+        const due = new Date(dueRaw);
+        if (isNaN(due.getTime())) return null;
+        const dueKey = due.toISOString().slice(0, 10);
+        for (let i = 0; i < schedule.length; i++) {
+            const entry = schedule[i];
+            if (!entry || !entry.due_date) continue;
+            const ed = new Date(entry.due_date);
+            if (isNaN(ed.getTime())) continue;
+            if (ed.toISOString().slice(0, 10) === dueKey) return i + 1;
+        }
+        return null;
+    },
+
+    /**
+     * Interest / 30% income-cap base for delinquency months: unpaid scheduled
+     * principal on the open installment (amount that should have been paid but
+     * was not). Capped by remaining_principal. Legacy rows without
+     * principal_payment fall back to remaining_principal.
+     * Late penalty does NOT use this — it uses full remaining_principal.
+     */
+    getDelinquencyOutstandingPrincipal(loan, entry) {
+        const remaining = Math.max(0, Number(loan && loan.remaining_principal) || 0);
+        if (!entry) return remaining;
+        const scheduled = Number(entry.principal_payment);
+        if (!Number.isFinite(scheduled)) return remaining;
+        const paid = Number(entry.paid_breakdown && entry.paid_breakdown.principal) || 0;
+        const unpaidOnInstallment = Math.max(0, scheduled - paid);
+        return Math.min(unpaidOnInstallment, remaining);
+    },
+
+    /**
+     * Aggregate post-grace delinquency charges for an open installment.
+     * Late penalty + delinquency interest accrue from the OPEN installment's
+     * grace lapse. Extra admin (+ monthly admin) accrues only for delinquency
+     * month slices on/after grace lapse of the ORIGINAL loan period end
+     * (final contractual due date).
+     *
+     * Late penalty is calculated on full remaining_principal for EVERY
+     * open-installment delinquency month while remaining_principal > 100:
+     *   month 1 → actual days past grace (capped at 7)
+     *   months 2..N → full 7-day late penalty each
+     * Interest fills the remainder of each month's 30% income cap after admin
+     * and late penalty; that 30% cap uses unpaid open-installment principal
+     * (not full remaining_principal). Initiation excluded.
+     */
+    calculateDelinquencyCharges(loan, entry, asOfDate, gracePeriodDays) {
+        const empty = {
+            months: 0,
+            adminMonths: 0,
+            monthlyAdmin: 0,
+            outstanding: 0,
+            latePenaltyPrincipal: 0,
+            extraAdmin: 0,
+            latePenalty: 0,
+            extraInterest: 0,
+            monthsBreakdown: []
+        };
+        if (!loan || !this.isLateFeesEligible(loan)) return empty;
+        const loanStatus = String(loan.status || 'active').toLowerCase();
+        if (loanStatus && loanStatus !== 'active') return empty;
+
+        const open = entry &&
+            (entry.status === 'pending' || entry.status === 'partial') &&
+            entry.due_date
+            ? entry
+            : null;
+        if (!open) return empty;
+
+        const grace = typeof gracePeriodDays === 'number' ? gracePeriodDays : 3;
+        const asOf = asOfDate instanceof Date ? asOfDate : new Date(asOfDate || Date.now());
+        if (isNaN(asOf.getTime())) return empty;
+
+        const months = this.countExtraAdminMonths(open.due_date, asOf, grace);
+        if (months <= 0) return empty;
+
+        const interestBase = this.getDelinquencyOutstandingPrincipal(loan, open);
+        const lateBase = Math.max(0, Number(loan.remaining_principal) || 0);
+        const monthlyAdmin = this.getMonthlyAdminFeeForLoan(loan);
+        const due = new Date(open.due_date);
+        let graceEnd = null;
+        let daysPastGrace = 0;
+        if (!isNaN(due.getTime())) {
+            graceEnd = new Date(due.getTime());
+            graceEnd.setDate(graceEnd.getDate() + grace);
+            if (asOf > graceEnd) {
+                daysPastGrace = Math.floor((asOf - graceEnd) / 86400000);
+            }
+        }
+
+        // Extra admin only after original loan period ends.
+        const periodEnd = this.getLoanPeriodEndDueDate(loan) || due;
+        const termGraceEnd = new Date(periodEnd.getTime());
+        termGraceEnd.setDate(termGraceEnd.getDate() + grace);
+
+        const monthsBreakdown = [];
+        let extraAdmin = 0;
+        let latePenalty = 0;
+        let extraInterest = 0;
+        let adminMonths = 0;
+
+        for (let m = 1; m <= months; m++) {
+            const lateDays = m === 1
+                ? Math.max(1, Math.min(daysPastGrace || 1, RATES.LATE_PENALTY_MAX_DAYS))
+                : RATES.LATE_PENALTY_MAX_DAYS;
+            // Map open-delinquency month m to its anniversary slice date.
+            let adminForMonth = 0;
+            if (graceEnd && !isNaN(graceEnd.getTime())) {
+                const sliceDate = new Date(graceEnd.getTime());
+                sliceDate.setMonth(sliceDate.getMonth() + (m - 1));
+                if (sliceDate >= termGraceEnd) {
+                    adminForMonth = monthlyAdmin;
+                    adminMonths += 1;
+                }
+            }
+            const month = this.calculateDelinquencyMonthIncome(
+                interestBase, adminForMonth, {
+                    latePenaltyDays: lateDays,
+                    latePenaltyPrincipal: lateBase
+                });
+            monthsBreakdown.push(Object.assign({
+                month: m,
+                latePenaltyDays: lateDays,
+                adminBilled: adminForMonth > 0
+            }, month));
+            extraAdmin += month.admin;
+            latePenalty += month.latePenalty;
+            extraInterest += month.interest;
+        }
+
+        return {
+            months,
+            adminMonths,
+            monthlyAdmin: this.round(monthlyAdmin),
+            outstanding: this.round(interestBase),
+            latePenaltyPrincipal: this.round(lateBase),
+            extraAdmin: this.round(extraAdmin),
+            latePenalty: this.round(latePenalty),
+            extraInterest: this.round(extraInterest),
+            monthsBreakdown
+        };
+    },
+
+    /**
      * Check if a loan is subject to late penalties.
      * Only loans distributed after 31 January 2026 incur penalties.
      * Extra post-grace admin accrual uses the same eligibility cutoff.
@@ -1317,7 +1729,8 @@ const Calculations = {
 
     /**
      * Extra admin due for an open installment (assessment candidate).
-     * Amount = months × monthly admin. Does not mutate state.
+     * Extra admin months are counted only after the original loan period ends
+     * (final contractual due date + grace). Does not mutate state.
      * Requires an active loan and a pending/partial schedule row with due_date —
      * never falls back to payments_made-derived dates (avoids accruing on
      * completed loans).
@@ -1333,20 +1746,25 @@ const Calculations = {
             ? entry
             : null;
         if (!open) return empty;
-        const monthlyAdmin = this.getMonthlyAdminFeeForLoan(loan);
-        const months = this.countExtraAdminMonths(
-            open.due_date, asOfDate || new Date(), gracePeriodDays);
+        const delinquency = this.calculateDelinquencyCharges(
+            loan, open, asOfDate || new Date(), gracePeriodDays);
         return {
-            months,
-            monthlyAdmin,
-            amount: this.round(months * monthlyAdmin)
+            months: delinquency.adminMonths || 0,
+            monthlyAdmin: delinquency.monthlyAdmin,
+            amount: delinquency.extraAdmin
         };
     },
 
     /**
-     * Live late penalty + post-grace extra admin for an open installment.
-     * Does not mutate the loan — used by payment UI and portal statement packs
-     * so unpaid accrued fees appear before they are persisted on payment.
+     * Live late penalty + post-grace extra admin + delinquency interest for an
+     * open installment. Does not mutate the loan — used by payment UI and
+     * portal statement packs so unpaid accrued fees appear before persistence.
+     *
+     * Late penalty is assessed for each post-grace delinquency month while
+     * remaining_principal > 100 (full loan principal base). Extra admin
+     * accrues only after the original loan period ends. Interest fills each
+     * month's 30% income cap after admin and late penalty; that cap uses
+     * unpaid installment principal (initiation excluded).
      */
     assessOpenInstallmentFees(loan, openEntry, asOfDate, gracePeriodDays) {
         const result = {
@@ -1356,7 +1774,10 @@ const Calculations = {
             isPaymentLate: false,
             extraAdminDue: 0,
             extraAdminMonths: 0,
-            extraAdminAssessedCandidate: 0
+            extraAdminAssessedCandidate: 0,
+            extraInterestDue: 0,
+            extraInterestAssessedCandidate: 0,
+            delinquencyMonthsBreakdown: []
         };
         if (!loan || !this.isLateFeesEligible(loan)) return result;
         const loanStatus = String(loan.status || 'active').toLowerCase();
@@ -1378,24 +1799,25 @@ const Calculations = {
 
         const graceCutoff = new Date(due.getTime());
         graceCutoff.setDate(graceCutoff.getDate() + grace);
+
+        const entryForCalc = openEntry
+            ? Object.assign({}, openEntry, {
+                due_date: openEntry.due_date || due.toISOString()
+            })
+            : { due_date: due.toISOString(), status: 'pending' };
+
         if (asOf > graceCutoff) {
             result.daysLate = Math.floor((asOf - due) / (1000 * 60 * 60 * 24));
-            const assessed = this.calculateLatePenalty(
-                result.daysLate - grace, loan.remaining_principal || 0);
-            const priorAssessed = Number(openEntry && openEntry.late_penalty_assessed) || 0;
-            result.latePenaltyAssessedCandidate = Math.max(priorAssessed, assessed);
-            const alreadyPaid = Number(
-                (openEntry && openEntry.paid_breakdown || {}).late_penalty
-            ) || 0;
-            result.latePenalty = Math.max(
-                0, this.round(result.latePenaltyAssessedCandidate - alreadyPaid));
-            result.isPaymentLate = result.latePenalty > 0.01 || assessed > 0;
         }
 
-        const extra = this.calculateExtraAdminDue(loan, openEntry, asOf, grace);
+        const delinquency = this.calculateDelinquencyCharges(
+            loan, entryForCalc, asOf, grace);
+        // UI "extra admin months" = months billed after original period end.
+        result.extraAdminMonths = delinquency.adminMonths || 0;
+        result.delinquencyMonthsBreakdown = delinquency.monthsBreakdown;
+
         const priorExtra = Number(openEntry && openEntry.extra_admin_assessed) || 0;
-        result.extraAdminAssessedCandidate = Math.max(priorExtra, extra.amount);
-        result.extraAdminMonths = extra.months;
+        result.extraAdminAssessedCandidate = Math.max(priorExtra, delinquency.extraAdmin);
         const baseAdmin = Number(openEntry && openEntry.admin_fee) || 0;
         const paidAdmin = Number(
             (openEntry && openEntry.paid_breakdown || {}).admin
@@ -1404,7 +1826,44 @@ const Calculations = {
         const unpaidAdmin = Math.max(0, totalAdminOwed - paidAdmin);
         const unpaidBase = Math.max(0, baseAdmin - Math.min(paidAdmin, baseAdmin));
         result.extraAdminDue = Math.max(0, this.round(unpaidAdmin - unpaidBase));
+
+        const priorLate = Number(openEntry && openEntry.late_penalty_assessed) || 0;
+        result.latePenaltyAssessedCandidate = Math.max(priorLate, delinquency.latePenalty);
+        const alreadyPaidLate = Number(
+            (openEntry && openEntry.paid_breakdown || {}).late_penalty
+        ) || 0;
+        result.latePenalty = Math.max(
+            0, this.round(result.latePenaltyAssessedCandidate - alreadyPaidLate));
+        result.isPaymentLate = result.latePenalty > 0.01 || delinquency.latePenalty > 0
+            || delinquency.months > 0;
+
+        const priorInterest = Number(openEntry && openEntry.extra_interest_assessed) || 0;
+        result.extraInterestAssessedCandidate = Math.max(
+            priorInterest, delinquency.extraInterest);
+        const alreadyPaidInterest = Number(
+            (openEntry && openEntry.paid_breakdown || {}).interest
+        ) || 0;
+        const scheduledInterest = Number(openEntry && openEntry.interest_payment) || 0;
+        const interestPaidTowardExtra = Math.max(0, alreadyPaidInterest - scheduledInterest);
+        result.extraInterestDue = Math.max(
+            0, this.round(result.extraInterestAssessedCandidate - interestPaidTowardExtra));
+
         return result;
+    },
+
+    /**
+     * Effective interest still owed on a schedule entry, including
+     * post-grace extra_interest_assessed.
+     */
+    getEntryEffectiveInterestDue(entry, opts) {
+        if (!entry) return 0;
+        const paid = (entry.paid_breakdown && Number(entry.paid_breakdown.interest)) || 0;
+        const scheduled = Number(entry.interest_payment) || 0;
+        const extra = Math.max(
+            Number(entry.extra_interest_assessed) || 0,
+            Number(opts && opts.extraInterestAssessedCandidate) || 0
+        );
+        return Math.max(0, this.round(scheduled + extra - paid));
     },
 
     /**
@@ -1440,8 +1899,10 @@ const Calculations = {
             }
         }
         const extra = this.calculateExtraAdminDue(loan, open, asOf, gracePeriodDays);
+        const delinquency = this.calculateDelinquencyCharges(loan, open, asOf, gracePeriodDays);
         const history = Array.isArray(loan.payment_history) ? loan.payment_history : [];
-        const partialPaymentCount = history.filter(h => h && h.payment_status === 'partial').length
+        const partialPaymentCount = history.filter(h =>
+            h && this.isPartialPaymentStatus(h.payment_status)).length
             + (Array.isArray(loan.schedule)
                 ? loan.schedule.filter(p => p && p.status === 'partial').length
                 : 0);
@@ -1454,9 +1915,22 @@ const Calculations = {
                     ? Math.round((Number(open.extra_admin_assessed) || 0) /
                         Math.max(1, extra.monthlyAdmin || this.getMonthlyAdminFeeForLoan(loan)))
                     : 0),
-                extra.months
+                extra.months,
+                delinquency.months
             ),
-            extra_admin_assessed: Number(open && open.extra_admin_assessed) || extra.amount,
+            extra_admin_assessed: Math.max(
+                Number(open && open.extra_admin_assessed) || 0,
+                extra.amount,
+                delinquency.extraAdmin
+            ),
+            extra_interest_assessed: Math.max(
+                Number(open && open.extra_interest_assessed) || 0,
+                delinquency.extraInterest
+            ),
+            late_penalty_assessed: Math.max(
+                Number(open && open.late_penalty_assessed) || 0,
+                delinquency.latePenalty
+            ),
             days_past_grace: daysPastGrace,
             partial_payment_count: partialPaymentCount,
             consecutive_missed: consecutiveMissed,
@@ -1464,6 +1938,67 @@ const Calculations = {
             escalation_level: this.getEscalationLevel(consecutiveMissed)
         };
         return loan;
+    },
+
+    /**
+     * Ensure loan interest tracking has a period base and 2× collectible cap.
+     * Does NOT rewrite total_interest — callers own that identity (origination,
+     * payment delta on newly assessed extras, or paid+unpaid+remaining on
+     * adjustments). Rewriting as original_period_interest + Σ extras double-
+     * counts after top-up/term-change where extras are already folded in.
+     */
+    syncDelinquencyInterestTracking(loan) {
+        if (!loan) return loan;
+        if (!Number.isFinite(Number(loan.original_period_interest))) {
+            // Backfill period base before/without treating delinquency as period.
+            loan.original_period_interest = this.getOriginalPeriodInterest(loan);
+        }
+        this.ensureMaxInterestAllowed(loan);
+        return loan;
+    },
+
+    /**
+     * Persist extra_interest_assessed on an open entry and bump total_interest
+     * by the claimable-in-total delta only (no double-count).
+     *
+     * @param {number} assessedCandidate full audit/dues assessment on the row
+     * @param {number} [totalInTotalCandidate] how much of that assessment should
+     *        be folded into total_interest (defaults to full assessed). Use a
+     *        lower value when the interest cap cannot yet absorb the full
+     *        assessment — later calls can raise this as headroom frees up.
+     */
+    applyExtraInterestAssessment(loan, entry, assessedCandidate, totalInTotalCandidate) {
+        if (!loan || !entry) return 0;
+        // Freeze period base BEFORE total_interest grows with delinquency
+        // so legacy loans do not adopt inflated total as original_period_interest.
+        if (!Number.isFinite(Number(loan.original_period_interest))) {
+            const extrasBefore = this.sumScheduleExtraInterest(loan);
+            const totalBefore = Number(loan.total_interest) || 0;
+            loan.original_period_interest = this.round(
+                Math.max(0, totalBefore - extrasBefore)
+            );
+        }
+        const prevAssessed = Number(entry.extra_interest_assessed) || 0;
+        const nextAssessed = Math.max(prevAssessed, Number(assessedCandidate) || 0);
+        entry.extra_interest_assessed = nextAssessed;
+
+        const prevInTotal = Number.isFinite(Number(entry.extra_interest_in_total))
+            ? Math.max(0, Number(entry.extra_interest_in_total))
+            : prevAssessed;
+        const requestedInTotal = totalInTotalCandidate != null && Number.isFinite(Number(totalInTotalCandidate))
+            ? Math.max(0, Number(totalInTotalCandidate))
+            : nextAssessed;
+        const nextInTotal = Math.min(
+            nextAssessed,
+            Math.max(prevInTotal, this.round(requestedInTotal))
+        );
+        const delta = this.round(nextInTotal - prevInTotal);
+        entry.extra_interest_in_total = nextInTotal;
+        if (delta > 0) {
+            loan.total_interest = this.round((Number(loan.total_interest) || 0) + delta);
+        }
+        this.syncDelinquencyInterestTracking(loan);
+        return delta;
     },
 
     /** Reliability band labels for UI. */
@@ -1476,6 +2011,330 @@ const Calculations = {
         if (score >= 50) return { id: 'watch', label: 'Watch', min: 50, max: 74 };
         if (score >= 25) return { id: 'poor', label: 'Poor', min: 25, max: 49 };
         return { id: 'critical', label: 'Critical', min: 0, max: 24 };
+    },
+
+    /**
+     * Editable reloan / financing bylaws — one section per reliability tier.
+     * Stored on AppState.reloanBylaws; calculator references the active tier
+     * when advising officers on returning clients.
+     */
+    getDefaultReloanBylaws() {
+        const tier = (id, label, scoreRange, fields) => Object.assign({
+            id,
+            label,
+            score_range: scoreRange,
+            stance: 'proceed',
+            same_amount_allowed: true,
+            max_principal_pct_of_prior: 100,
+            require_rehab_clean_events: 0,
+            calculator_severity: 'info',
+            summary: '',
+            conditions: [],
+            officer_notes: ''
+        }, fields || {});
+
+        return {
+            version: 1,
+            title: 'TBFS Reloan & Financing Bylaws',
+            intro: 'Officer guidance when a client requests new financing after prior loan history. Advice informs the decision; inactive/blacklisted clients remain hard-blocked.',
+            updated_at: null,
+            tiers: {
+                building: tier('building', 'Building', 'provisional / <2 scored events', {
+                    stance: 'proceed_with_standard_checks',
+                    same_amount_allowed: true,
+                    max_principal_pct_of_prior: 100,
+                    calculator_severity: 'info',
+                    summary: 'Thin file — treat as a new-client underwriting decision.',
+                    conditions: [
+                        'Verify identity and affordability as for a first loan',
+                        'Do not assume prior completion if score is still provisional'
+                    ],
+                    officer_notes: 'Building band means not enough scored events yet. Prefer standard origination checks.'
+                }),
+                excellent: tier('excellent', 'Excellent', '90–100', {
+                    stance: 'proceed',
+                    same_amount_allowed: true,
+                    max_principal_pct_of_prior: 120,
+                    calculator_severity: 'info',
+                    summary: 'Strong payer — like-for-like or modest increase is appropriate.',
+                    conditions: [
+                        'Confirm affordability still holds at requested amount/term',
+                        'Document any increase above prior principal'
+                    ],
+                    officer_notes: 'Excellent track record. Same amount is fine; increases up to ~20% of prior principal allowed with affordability check.'
+                }),
+                good: tier('good', 'Good', '75–89', {
+                    stance: 'proceed',
+                    same_amount_allowed: true,
+                    max_principal_pct_of_prior: 100,
+                    calculator_severity: 'info',
+                    summary: 'Reliable enough for same-amount reloan on standard terms.',
+                    conditions: [
+                        'Keep principal at or below prior completed loan amount unless new income evidence',
+                        'Prefer term patterns they have already completed cleanly'
+                    ],
+                    officer_notes: 'Good band: same financing OK. Avoid aggressive upsizing.'
+                }),
+                watch: tier('watch', 'Watch', '50–74', {
+                    stance: 'conditional',
+                    same_amount_allowed: false,
+                    max_principal_pct_of_prior: 75,
+                    require_rehab_clean_events: 3,
+                    calculator_severity: 'watch',
+                    summary: 'Mixed history — do not auto-approve same amount; structure a smaller or gated facility.',
+                    conditions: [
+                        'Cap principal at 75% of prior loan unless officer overrides with notes',
+                        'Prefer shorter term or equalized installment they can meet in full',
+                        'Require 3 trailing full on-time payments before restoring prior amount'
+                    ],
+                    officer_notes: 'Watch band: patterns of underpay/late. Same amount needs rehab or reduction.'
+                }),
+                poor: tier('poor', 'Poor', '25–49', {
+                    stance: 'conditional_decline_same_terms',
+                    same_amount_allowed: false,
+                    max_principal_pct_of_prior: 50,
+                    require_rehab_clean_events: 6,
+                    calculator_severity: 'caution',
+                    summary: 'Completed ≠ creditworthy for like-for-like repeat. Decline same amount on same terms; offer reduced/conditional facility only.',
+                    conditions: [
+                        'Do not offer the same principal on the same terms',
+                        'If lending: cap at ≤50% of prior principal',
+                        'Require rehab: 6 trailing full on-time (no late penalty) payments before restoring prior amount',
+                        'Consider stockvel membership path if contributions can support discipline',
+                        'No same-day auto-reloan after payoff'
+                    ],
+                    officer_notes: 'Poor band (e.g. chronic R900 underpay on contractual dues). Positive that loan cleared; position is hold or reduced structured offer.'
+                }),
+                critical: tier('critical', 'Critical', '0–24', {
+                    stance: 'decline',
+                    same_amount_allowed: false,
+                    max_principal_pct_of_prior: 0,
+                    require_rehab_clean_events: 6,
+                    calculator_severity: 'block',
+                    summary: 'Do not extend new standard financing until rehab clears critical risk.',
+                    conditions: [
+                        'Decline new standard loan',
+                        'Require documented rehab plan and 6 clean full on-time payments',
+                        'Escalate to manager before any exception'
+                    ],
+                    officer_notes: 'Critical band: decline. Exceptions need manager approval and written notes.'
+                })
+            }
+        };
+    },
+
+    normalizeReloanBylaws(doc) {
+        const defaults = this.getDefaultReloanBylaws();
+        const src = doc && typeof doc === 'object' ? doc : {};
+        const tiersIn = src.tiers && typeof src.tiers === 'object' ? src.tiers : {};
+        const tiers = {};
+        Object.keys(defaults.tiers).forEach(id => {
+            const base = defaults.tiers[id];
+            const over = tiersIn[id] && typeof tiersIn[id] === 'object' ? tiersIn[id] : {};
+            const conditions = Array.isArray(over.conditions)
+                ? over.conditions.map(c => String(c || '').trim()).filter(Boolean)
+                : base.conditions.slice();
+            let pct = Number(over.max_principal_pct_of_prior);
+            if (!Number.isFinite(pct)) pct = base.max_principal_pct_of_prior;
+            pct = Math.max(0, Math.min(200, Math.round(pct)));
+            let rehab = Number(over.require_rehab_clean_events);
+            if (!Number.isFinite(rehab)) rehab = base.require_rehab_clean_events;
+            rehab = Math.max(0, Math.min(24, Math.round(rehab)));
+            const severity = String(over.calculator_severity || base.calculator_severity);
+            const allowedSeverity = { info: 1, watch: 1, caution: 1, block: 1 };
+            tiers[id] = {
+                id,
+                label: String(over.label || base.label),
+                score_range: String(over.score_range || base.score_range),
+                stance: String(over.stance || base.stance),
+                same_amount_allowed: over.same_amount_allowed != null
+                    ? !!over.same_amount_allowed : !!base.same_amount_allowed,
+                max_principal_pct_of_prior: pct,
+                require_rehab_clean_events: rehab,
+                calculator_severity: allowedSeverity[severity] ? severity : base.calculator_severity,
+                summary: String(over.summary != null ? over.summary : base.summary),
+                conditions,
+                officer_notes: String(over.officer_notes != null
+                    ? over.officer_notes : base.officer_notes)
+            };
+        });
+        return {
+            version: Math.max(1, Number(src.version) || defaults.version),
+            title: String(src.title || defaults.title),
+            intro: String(src.intro != null ? src.intro : defaults.intro),
+            updated_at: src.updated_at || null,
+            tiers
+        };
+    },
+
+    getReloanBylaws(state) {
+        return this.normalizeReloanBylaws(state && state.reloanBylaws);
+    },
+
+    /**
+     * Officer advice for a proposed new loan / reloan from bylaws + score.
+     */
+    buildReloanAdvice(client, loans, state, opts) {
+        const options = opts || {};
+        const bylaws = this.getReloanBylaws(state);
+        const grace = typeof options.gracePeriodDays === 'number'
+            ? options.gracePeriodDays
+            : (state && Number(state.gracePeriodDays)) || 3;
+        const requestedPrincipal = Math.max(0, Number(options.requestedPrincipal) || 0);
+        const requestedTerm = Math.max(0, Math.floor(Number(options.requestedTerm) || 0));
+        const clientLoans = this.getClientLoans(client, loans);
+        const priorCompleted = clientLoans.filter(l =>
+            l && String(l.status || '').toLowerCase() === 'completed');
+        const priorActive = clientLoans.filter(l =>
+            l && String(l.status || '').toLowerCase() === 'active');
+        const isReturning = priorCompleted.length > 0 || priorActive.length > 0
+            || (client && (Number(client.total_loans) || 0) > 0);
+
+        const metrics = this.computeClientPaymentMetrics(client, loans, {
+            asOf: options.asOf,
+            gracePeriodDays: grace,
+            windowMonths: options.windowMonths || 12,
+            stockvelMembers: state && state.stockvelMembers,
+            stockvelReceipts: state && state.stockvelReceipts
+        });
+        const band = (metrics && metrics.band) || this.getReliabilityBand(null);
+        const tier = bylaws.tiers[band.id] || bylaws.tiers.building;
+
+        let priorPrincipal = 0;
+        priorCompleted.forEach(l => {
+            priorPrincipal = Math.max(priorPrincipal, this.loanPrincipalAmount(l));
+        });
+        if (!priorPrincipal && clientLoans.length) {
+            clientLoans.forEach(l => {
+                priorPrincipal = Math.max(priorPrincipal, this.loanPrincipalAmount(l));
+            });
+        }
+
+        const maxAllowedPrincipal = tier.max_principal_pct_of_prior > 0 && priorPrincipal > 0
+            ? this.round(priorPrincipal * (tier.max_principal_pct_of_prior / 100))
+            : (tier.max_principal_pct_of_prior === 0 && isReturning ? 0 : null);
+
+        const notes = [];
+        const flags = [];
+        if (!isReturning) {
+            notes.push('First financing request on file — apply standard origination checks.');
+        } else {
+            notes.push(
+                'Returning client · reliability ' + tier.label +
+                (metrics.score != null ? ' (score ' + metrics.score + ')' : ' (provisional)') + '.'
+            );
+        }
+        if (tier.summary) notes.push(tier.summary);
+        (tier.conditions || []).forEach(c => notes.push(c));
+
+        if (isReturning && priorPrincipal > 0 && requestedPrincipal > 0) {
+            const sameAmount = Math.abs(requestedPrincipal - priorPrincipal) < 0.5;
+            if (sameAmount && !tier.same_amount_allowed) {
+                flags.push('same_amount_blocked');
+                notes.push(
+                    'Requested amount matches prior principal (' +
+                    this.formatCurrency(priorPrincipal) +
+                    ') — bylaws for ' + tier.label + ' do not allow same-amount terms.'
+                );
+            }
+            if (maxAllowedPrincipal != null && requestedPrincipal > maxAllowedPrincipal + 0.005) {
+                flags.push('principal_above_tier_cap');
+                notes.push(
+                    'Requested ' + this.formatCurrency(requestedPrincipal) +
+                    ' exceeds tier cap ' + this.formatCurrency(maxAllowedPrincipal) +
+                    ' (' + tier.max_principal_pct_of_prior + '% of prior ' +
+                    this.formatCurrency(priorPrincipal) + ').'
+                );
+            }
+        }
+        if (tier.require_rehab_clean_events > 0 && isReturning) {
+            const streak = (metrics.redemption && metrics.redemption.clean_streak) || 0;
+            if (streak < tier.require_rehab_clean_events) {
+                flags.push('rehab_incomplete');
+                notes.push(
+                    'Rehab incomplete: ' + streak + '/' +
+                    tier.require_rehab_clean_events + ' trailing clean full on-time payments.'
+                );
+            }
+        }
+        if (priorActive.length) {
+            flags.push('has_active_loan');
+            notes.push('Client still has ' + priorActive.length + ' active loan(s) — confirm capital policy before stacking.');
+        }
+        if (tier.officer_notes) notes.push('Officer note: ' + tier.officer_notes);
+
+        let severity = tier.calculator_severity || 'info';
+        if (flags.indexOf('same_amount_blocked') >= 0 || flags.indexOf('principal_above_tier_cap') >= 0) {
+            if (severity === 'info') severity = 'caution';
+        }
+        if (tier.stance === 'decline') severity = 'block';
+
+        return {
+            is_returning: isReturning,
+            requested_principal: this.round(requestedPrincipal),
+            requested_term: requestedTerm,
+            prior_principal: this.round(priorPrincipal),
+            max_allowed_principal: maxAllowedPrincipal,
+            metrics,
+            band,
+            tier,
+            bylaws: {
+                version: bylaws.version,
+                title: bylaws.title,
+                updated_at: bylaws.updated_at
+            },
+            severity,
+            stance: tier.stance,
+            flags,
+            notes,
+            summary: tier.summary || notes[0] || '',
+            confirm_required: severity === 'watch' || severity === 'caution' || severity === 'block'
+                || flags.length > 0
+        };
+    },
+
+    /**
+     * Snapshot of bylaws tier applied at loan acceptance (audit trail).
+     */
+    buildLoanBylawsReference(advice) {
+        if (!advice || !advice.tier) return null;
+        return {
+            document: 'reloan_bylaws',
+            title: advice.bylaws && advice.bylaws.title,
+            version: advice.bylaws && advice.bylaws.version,
+            updated_at: advice.bylaws && advice.bylaws.updated_at,
+            applied_at: new Date().toISOString(),
+            band_id: advice.band && advice.band.id,
+            band_label: advice.band && advice.band.label,
+            score: advice.metrics && advice.metrics.score,
+            tier_id: advice.tier.id,
+            stance: advice.stance,
+            severity: advice.severity,
+            same_amount_allowed: advice.tier.same_amount_allowed,
+            max_principal_pct_of_prior: advice.tier.max_principal_pct_of_prior,
+            summary: advice.summary,
+            flags: Array.isArray(advice.flags) ? advice.flags.slice() : [],
+            conditions: Array.isArray(advice.tier.conditions)
+                ? advice.tier.conditions.slice() : []
+        };
+    },
+
+    formatReloanAdviceForConfirm(advice) {
+        if (!advice) return '';
+        const lines = [];
+        lines.push((advice.bylaws && advice.bylaws.title) || 'Reloan bylaws');
+        lines.push('Tier: ' + (advice.tier && advice.tier.label) +
+            (advice.metrics && advice.metrics.score != null
+                ? ' (score ' + advice.metrics.score + ')' : ''));
+        lines.push('Stance: ' + advice.stance);
+        if (advice.summary) lines.push(advice.summary);
+        (advice.notes || []).slice(0, 8).forEach(n => lines.push('• ' + n));
+        if (advice.severity === 'block') {
+            lines.push('\nBylaws severity is BLOCK — continue only with manager override.');
+        } else {
+            lines.push('\nPatterns/bylaws inform the decision; they do not replace inactive-client hard blocks.');
+        }
+        return lines.join('\n');
     },
 
     _parseEventDate(value) {
@@ -1592,15 +2451,19 @@ const Calculations = {
                 const when = h.date || h.payment_date;
                 if (!this._inRollingWindow(when, asOf, windowMonths)) return;
                 const st = h.payment_status;
-                const clean = st === 'on-time' && !(Number(h.late_penalty) > 0);
-                if (st === 'late') lateCount += 1;
-                else if (st === 'partial') partialCount += 1;
-                else if (st === 'on-time') onTimeCount += 1;
+                // Amount and timing are independent: partial-late counts in both.
+                const isPartial = this.isPartialPaymentStatus(st);
+                const isLate = this.isLatePaymentStatus(st);
+                const isOnTime = st === 'on-time';
+                const clean = isOnTime && !(Number(h.late_penalty) > 0);
+                if (isLate) lateCount += 1;
+                if (isPartial) partialCount += 1;
+                if (isOnTime) onTimeCount += 1;
                 events.push({
                     date: this._parseEventDate(when),
                     kind: 'loan',
                     status: st,
-                    clean: clean && st === 'on-time'
+                    clean: clean
                 });
             });
 
@@ -1639,7 +2502,8 @@ const Calculations = {
         let raw = 100 - penLate - penPartial - penMissed - penExtra + credits;
         raw = Math.max(0, Math.min(100, Math.round(raw)));
 
-        const totalEvents = lateCount + partialCount + onTimeCount;
+        // Count each payment once (partial-late is still one event).
+        const totalEvents = events.length;
         return {
             score: raw,
             late_count: lateCount,
@@ -1911,7 +2775,7 @@ const Calculations = {
                     date: h.date || h.payment_date,
                     type: 'loan_payment',
                     title: `Loan #${loan.loan_id} payment`,
-                    detail: `${this.formatCurrency(h.amount || 0)} · ${h.payment_status || 'recorded'}`,
+                    detail: `${this.formatCurrency(h.amount || 0)} · ${this.formatPaymentStatus(h.payment_status)}`,
                     meta: h
                 });
             });
@@ -1937,25 +2801,48 @@ const Calculations = {
             }
             (loan.schedule || []).forEach(entry => {
                 if (!entry) return;
-                if (Number(entry.extra_admin_assessed) > 0 && entry.due_date &&
-                    this._inRollingWindow(entry.due_date, asOf, months)) {
-                    items.push({
-                        date: entry.due_date,
-                        type: 'extra_admin',
-                        title: `Loan #${loan.loan_id} extra admin`,
-                        detail: this.formatCurrency(entry.extra_admin_assessed),
-                        meta: entry
-                    });
+                const graceDays = options.gracePeriodDays || 3;
+                if (Number(entry.extra_admin_assessed) > 0) {
+                    const adminDate = this.getFirstExtraAdminFeeDate(
+                        loan, entry, graceDays) || entry.due_date;
+                    if (adminDate && this._inRollingWindow(adminDate, asOf, months)) {
+                        items.push({
+                            date: adminDate instanceof Date
+                                ? adminDate.toISOString() : adminDate,
+                            type: 'extra_admin',
+                            title: `Loan #${loan.loan_id} extra admin`,
+                            detail: this.formatCurrency(entry.extra_admin_assessed),
+                            meta: entry
+                        });
+                    }
                 }
-                if (Number(entry.late_penalty_assessed) > 0 && entry.due_date &&
-                    this._inRollingWindow(entry.due_date, asOf, months)) {
-                    items.push({
-                        date: entry.due_date,
-                        type: 'late_penalty',
-                        title: `Loan #${loan.loan_id} late penalty`,
-                        detail: this.formatCurrency(entry.late_penalty_assessed),
-                        meta: entry
-                    });
+                if (Number(entry.late_penalty_assessed) > 0) {
+                    const lateDate = this.getFirstDelinquencyFeeDate(
+                        entry, graceDays) || entry.due_date;
+                    if (lateDate && this._inRollingWindow(lateDate, asOf, months)) {
+                        items.push({
+                            date: lateDate instanceof Date
+                                ? lateDate.toISOString() : lateDate,
+                            type: 'late_penalty',
+                            title: `Loan #${loan.loan_id} late penalty`,
+                            detail: this.formatCurrency(entry.late_penalty_assessed),
+                            meta: entry
+                        });
+                    }
+                }
+                if (Number(entry.extra_interest_assessed) > 0) {
+                    const intDate = this.getFirstDelinquencyFeeDate(
+                        entry, graceDays) || entry.due_date;
+                    if (intDate && this._inRollingWindow(intDate, asOf, months)) {
+                        items.push({
+                            date: intDate instanceof Date
+                                ? intDate.toISOString() : intDate,
+                            type: 'extra_interest',
+                            title: `Loan #${loan.loan_id} delinquency interest`,
+                            detail: this.formatCurrency(entry.extra_interest_assessed),
+                            meta: entry
+                        });
+                    }
                 }
             });
         });
@@ -2504,33 +3391,70 @@ const Calculations = {
     },
 
     /**
-     * Determine payment status relative to due date.
+     * True when history status reflects an underpayment (&lt; 90% of expected).
+     * Includes compound `partial-late`.
+     */
+    isPartialPaymentStatus(status) {
+        const st = String(status || '').toLowerCase();
+        return st === 'partial' || st === 'partial-late';
+    },
+
+    /**
+     * True when history status reflects payment after grace.
+     * Includes compound `partial-late`.
+     */
+    isLatePaymentStatus(status) {
+        const st = String(status || '').toLowerCase();
+        return st === 'late' || st === 'partial-late';
+    },
+
+    /**
+     * Human label for payment_history status (statement / UI).
+     */
+    formatPaymentStatus(status) {
+        const st = String(status || '').toLowerCase();
+        if (st === 'partial-late') return 'partial + late';
+        if (st === 'on-time') return 'on-time';
+        if (st === 'partial') return 'partial';
+        if (st === 'late') return 'late';
+        if (st === 'missed') return 'missed';
+        return status || 'recorded';
+    },
+
+    /**
+     * Determine payment status from amount AND timing.
+     * Amount and timing are independent so realistic underpay+late behavior
+     * is visible in history and scoring.
+     *
      * @param {Date|string} paymentDate - When the payment was made
      * @param {Date|string} dueDate - When the payment was due
      * @param {number} amountPaid - Amount actually paid
      * @param {number} amountDue - Amount that was expected
      * @param {number} gracePeriodDays - Grace period in days (default 3)
-     * @returns {string} 'on-time' | 'late' | 'partial' | 'missed'
+     * @returns {string} 'on-time' | 'late' | 'partial' | 'partial-late' | 'missed'
      */
     getPaymentStatus(paymentDate, dueDate, amountPaid, amountDue, gracePeriodDays) {
         if (typeof gracePeriodDays !== 'number') gracePeriodDays = 3;
         const pDate = new Date(paymentDate);
         const dDate = new Date(dueDate);
-        
+
         // Missed: no payment at all (amountPaid is 0 or undefined)
         if (!amountPaid || amountPaid <= 0) return 'missed';
-        
-        // Partial: paid something but less than 90% of expected amount
-        if (amountPaid < amountDue * 0.9) return 'partial';
-        
-        // Add grace period to due date
-        const graceCutoff = new Date(dDate);
-        graceCutoff.setDate(graceCutoff.getDate() + gracePeriodDays);
-        
-        // Late: paid after grace period
-        if (pDate > graceCutoff) return 'late';
-        
-        // On-time: paid within grace period
+
+        const dueAmt = Math.max(0, Number(amountDue) || 0);
+        const paidAmt = Math.max(0, Number(amountPaid) || 0);
+        const isPartial = dueAmt > 0 ? paidAmt < dueAmt * 0.9 : false;
+
+        let isLate = false;
+        if (!isNaN(pDate.getTime()) && !isNaN(dDate.getTime())) {
+            const graceCutoff = new Date(dDate.getTime());
+            graceCutoff.setDate(graceCutoff.getDate() + gracePeriodDays);
+            isLate = pDate > graceCutoff;
+        }
+
+        if (isPartial && isLate) return 'partial-late';
+        if (isPartial) return 'partial';
+        if (isLate) return 'late';
         return 'on-time';
     },
 
@@ -2794,24 +3718,40 @@ const Calculations = {
             if (latePenaltyPaid < histPenalty) latePenaltyPaid = histPenalty;
         }
 
-        // Live late/extra-admin on the open row (same rules as payment UI) so
-        // portal packs are not understated when fees are not yet persisted.
+        // Live late/extra-admin/extra-interest on the open row (same rules as
+        // payment UI) so portal packs are not understated before persistence.
         const graceDays = opts.gracePeriodDays || 3;
         const openEntry = schedule.find(e =>
             e && (e.status === 'pending' || e.status === 'partial'));
         let openLiveExtra = null;
         let openLiveLate = null;
+        let openLiveExtraInterest = null;
+        let interestExtraAssessed = 0;
+        let interestExtraInTotal = 0;
+        schedule.forEach(entry => {
+            if (!entry) return;
+            interestExtraAssessed += Number(entry.extra_interest_assessed) || 0;
+            const inTotal = Number(entry.extra_interest_in_total);
+            interestExtraInTotal += Number.isFinite(inTotal) && inTotal >= 0
+                ? inTotal
+                : (Number(entry.extra_interest_assessed) || 0);
+        });
         if (openEntry) {
             const fees = this.assessOpenInstallmentFees(loan, openEntry, asOf, graceDays);
             openLiveExtra = fees.extraAdminAssessedCandidate;
             openLiveLate = fees.latePenaltyAssessedCandidate;
+            openLiveExtraInterest = fees.extraInterestAssessedCandidate;
             const priorExtra = Number(openEntry.extra_admin_assessed) || 0;
             const priorLate = Number(openEntry.late_penalty_assessed) || 0;
+            const priorExtraInterest = Number(openEntry.extra_interest_assessed) || 0;
             if (openLiveExtra > priorExtra) {
                 adminExtraAssessed += (openLiveExtra - priorExtra);
             }
             if (openLiveLate > priorLate) {
                 latePenaltyAssessed += (openLiveLate - priorLate);
+            }
+            if (openLiveExtraInterest > priorExtraInterest) {
+                interestExtraAssessed += (openLiveExtraInterest - priorExtraInterest);
             }
         }
 
@@ -2821,10 +3761,21 @@ const Calculations = {
 
         const remainingPrincipal = Number(loan.remaining_principal) || 0;
         const interestPaid = Number(loan.interest_paid) || 0;
+        const originalPeriodInterest = this.getOriginalPeriodInterest(loan);
+        // Committed total uses extras folded into total_interest only.
+        // Live/full assessed amounts still drive dues / interest_extra_assessed.
+        const interestTotalWithExtra = this.round(
+            Math.max(totalInterest, originalPeriodInterest + interestExtraInTotal));
+        const interestTotalWithLiveAssessed = this.round(
+            Math.max(interestTotalWithExtra, originalPeriodInterest + interestExtraAssessed));
         // Match payment allocation: never show more interest still owed than
-        // max_interest_allowed − interest_paid (recalc / legacy capped loans).
-        let interestRemaining = Math.max(0, this.round(totalInterest - interestPaid));
-        const maxInterestAllowed = Number(loan.max_interest_allowed);
+        // getMaxInterestAllowed − interest_paid (lifts legacy 1× caps to 2×;
+        // preserves overpayment-recalculated ceilings).
+        let interestRemaining = Math.max(0, this.round(interestTotalWithLiveAssessed - interestPaid));
+        const maxInterestAllowed = this.getMaxInterestAllowed(loan, openEntry ? {
+            openEntry,
+            openLiveExtraInterest: openLiveExtraInterest
+        } : undefined);
         const interestCapRemaining = Number.isFinite(maxInterestAllowed)
             ? Math.max(0, this.round(maxInterestAllowed - interestPaid))
             : null;
@@ -2847,8 +3798,8 @@ const Calculations = {
             adminRemaining + latePenaltyRemaining
         );
         const claimableInterestTotal = interestCapRemaining != null
-            ? Math.min(totalInterest, this.round(maxInterestAllowed))
-            : totalInterest;
+            ? Math.min(interestTotalWithExtra, this.round(maxInterestAllowed))
+            : interestTotalWithExtra;
         const totalLoanCost = this.round(
             principal + claimableInterestTotal + totalInitiationFee +
             adminTotalAssessed + latePenaltyAssessed
@@ -2879,13 +3830,14 @@ const Calculations = {
             savings_from_early_payoff: this.round(Number(loan.savings_from_early_payoff) || 0),
             interest_calculation_months: interestPeriodMonths,
             interest_recalculated: !!loan.interest_recalculated,
-            max_interest_allowed: this.round(
-                Number(loan.max_interest_allowed) || totalInterest || 0)
+            max_interest_allowed: this.round(maxInterestAllowed || totalInterest || 0),
+            original_period_interest: this.round(originalPeriodInterest)
         };
 
         const financials = {
             original_principal: this.round(principal),
-            total_interest: this.round(totalInterest),
+            total_interest: this.round(interestTotalWithExtra),
+            interest_extra_assessed: this.round(interestExtraAssessed),
             initiation_fee: this.round(totalInitiationFee),
             admin_scheduled: this.round(adminScheduled),
             admin_extra_assessed: this.round(adminExtraAssessed),
@@ -2929,12 +3881,16 @@ const Calculations = {
 
             let extraAdmin = this.round(Number(entry.extra_admin_assessed) || 0);
             let latePenalty = this.round(Number(entry.late_penalty_assessed) || 0);
+            let extraInterest = this.round(Number(entry.extra_interest_assessed) || 0);
             if (entry === openEntry) {
                 if (openLiveExtra != null) {
                     extraAdmin = this.round(Math.max(extraAdmin, openLiveExtra));
                 }
                 if (openLiveLate != null) {
                     latePenalty = this.round(Math.max(latePenalty, openLiveLate));
+                }
+                if (openLiveExtraInterest != null) {
+                    extraInterest = this.round(Math.max(extraInterest, openLiveExtraInterest));
                 }
             }
             const paidPrincipal = this.round(Number(pb.principal) || 0);
@@ -2944,7 +3900,7 @@ const Calculations = {
             const paidLate = this.round(Number(pb.late_penalty) || 0);
 
             const duePrincipal = unpaid(rowPrincipal, paidPrincipal);
-            let dueInterest = unpaid(rowInterest, paidInterest);
+            let dueInterest = unpaid(rowInterest + extraInterest, paidInterest);
             if (interestCapLeft != null && isCollectibleRow) {
                 const claimable = Math.min(dueInterest, interestCapLeft);
                 interestCapLeft = Math.max(0, this.round(interestCapLeft - claimable));
@@ -2955,7 +3911,7 @@ const Calculations = {
             const dueLatePenalty = unpaid(latePenalty, paidLate);
             // Keep installment_total / monthly_payment aligned with claimable
             // interest on every unpaid row (portal/PDF schedule lines).
-            let interestForTotals = this.round(rowInterest);
+            let interestForTotals = this.round(rowInterest + extraInterest);
             if (interestCapRemaining != null && isCollectibleRow) {
                 interestForTotals = this.round(paidInterest + dueInterest);
             }
@@ -2985,6 +3941,7 @@ const Calculations = {
                 initiation_fee: this.round(rowInitiation),
                 admin_fee: this.round(rowAdmin),
                 extra_admin_assessed: extraAdmin,
+                extra_interest_assessed: extraInterest,
                 late_penalty_assessed: latePenalty,
                 monthly_payment: contractedMonthly,
                 installment_total: installmentTotal,
@@ -3059,6 +4016,8 @@ const Calculations = {
         });
 
         history.forEach((payment, index) => {
+            const instIndex = this.getPaymentInstallmentIndex(loan, payment);
+            const instTag = instIndex != null ? '(inst #' + instIndex + ') ' : '';
             const parts = [];
             if (Number(payment.principal) > 0) {
                 parts.push('Principal: ' + this.formatCurrency(payment.principal));
@@ -3075,7 +4034,7 @@ const Calculations = {
             if (Number(payment.late_penalty) > 0) {
                 parts.push('Late penalty: ' + this.formatCurrency(payment.late_penalty));
             }
-            let detail = parts.join(', ');
+            let detail = parts.length ? (instTag + parts.join(', ')) : instTag.trim();
             if (payment.remaining_principal_after != null) {
                 detail += (detail ? '\n' : '') +
                     'Balance after: ' + this.formatCurrency(payment.remaining_principal_after) +
@@ -3083,8 +4042,10 @@ const Calculations = {
                         ? payment.payments_made_after : (index + 1)) + '/' + term;
             }
             if (payment.payment_status) {
-                detail += (detail ? '\n' : '') + 'Status: ' + payment.payment_status +
-                    (payment.days_late != null ? ' (' + payment.days_late + ' days late)' : '');
+                detail += (detail ? '\n' : '') + 'Status: ' +
+                    this.formatPaymentStatus(payment.payment_status) +
+                    (payment.days_late != null && this.isLatePaymentStatus(payment.payment_status)
+                        ? ' (' + payment.days_late + ' days late)' : '');
             }
             if (payment.interest_recalculated) {
                 detail += (detail ? '\n' : '') +
@@ -3094,11 +4055,13 @@ const Calculations = {
             activity.push({
                 date: payment.date || payment.payment_date || asOf.toISOString(),
                 type: 'payment',
-                title: 'Payment #' + (index + 1),
+                title: 'Payment #' + (index + 1) +
+                    (instIndex != null ? ' (inst #' + instIndex + ')' : ''),
                 detail: detail,
                 amount: this.round(Number(payment.amount) || 0),
                 payment_status: payment.payment_status || null,
                 days_late: payment.days_late != null ? payment.days_late : null,
+                installment_index: instIndex,
                 recalculated: !!payment.interest_recalculated,
                 new_max_interest: this.round(Number(payment.new_max_interest) || 0)
             });
@@ -3126,22 +4089,41 @@ const Calculations = {
 
         schedule.forEach((entry, index) => {
             if (!entry || !entry.due_date) return;
+            const instLabel = 'installment #' + (index + 1);
             if (Number(entry.extra_admin_assessed) > 0) {
+                const adminDate = this.getFirstExtraAdminFeeDate(
+                    loan, entry, graceDays) || entry.due_date;
                 activity.push({
-                    date: entry.due_date,
+                    date: adminDate instanceof Date
+                        ? adminDate.toISOString() : adminDate,
                     type: 'extra_admin',
-                    title: 'Extra admin assessed (installment #' + (index + 1) + ')',
+                    title: 'Extra admin assessed (' + instLabel + ')',
                     detail: this.formatCurrency(entry.extra_admin_assessed),
                     amount: this.round(Number(entry.extra_admin_assessed) || 0)
                 });
             }
             if (Number(entry.late_penalty_assessed) > 0) {
+                const lateDate = this.getFirstDelinquencyFeeDate(
+                    entry, graceDays) || entry.due_date;
                 activity.push({
-                    date: entry.due_date,
+                    date: lateDate instanceof Date
+                        ? lateDate.toISOString() : lateDate,
                     type: 'late_penalty',
-                    title: 'Late penalty assessed (installment #' + (index + 1) + ')',
+                    title: 'Late penalty assessed (' + instLabel + ')',
                     detail: this.formatCurrency(entry.late_penalty_assessed),
                     amount: this.round(Number(entry.late_penalty_assessed) || 0)
+                });
+            }
+            if (Number(entry.extra_interest_assessed) > 0) {
+                const intDate = this.getFirstDelinquencyFeeDate(
+                    entry, graceDays) || entry.due_date;
+                activity.push({
+                    date: intDate instanceof Date
+                        ? intDate.toISOString() : intDate,
+                    type: 'extra_interest',
+                    title: 'Delinquency interest assessed (' + instLabel + ')',
+                    detail: this.formatCurrency(entry.extra_interest_assessed),
+                    amount: this.round(Number(entry.extra_interest_assessed) || 0)
                 });
             }
         });

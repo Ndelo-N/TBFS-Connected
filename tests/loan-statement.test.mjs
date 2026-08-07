@@ -37,6 +37,8 @@ function sampleLoan() {
             late_penalty: 40,
             payment_status: 'late',
             days_late: 5,
+            due_date: '2026-03-31',
+            installment_index: 1,
             remaining_principal_after: 7000,
             payments_made_after: 1
         }],
@@ -105,8 +107,22 @@ test('buildLoanStatementModel includes payments, adjustments, fees, schedule', (
     assert.ok(types.includes('late_penalty'));
 
     const payment = model.activity.find(a => a.type === 'payment');
+    assert.match(payment.title, /\(inst #1\)/);
+    assert.match(payment.detail, /\(inst #1\)/);
     assert.match(payment.detail, /Late penalty/);
     assert.match(payment.detail, /late/);
+    assert.equal(payment.installment_index, 1);
+
+    // Fee activity dates from first billable day, not installment due_date
+    const lateAct = model.activity.find(a =>
+        a.type === 'late_penalty' && /installment #2/.test(a.title));
+    assert.ok(lateAct);
+    assert.equal(String(lateAct.date).slice(0, 10), '2026-05-04'); // due 30 Apr + 3 grace + 1
+    const adminAct = model.activity.find(a =>
+        a.type === 'extra_admin' && /installment #2/.test(a.title));
+    assert.ok(adminAct);
+    // Period end = 31 May; term grace end 3 Jun; open due 30 Apr → slices 3 May, 3 Jun
+    assert.equal(String(adminAct.date).slice(0, 10), '2026-06-03');
 
     assert.ok(model.financials.admin_extra_assessed >= 60);
     assert.ok(model.financials.late_penalties_assessed >= 40);
@@ -135,7 +151,8 @@ test('addInterestCapFields uses calculated interest (not principal ceiling)', ()
         totalInterest: r.totalInterest
     });
     assert.equal(caps.interest_calculation_months, 5);
-    assert.equal(caps.max_interest_allowed, r.totalInterest);
+    assert.equal(caps.original_period_interest, r.totalInterest);
+    assert.equal(caps.max_interest_allowed, C.round(r.totalInterest * 2));
 });
 
 test('buildLoanStatementModel early payoff pulls tx fee detail', () => {
@@ -223,9 +240,14 @@ test('buildLoanStatementModel caps interest remaining to max_interest_allowed', 
     const loan = sampleLoan();
     loan.total_interest = 900;
     loan.interest_paid = 300;
+    loan.original_period_interest = 900;
     loan.max_interest_allowed = 400; // cap below scheduled total interest
     loan.interest_recalculated = true;
-    const model = C.buildLoanStatementModel(loan, { transactions: [] });
+    // asOf on open due date so live delinquency does not lift the freeze
+    const model = C.buildLoanStatementModel(loan, { transactions: [] }, {
+        asOf: '2026-04-30T12:00:00.000Z',
+        gracePeriodDays: 3
+    });
     assert.equal(model.position.interest_remaining, 100);
     assert.equal(model.summary.max_interest_allowed, 400);
     // total_remaining must use capped interest, not 900 − 300
@@ -290,9 +312,11 @@ test('buildLoanStatementModel includes live late/extra admin before persist', ()
     assert.ok(open);
     assert.ok(open.late_penalty_assessed > 0, 'live late penalty should be assessed');
     assert.ok(open.extra_admin_assessed > 0, 'live extra admin should be assessed');
+    assert.ok(open.extra_interest_assessed > 0, 'live delinquency interest should be assessed');
     assert.ok(open.amount_due > open.principal + open.interest + open.initiation_fee + open.admin_fee);
     assert.ok(model.financials.late_penalties_assessed >= open.late_penalty_assessed);
     assert.ok(model.financials.admin_extra_assessed >= open.extra_admin_assessed);
+    assert.ok(model.financials.interest_extra_assessed >= open.extra_interest_assessed);
     assert.equal(model.position.installment_amount_due, open.amount_due);
 });
 

@@ -60,6 +60,12 @@ class AppStateManager {
             gracePeriodDays: 3,
             paymentReminders: [],
 
+            // Reloan / financing bylaws (editable officer guidance by score tier)
+            reloanBylaws: (typeof Calculations !== 'undefined'
+                && typeof Calculations.getDefaultReloanBylaws === 'function')
+                ? Calculations.getDefaultReloanBylaws()
+                : null,
+
             // Metadata
             lastBackupDate: null,
             version: this.VERSION,
@@ -133,6 +139,14 @@ class AppStateManager {
             this.num(state.nextMemberNumber, d.nextMemberNumber), maxMember + 1);
 
         state.nextAccountNumber = this.num(state.nextAccountNumber, d.nextAccountNumber);
+
+        // ---- Reloan bylaws (editable document, one section per score tier) -
+        if (typeof Calculations !== 'undefined'
+            && typeof Calculations.normalizeReloanBylaws === 'function') {
+            state.reloanBylaws = Calculations.normalizeReloanBylaws(state.reloanBylaws);
+        } else if (!state.reloanBylaws || typeof state.reloanBylaws !== 'object') {
+            state.reloanBylaws = d.reloanBylaws;
+        }
 
         // ---- Metadata ----------------------------------------------------
         if (typeof state.version !== 'string') state.version = this.VERSION;
